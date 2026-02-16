@@ -69,15 +69,17 @@ azd env set AZURE_ARC_CLUSTER_NAME "$ARC_CLUSTER_NAME"
 echo ""
 echo ">> Step 3: Deploying Video Indexer Arc extension..."
 
+# Get the VI extension version (latest stable)
+VI_EXTENSION_VERSION=${VI_EXTENSION_VERSION:-"1.0.0"}
+
 az deployment group create \
     --resource-group "$AZURE_RESOURCE_GROUP" \
     --template-file ./infra/modules/vi-extension.bicep \
     --parameters \
-        arcClusterName="$ARC_CLUSTER_NAME" \
-        viAccountId="$AZURE_VIDEO_INDEXER_ACCOUNT_ID" \
-        storageAccountId="$(az storage account show --name $AZURE_STORAGE_ACCOUNT_NAME --resource-group $AZURE_RESOURCE_GROUP --query id -o tsv)" \
-        managedIdentityClientId="$AZURE_MANAGED_IDENTITY_CLIENT_ID" \
-        managedIdentityId="$AZURE_MANAGED_IDENTITY_ID"
+        arcConnectedClusterName="$ARC_CLUSTER_NAME" \
+        accountId="$AZURE_VIDEO_INDEXER_ACCOUNT_ID" \
+        accountResourceId="$AZURE_VIDEO_INDEXER_ACCOUNT_RESOURCE_ID" \
+        version="$VI_EXTENSION_VERSION"
 
 echo "   Video Indexer Arc extension deployed."
 

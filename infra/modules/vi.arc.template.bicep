@@ -1,57 +1,25 @@
-@description('Video Indexer account ID (GUID)')
 param accountId string = ''
-
-@description('Video Indexer account resource ID')
 param accountResourceId string = ''
-
-@description('Video Indexer endpoint URI')
 param videoIndexerEndpointUri string = ''
-
-@description('Name of the Azure Arc-connected cluster')
 param arcConnectedClusterName string = ''
-
-@description('Name of the VI extension')
 param extensionName string = 'videoindexer'
-
 @allowed([
   'preview'
   'stable'
 ])
-@description('Release train for the extension')
 param releaseTrain string = 'stable'
-
-@description('Extension version')
 param version string
-
-@description('Whether to use GPU for summarization')
 param useGpuForSummarization bool = false
-
-@description('Tolerations key for GPU scheduling')
 param tolerationsKeyForGpu string = 'nvidia.com/gpu'
-
-@description('Enable live video stream')
 param liveVideoStreamEnabled bool = true
-
-@description('Enable agents')
 param agentsEnabled bool = true
-
-@description('Enable media uploads')
 param mediaUploadsEnabled bool = true
-
-@description('Enable live summarization')
 param liveSummarizationEnabled bool = true
-
-@description('Enable media server streams')
 param mediaServerStreamsEnabled bool = true
-
-@description('APIM internals base URL')
 param apimInternalsBaseUrl string = ''
-
-@description('APIM operations base URL')
 param apimOperationsBaseUrl string = ''
 
 // Base config properties
-@description('Storage class for persistent volumes')
 param storageClass string = 'azurefile-csi-premium'
 
 var baseConfigProperties = {
@@ -82,7 +50,6 @@ var extensionConfigProperties = union(baseConfigProperties, apimConfigProperties
 resource connectedCluster 'Microsoft.Kubernetes/connectedClusters@2024-01-01' existing = {
   name: arcConnectedClusterName
 }
-
 resource extension 'Microsoft.KubernetesConfiguration/extensions@2022-11-01' = {
   name: extensionName
   scope: connectedCluster

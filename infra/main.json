@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.39.26.7824",
-      "templateHash": "1425542485969749381"
+      "templateHash": "12221809551269953286"
     }
   },
   "parameters": {
@@ -678,13 +678,21 @@
       "type": "string",
       "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('_resourceGroupName')), 'Microsoft.Resources/deployments', 'managed-identity-deployment'), '2025-04-01').outputs.clientId.value]"
     },
-    "AZURE_VIDEO_INDEXER_ACCOUNT_ID": {
+    "AZURE_VIDEO_INDEXER_ACCOUNT_RESOURCE_ID": {
       "type": "string",
       "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('_resourceGroupName')), 'Microsoft.Resources/deployments', 'video-indexer-deployment'), '2025-04-01').outputs.id.value]"
+    },
+    "AZURE_VIDEO_INDEXER_ACCOUNT_ID": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('_resourceGroupName')), 'Microsoft.Resources/deployments', 'video-indexer-deployment'), '2025-04-01').outputs.accountId.value]"
     },
     "AZURE_VIDEO_INDEXER_ACCOUNT_NAME": {
       "type": "string",
       "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('_resourceGroupName')), 'Microsoft.Resources/deployments', 'video-indexer-deployment'), '2025-04-01').outputs.name.value]"
+    },
+    "AZURE_STORAGE_ACCOUNT_ID": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('_resourceGroupName')), 'Microsoft.Resources/deployments', 'storage-deployment'), '2025-04-01').outputs.id.value]"
     },
     "AZURE_PRINCIPAL_ID": {
       "type": "string",
