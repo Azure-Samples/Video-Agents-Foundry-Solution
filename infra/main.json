@@ -4,8 +4,8 @@
   "metadata": {
     "_generator": {
       "name": "bicep",
-      "version": "0.39.26.7824",
-      "templateHash": "12221809551269953286"
+      "version": "0.40.2.10011",
+      "templateHash": "8670904543378002842"
     }
   },
   "parameters": {
@@ -123,8 +123,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.39.26.7824",
-              "templateHash": "15791596086770749161"
+              "version": "0.40.2.10011",
+              "templateHash": "16975324654036218924"
             }
           },
           "parameters": {
@@ -245,8 +245,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.39.26.7824",
-              "templateHash": "556545115359998909"
+              "version": "0.40.2.10011",
+              "templateHash": "2489620521730779657"
             }
           },
           "parameters": {
@@ -291,7 +291,7 @@
             {
               "type": "Microsoft.Authorization/roleAssignments",
               "apiVersion": "2022-04-01",
-              "scope": "[format('Microsoft.Storage/storageAccounts/{0}', last(split(parameters('storageAccountId'), '/')))]",
+              "scope": "[resourceId('Microsoft.Storage/storageAccounts', last(split(parameters('storageAccountId'), '/')))]",
               "name": "[guid(parameters('storageAccountId'), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('name')), variables('storageBlobDataContributorRoleId'))]",
               "properties": {
                 "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('storageBlobDataContributorRoleId'))]",
@@ -305,7 +305,7 @@
             {
               "type": "Microsoft.Authorization/roleAssignments",
               "apiVersion": "2022-04-01",
-              "scope": "[format('Microsoft.ManagedIdentity/userAssignedIdentities/{0}', parameters('name'))]",
+              "scope": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('name'))]",
               "name": "[guid(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('name')), variables('contributorRoleId'))]",
               "properties": {
                 "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('contributorRoleId'))]",
@@ -390,8 +390,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.39.26.7824",
-              "templateHash": "1719997534264337503"
+              "version": "0.40.2.10011",
+              "templateHash": "16746665573157644643"
             }
           },
           "parameters": {
@@ -564,8 +564,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.39.26.7824",
-              "templateHash": "4993763666082994435"
+              "version": "0.40.2.10011",
+              "templateHash": "5373207400894491802"
             }
           },
           "parameters": {
