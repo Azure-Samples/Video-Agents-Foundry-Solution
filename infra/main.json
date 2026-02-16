@@ -1,0 +1,698 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.39.26.7824",
+      "templateHash": "1425542485969749381"
+    }
+  },
+  "parameters": {
+    "environmentName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "metadata": {
+        "description": "Name of the environment used to generate a short unique hash for resources"
+      }
+    },
+    "location": {
+      "type": "string",
+      "minLength": 1,
+      "metadata": {
+        "description": "Primary location for all resources"
+      }
+    },
+    "resourceGroupName": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Name of the resource group"
+      }
+    },
+    "principalId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "ID of the principal (user) running the deployment"
+      }
+    },
+    "createRoleForUser": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Whether to create role assignments for the deploying user"
+      }
+    },
+    "kubernetesVersion": {
+      "type": "string",
+      "defaultValue": "1.29",
+      "metadata": {
+        "description": "Kubernetes version for the AKS cluster"
+      }
+    },
+    "gpuVmSize": {
+      "type": "string",
+      "defaultValue": "Standard_NC4as_T4_v3",
+      "metadata": {
+        "description": "VM size for the GPU node pool"
+      }
+    },
+    "gpuNodeCount": {
+      "type": "int",
+      "defaultValue": 1,
+      "minValue": 1,
+      "maxValue": 10,
+      "metadata": {
+        "description": "Number of GPU nodes in the AKS cluster"
+      }
+    }
+  },
+  "variables": {
+    "$fxv#0": {
+      "resourceGroup": "rg-",
+      "storageAccount": "st",
+      "managedIdentity": "id-",
+      "aksCluster": "aks-",
+      "videoIndexer": "vi-",
+      "arcConnectedCluster": "arc-"
+    },
+    "abbrs": "[variables('$fxv#0')]",
+    "resourceToken": "[toLower(uniqueString(subscription().id, parameters('environmentName'), parameters('location')))]",
+    "_resourceGroupName": "[if(not(empty(parameters('resourceGroupName'))), parameters('resourceGroupName'), format('{0}{1}', variables('abbrs').resourceGroup, parameters('environmentName')))]",
+    "tags": {
+      "azd-env-name": "[parameters('environmentName')]"
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Resources/resourceGroups",
+      "apiVersion": "2024-03-01",
+      "name": "[variables('_resourceGroupName')]",
+      "location": "[parameters('location')]",
+      "tags": "[variables('tags')]"
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "storage-deployment",
+      "resourceGroup": "[variables('_resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "name": {
+            "value": "[format('{0}{1}', variables('abbrs').storageAccount, variables('resourceToken'))]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "tags": {
+            "value": "[variables('tags')]"
+          },
+          "containerName": {
+            "value": "vi-arc-container"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.39.26.7824",
+              "templateHash": "15791596086770749161"
+            }
+          },
+          "parameters": {
+            "name": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the storage account"
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region for the storage account"
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Resource tags"
+              }
+            },
+            "containerName": {
+              "type": "string",
+              "defaultValue": "vi-arc-container",
+              "metadata": {
+                "description": "Name of the blob container"
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Storage/storageAccounts",
+              "apiVersion": "2023-05-01",
+              "name": "[parameters('name')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "kind": "StorageV2",
+              "sku": {
+                "name": "Standard_LRS"
+              },
+              "properties": {
+                "accessTier": "Hot",
+                "allowBlobPublicAccess": false,
+                "minimumTlsVersion": "TLS1_2",
+                "supportsHttpsTrafficOnly": true
+              }
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/blobServices",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}', parameters('name'), 'default')]",
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', parameters('name'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', parameters('containerName'))]",
+              "properties": {
+                "publicAccess": "None"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/blobServices', parameters('name'), 'default')]"
+              ]
+            }
+          ],
+          "outputs": {
+            "id": {
+              "type": "string",
+              "metadata": {
+                "description": "Storage account resource ID"
+              },
+              "value": "[resourceId('Microsoft.Storage/storageAccounts', parameters('name'))]"
+            },
+            "name": {
+              "type": "string",
+              "metadata": {
+                "description": "Storage account name"
+              },
+              "value": "[parameters('name')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', variables('_resourceGroupName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "managed-identity-deployment",
+      "resourceGroup": "[variables('_resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "name": {
+            "value": "[format('{0}{1}', variables('abbrs').managedIdentity, variables('resourceToken'))]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "tags": {
+            "value": "[variables('tags')]"
+          },
+          "storageAccountId": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('_resourceGroupName')), 'Microsoft.Resources/deployments', 'storage-deployment'), '2025-04-01').outputs.id.value]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.39.26.7824",
+              "templateHash": "556545115359998909"
+            }
+          },
+          "parameters": {
+            "name": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the user-assigned managed identity"
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region for the managed identity"
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Resource tags"
+              }
+            },
+            "storageAccountId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the storage account to grant access to"
+              }
+            }
+          },
+          "variables": {
+            "storageBlobDataContributorRoleId": "ba92f5b4-2d11-453d-a403-e96b0029c9fe",
+            "contributorRoleId": "b24988ac-6180-42a0-ab88-20f7382dd24c"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+              "apiVersion": "2023-01-31",
+              "name": "[parameters('name')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]"
+            },
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[format('Microsoft.Storage/storageAccounts/{0}', last(split(parameters('storageAccountId'), '/')))]",
+              "name": "[guid(parameters('storageAccountId'), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('name')), variables('storageBlobDataContributorRoleId'))]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('storageBlobDataContributorRoleId'))]",
+                "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('name')), '2023-01-31').principalId]",
+                "principalType": "ServicePrincipal"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('name'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[format('Microsoft.ManagedIdentity/userAssignedIdentities/{0}', parameters('name'))]",
+              "name": "[guid(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('name')), variables('contributorRoleId'))]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('contributorRoleId'))]",
+                "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('name')), '2023-01-31').principalId]",
+                "principalType": "ServicePrincipal"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('name'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "id": {
+              "type": "string",
+              "metadata": {
+                "description": "Managed identity resource ID"
+              },
+              "value": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('name'))]"
+            },
+            "principalId": {
+              "type": "string",
+              "metadata": {
+                "description": "Managed identity principal ID"
+              },
+              "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('name')), '2023-01-31').principalId]"
+            },
+            "clientId": {
+              "type": "string",
+              "metadata": {
+                "description": "Managed identity client ID"
+              },
+              "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('name')), '2023-01-31').clientId]"
+            },
+            "name": {
+              "type": "string",
+              "metadata": {
+                "description": "Managed identity name"
+              },
+              "value": "[parameters('name')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', variables('_resourceGroupName'))]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('_resourceGroupName')), 'Microsoft.Resources/deployments', 'storage-deployment')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "aks-deployment",
+      "resourceGroup": "[variables('_resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "name": {
+            "value": "[format('{0}{1}', variables('abbrs').aksCluster, variables('resourceToken'))]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "tags": {
+            "value": "[variables('tags')]"
+          },
+          "kubernetesVersion": {
+            "value": "[parameters('kubernetesVersion')]"
+          },
+          "gpuVmSize": {
+            "value": "[parameters('gpuVmSize')]"
+          },
+          "gpuNodeCount": {
+            "value": "[parameters('gpuNodeCount')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.39.26.7824",
+              "templateHash": "1719997534264337503"
+            }
+          },
+          "parameters": {
+            "name": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the AKS cluster"
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region for the AKS cluster"
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Resource tags"
+              }
+            },
+            "kubernetesVersion": {
+              "type": "string",
+              "defaultValue": "1.29",
+              "metadata": {
+                "description": "Kubernetes version"
+              }
+            },
+            "systemVmSize": {
+              "type": "string",
+              "defaultValue": "Standard_DS2_v2",
+              "metadata": {
+                "description": "VM size for the system node pool"
+              }
+            },
+            "gpuVmSize": {
+              "type": "string",
+              "defaultValue": "Standard_NC4as_T4_v3",
+              "metadata": {
+                "description": "VM size for the GPU node pool"
+              }
+            },
+            "gpuNodeCount": {
+              "type": "int",
+              "defaultValue": 1,
+              "minValue": 1,
+              "maxValue": 10,
+              "metadata": {
+                "description": "Number of GPU nodes"
+              }
+            },
+            "dnsPrefix": {
+              "type": "string",
+              "defaultValue": "[parameters('name')]",
+              "metadata": {
+                "description": "DNS prefix for the AKS cluster"
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.ContainerService/managedClusters",
+              "apiVersion": "2024-01-01",
+              "name": "[parameters('name')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "identity": {
+                "type": "SystemAssigned"
+              },
+              "properties": {
+                "dnsPrefix": "[parameters('dnsPrefix')]",
+                "kubernetesVersion": "[parameters('kubernetesVersion')]",
+                "enableRBAC": true,
+                "networkProfile": {
+                  "networkPlugin": "azure",
+                  "networkPolicy": "calico",
+                  "loadBalancerSku": "standard"
+                },
+                "agentPoolProfiles": [
+                  {
+                    "name": "systempool",
+                    "count": 1,
+                    "minCount": 1,
+                    "maxCount": 3,
+                    "vmSize": "[parameters('systemVmSize')]",
+                    "osType": "Linux",
+                    "mode": "System",
+                    "enableAutoScaling": true,
+                    "type": "VirtualMachineScaleSets"
+                  },
+                  {
+                    "name": "gpupool",
+                    "count": "[parameters('gpuNodeCount')]",
+                    "vmSize": "[parameters('gpuVmSize')]",
+                    "osType": "Linux",
+                    "mode": "User",
+                    "enableAutoScaling": false,
+                    "type": "VirtualMachineScaleSets",
+                    "nodeTaints": [
+                      "sku=gpu:NoSchedule"
+                    ],
+                    "nodeLabels": {
+                      "hardware": "gpu"
+                    }
+                  }
+                ]
+              }
+            }
+          ],
+          "outputs": {
+            "id": {
+              "type": "string",
+              "metadata": {
+                "description": "AKS cluster resource ID"
+              },
+              "value": "[resourceId('Microsoft.ContainerService/managedClusters', parameters('name'))]"
+            },
+            "name": {
+              "type": "string",
+              "metadata": {
+                "description": "AKS cluster name"
+              },
+              "value": "[parameters('name')]"
+            },
+            "principalId": {
+              "type": "string",
+              "metadata": {
+                "description": "AKS cluster system-assigned identity principal ID"
+              },
+              "value": "[reference(resourceId('Microsoft.ContainerService/managedClusters', parameters('name')), '2024-01-01', 'full').identity.principalId]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', variables('_resourceGroupName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "video-indexer-deployment",
+      "resourceGroup": "[variables('_resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "name": {
+            "value": "[format('{0}{1}', variables('abbrs').videoIndexer, variables('resourceToken'))]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "tags": {
+            "value": "[variables('tags')]"
+          },
+          "storageAccountId": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('_resourceGroupName')), 'Microsoft.Resources/deployments', 'storage-deployment'), '2025-04-01').outputs.id.value]"
+          },
+          "managedIdentityId": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('_resourceGroupName')), 'Microsoft.Resources/deployments', 'managed-identity-deployment'), '2025-04-01').outputs.id.value]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.39.26.7824",
+              "templateHash": "4993763666082994435"
+            }
+          },
+          "parameters": {
+            "name": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the Video Indexer account"
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region for the Video Indexer account"
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Resource tags"
+              }
+            },
+            "storageAccountId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the storage account"
+              }
+            },
+            "managedIdentityId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the user-assigned managed identity"
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.VideoIndexer/accounts",
+              "apiVersion": "2024-01-01",
+              "name": "[parameters('name')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "identity": {
+                "type": "UserAssigned",
+                "userAssignedIdentities": {
+                  "[format('{0}', parameters('managedIdentityId'))]": {}
+                }
+              },
+              "properties": {
+                "storageServices": {
+                  "resourceId": "[parameters('storageAccountId')]"
+                }
+              }
+            }
+          ],
+          "outputs": {
+            "id": {
+              "type": "string",
+              "metadata": {
+                "description": "Video Indexer account resource ID"
+              },
+              "value": "[resourceId('Microsoft.VideoIndexer/accounts', parameters('name'))]"
+            },
+            "name": {
+              "type": "string",
+              "metadata": {
+                "description": "Video Indexer account name"
+              },
+              "value": "[parameters('name')]"
+            },
+            "accountId": {
+              "type": "string",
+              "metadata": {
+                "description": "Video Indexer account ID (GUID)"
+              },
+              "value": "[reference(resourceId('Microsoft.VideoIndexer/accounts', parameters('name')), '2024-01-01').accountId]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('_resourceGroupName')), 'Microsoft.Resources/deployments', 'managed-identity-deployment')]",
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', variables('_resourceGroupName'))]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('_resourceGroupName')), 'Microsoft.Resources/deployments', 'storage-deployment')]"
+      ]
+    }
+  ],
+  "outputs": {
+    "AZURE_RESOURCE_GROUP": {
+      "type": "string",
+      "value": "[variables('_resourceGroupName')]"
+    },
+    "AZURE_LOCATION": {
+      "type": "string",
+      "value": "[parameters('location')]"
+    },
+    "AZURE_AKS_CLUSTER_NAME": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('_resourceGroupName')), 'Microsoft.Resources/deployments', 'aks-deployment'), '2025-04-01').outputs.name.value]"
+    },
+    "AZURE_STORAGE_ACCOUNT_NAME": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('_resourceGroupName')), 'Microsoft.Resources/deployments', 'storage-deployment'), '2025-04-01').outputs.name.value]"
+    },
+    "AZURE_MANAGED_IDENTITY_ID": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('_resourceGroupName')), 'Microsoft.Resources/deployments', 'managed-identity-deployment'), '2025-04-01').outputs.id.value]"
+    },
+    "AZURE_MANAGED_IDENTITY_CLIENT_ID": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('_resourceGroupName')), 'Microsoft.Resources/deployments', 'managed-identity-deployment'), '2025-04-01').outputs.clientId.value]"
+    },
+    "AZURE_VIDEO_INDEXER_ACCOUNT_ID": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('_resourceGroupName')), 'Microsoft.Resources/deployments', 'video-indexer-deployment'), '2025-04-01').outputs.id.value]"
+    },
+    "AZURE_VIDEO_INDEXER_ACCOUNT_NAME": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('_resourceGroupName')), 'Microsoft.Resources/deployments', 'video-indexer-deployment'), '2025-04-01').outputs.name.value]"
+    },
+    "AZURE_PRINCIPAL_ID": {
+      "type": "string",
+      "value": "[parameters('principalId')]"
+    },
+    "CREATE_ROLE_FOR_USER": {
+      "type": "bool",
+      "value": "[parameters('createRoleForUser')]"
+    }
+  }
+}

@@ -1,61 +1,133 @@
 targetScope = 'subscription'
 
+// =====================================================
+// Parameters
+// =====================================================
+
 @minLength(1)
 @maxLength(64)
-@description('Name of the the environment which is used to generate a short unique hash used in all resources.')
+@description('Name of the environment used to generate a short unique hash for resources')
 param environmentName string
 
 @minLength(1)
 @description('Primary location for all resources')
 param location string
 
-@description('The Azure resource group where new resources will be deployed')
+@description('Name of the resource group')
 param resourceGroupName string = ''
-@description('The Open AI resource name. If ommited will be generated')
-param openAiName string = ''
 
-param createRoleForUser bool = true
-
-var aiConfig = loadYamlContent('./ai.yaml')
-
+@description('ID of the principal (user) running the deployment')
 param principalId string = ''
 
-var abbrs = loadJsonContent('./abbreviations.json')
-var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
-var tags = { 'azd-env-name': environmentName }
+@description('Whether to create role assignments for the deploying user')
+param createRoleForUser bool = true
 
-// Organize resources in a resource group
-resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
-  name: !empty(resourceGroupName) ? resourceGroupName : '${abbrs.resourcesResourceGroups}${environmentName}'
+@description('Kubernetes version for the AKS cluster')
+param kubernetesVersion string = '1.29'
+
+@description('VM size for the GPU node pool')
+param gpuVmSize string = 'Standard_NC4as_T4_v3'
+
+@description('Number of GPU nodes in the AKS cluster')
+@minValue(1)
+@maxValue(10)
+param gpuNodeCount int = 1
+
+// =====================================================
+// Variables
+// =====================================================
+
+var abbrs = loadJsonContent('abbreviations.json')
+var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
+var _resourceGroupName = !empty(resourceGroupName) ? resourceGroupName : '${abbrs.resourceGroup}${environmentName}'
+var tags = {
+  'azd-env-name': environmentName
+}
+
+// =====================================================
+// Resource Group
+// =====================================================
+
+resource rg 'Microsoft.Resources/resourceGroups@2024-03-01' = {
+  name: _resourceGroupName
   location: location
   tags: tags
 }
 
-module cognitiveServices 'core/ai/cognitiveservices.bicep' = {
-  name: 'cognitiveServices'
+// =====================================================
+// Module: Storage Account
+// =====================================================
+
+module storage 'modules/storage.bicep' = {
+  name: 'storage-deployment'
   scope: rg
   params: {
+    name: '${abbrs.storageAccount}${resourceToken}'
     location: location
     tags: tags
-    name: !empty(openAiName) ? openAiName : 'aoai-${resourceToken}'
-    kind: 'AIServices'
-    deployments: contains(aiConfig, 'deployments') ? aiConfig.deployments : []
+    containerName: 'vi-arc-container'
   }
 }
 
-module userRoleDataScientist 'core/security/role.bicep' =  if (createRoleForUser) {
-  name: 'user-role-data-scientist'
+// =====================================================
+// Module: User-Assigned Managed Identity
+// =====================================================
+
+module managedIdentity 'modules/managed-identity.bicep' = {
+  name: 'managed-identity-deployment'
   scope: rg
   params: {
-    principalId: principalId
-    roleDefinitionId: 'f6c7c914-8db3-469d-8ca1-694a8f32e121'
-    principalType: 'User'
+    name: '${abbrs.managedIdentity}${resourceToken}'
+    location: location
+    tags: tags
+    storageAccountId: storage.outputs.id
   }
 }
 
-// output the names of the resources
-output AZURE_TENANT_ID string = tenant().tenantId
-output AZURE_RESOURCE_GROUP string = rg.name
+// =====================================================
+// Module: AKS Cluster
+// =====================================================
 
-output AZURE_OPENAI_NAME string = cognitiveServices.outputs.name
-output AZURE_OPENAI_ENDPOINT string = cognitiveServices.outputs.endpoints['OpenAI Language Model Instance API']
+module aks 'modules/aks.bicep' = {
+  name: 'aks-deployment'
+  scope: rg
+  params: {
+    name: '${abbrs.aksCluster}${resourceToken}'
+    location: location
+    tags: tags
+    kubernetesVersion: kubernetesVersion
+    gpuVmSize: gpuVmSize
+    gpuNodeCount: gpuNodeCount
+  }
+}
+
+// =====================================================
+// Module: Video Indexer Account
+// =====================================================
+
+module videoIndexer 'modules/video-indexer.bicep' = {
+  name: 'video-indexer-deployment'
+  scope: rg
+  params: {
+    name: '${abbrs.videoIndexer}${resourceToken}'
+    location: location
+    tags: tags
+    storageAccountId: storage.outputs.id
+    managedIdentityId: managedIdentity.outputs.id
+  }
+}
+
+// =====================================================
+// Outputs - used by azd and post-provision scripts
+// =====================================================
+
+output AZURE_RESOURCE_GROUP string = rg.name
+output AZURE_LOCATION string = location
+output AZURE_AKS_CLUSTER_NAME string = aks.outputs.name
+output AZURE_STORAGE_ACCOUNT_NAME string = storage.outputs.name
+output AZURE_MANAGED_IDENTITY_ID string = managedIdentity.outputs.id
+output AZURE_MANAGED_IDENTITY_CLIENT_ID string = managedIdentity.outputs.clientId
+output AZURE_VIDEO_INDEXER_ACCOUNT_ID string = videoIndexer.outputs.id
+output AZURE_VIDEO_INDEXER_ACCOUNT_NAME string = videoIndexer.outputs.name
+output AZURE_PRINCIPAL_ID string = principalId
+output CREATE_ROLE_FOR_USER bool = createRoleForUser
