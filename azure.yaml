@@ -1,8 +1,8 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
 
-name: azd-ai-starter
+name: video-agents-foundry-solution
 metadata:
-  template: azd-ai-starter@0.0.1-beta
+  template: video-agents-foundry-solution@1.0.0
 workflows:
   up:
     steps:

@@ -1,222 +1,205 @@
----
-page_type: sample
-languages:
-- azdeveloper
-- bicep
-products:
-- azure
-urlFragment: azd-ai-starter
-name: Azure AI starter template
-description: Creates an Azure AI Service and deploys the specified models.
----
-<!-- YAML front-matter schema: https://review.learn.microsoft.com/en-us/help/contribute/samples/process/onboarding?branch=main#supported-metadata-fields-for-readmemd -->
+# EdgeAI Video Agents Solution
 
-> [!NOTE]
-> This repository is a starter kit to use as a base to build templates for AI powered applications. It has all the necessary artifact to conform with [standards](https://github.com/Azure-Samples/azd-template-artifacts) and pass the mandatory validation for [publication](https://github.com/Azure-Samples/azd-template-artifacts/blob/main/publishing-guidelines.md) as part of our official collections. If you want to automatically scaffold a template based on this one, instead of cloning it, you can use the [Azure Developer CLI](https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/) and run `azd init -t azd-ai-starter`
+Welcome to the *EdgeAI Video Agents Solution*, designed to help businesses leverage AI agents for automating complex video analysts tasks.
+This solution provides **end-to-end framework** for deploying AI-powered video analysis at the edge using Azure Video Indexer enabled by Azure Arc, combined with intelligent AI agents for automated decision-making and real-time video insights.  
+The EdgeAI Video Agents Solution allows users to process and analyze live and recorded video streams at the edge, extract AI insights, including speech transcription, OCR, face detection, object tracking, and action recognition and leverage **AI agents** to automate complex video analysis workflows with low latency and full data sovereignty.
 
-> [!IMPORTANT]
-> The content below represents a standard readme file defining the required structure for template validation. Update as required, including replacing all instances of [Project Name] with your project's name, and remove this notice and the notice and metadata above.
+> **_Note_:** In order to successfully deploy the VI Extension, you **must first** submit your subscription for approval and be approved. Please use this application link. [this form](https://aka.ms/vi-register).
 
+**Comprehensive Guides**
 
-# [Project Name]
+For a detailed, step-by-step guide on creating an AKS cluster with GPU support and deploying the Video Indexer Arc extension, see:
+- **[AKS-CLUSTER-SETUP.md](https://github.com/Azure-Samples/azure-video-indexer-samples/blob/master/VideoIndexerEnabledByArc/aks/AKS-CLUSTER-SETUP.md)** - Complete setup guide with output examples
+- **[create-aks-cluster.sh](https://github.com/Azure-Samples/azure-video-indexer-samples/blob/master/VideoIndexerEnabledByArc/aks/create-aks-cluster.sh)** - Automated deployment script
+> The guide includes GPU quota checking, troubleshooting tips, and support for live video processing.
 
-[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](placeholder)
-[![Open in Dev Containers](https://img.shields.io/static/v1?style=for-the-badge&label=Dev%20Containers&message=Open&color=blue&logo=visualstudiocode)](placeholder)
+<br/>
 
-(Longer Description, as compared to the GitHub "about" section of the project)
-(make sure to highlight the use case!)
-Sample application code is included in this project. You can use or modify this app code or you can rip it out and include your own.
+<div align="center">
 
-[Features](#features) • [Gettting Started](#getting-started) • [Guidance](#guidance)
+[**SOLUTION OVERVIEW**](#solution-overview) \| [**QUICK DEPLOY**](#quick-deploy) \| [**BUSINESS SCENARIO**](#business-scenario) \| [**SUPPORTING DOCUMENTATION**](#supporting-documentation)
 
-(include a screenshot of your template's endpoint here-- so users know what it should look like when they're done)
+</div>
+<br/>
 
-## Features
+**Note:** With any AI solutions you create using these templates, you are responsible for assessing all associated risks and for complying with all applicable laws and safety standards. Learn more in the transparency documents for [Agent Service](https://learn.microsoft.com/en-us/azure/ai-foundry/responsible-ai/agents/transparency-note) and [Agent Framework](https://github.com/microsoft/agent-framework/blob/main/TRANSPARENCY_FAQ.md).
+<br/>
 
-This project framework provides the following features:
+<h2><img src="./docs/images/readme/solution-overview.png" width="48" />
+Solution overview
+</h2>
 
-* Feature 1
-* Feature 2
-* ...
+The solution leverages Azure Arc Service to extend Azure Video Indexer capabilities to edge environments running on Kubernetes clusters.
+By deploying the Video Indexer Arc extension on an Arc-enabled AKS cluster with GPU support (NVIDIA), the solution enables real-time video processing close to the data source — reducing latency and ensuring data sovereignty. AI agents built on Azure OpenAI orchestrate the video analysis pipeline, automating tasks such as content moderation, safety monitoring, and business intelligence extraction from video feeds. The agentic architecture allows multiple specialized agents to collaborate on complex video analysis tasks, with each agent handling a specific domain such as speech analysis, visual recognition, or compliance checking.
 
-### Architecture Diagram
+### Solution architecture
+|![image](./docs/images/readme/architecture.png)|
+|---|
 
-Include a diagram describing the application. You can take [this image](https://raw.githubusercontent.com/Azure-Samples/serverless-chat-langchainjs/main/docs/images/architecture.drawio.png) as a reference.
+### Agentic architecture
+|![image](./docs/images/readme/agent_flow.png)|
+|---|
 
-- `AZURE_OPENAI_NAME` - The name of the Azure OpenAI service
+<br/>
 
-### Demo Video (optional)
+### Additional resources
+- [Azure Video Indexer enabled by Arc — Ignite 2025 Preview Blog](https://techcommunity.microsoft.com/blog/AzureArcBlog/ignite-2025-preview---intelligent-real-time-video-insights-and-agents-with-azure/4470704)
+- [Azure Video Indexer Documentation](https://learn.microsoft.com/en-us/azure/azure-video-indexer/)
+- [Azure Arc Documentation](https://learn.microsoft.com/en-us/azure/azure-arc/)
+- [AKS Cluster Setup for Video Indexer Arc Extension](https://github.com/Azure-Samples/azure-video-indexer-samples/blob/master/VideoIndexerEnabledByArc/aks/AKS-CLUSTER-SETUP.md)
+- [Azure Video Indexer Samples on GitHub](https://github.com/Azure-Samples/azure-video-indexer-samples)
 
-(Embed demo video here)
+<br/>
 
-## Getting Started
+### Key features
+<details open>
+  <summary>Click to learn more about the key features this solution enables</summary>
 
-You have a few options for getting started with this template. The quickest way to get started is [GitHub Codespaces](#github-codespaces), since it will setup all the tools for you, but you can also [set it up locally](#local-environment). You can also use a [VS Code dev container](#vs-code-dev-containers)
+- **Edge-Deployed Video Analysis** — Run Azure Video Indexer on Arc-enabled Kubernetes clusters at the edge, bringing AI-powered video analysis closer to data sources for low-latency processing.
+- **Real-Time & Batch Video Processing** — Support for both live video pipeline ingestion (RTSP streams) and batch processing of recorded video files.
+- **Multimodal AI Insights** — Extract rich insights from video content including speech transcription, OCR, face detection, object tracking, scene detection, and action recognition.
+- **AI Agent–Based Automation** — Leverage intelligent agents powered by Azure OpenAI to automate complex video analysis workflows, enabling automated decision-making and action triggering.
+- **GPU-Accelerated Processing** — Utilize NVIDIA T4 GPUs (Standard_NC4as_T4_v3 VMs) for high-performance video processing at the edge.
+- **Cloud-Managed Edge Deployments** — Manage and monitor edge deployments centrally through Azure Arc while processing video data locally.
+- **Data Sovereignty & Compliance** — Process sensitive video data on-premises or at the edge, ensuring data residency and compliance requirements are met.
+- **Extensible Agentic Architecture** — Build custom agent teams for domain-specific video analysis scenarios such as retail analytics, manufacturing quality control, or safety monitoring.
 
-This template uses [MODEL 1] and [MODEL 2] which may not be available in all Azure regions. Check for [up-to-date region availability](https://learn.microsoft.com/azure/ai-services/openai/concepts/models#standard-deployment-model-availability) and select a region during deployment accordingly
+</details>
 
-  * We recommend using [SUGGESTED REGION]
+<br /><br />
+<h2><img src="./docs/images/readme/quick-deploy.png" width="48" />
+Quick deploy
+</h2>
 
-### GitHub Codespaces
+### How to install or deploy
+Follow the quick deploy steps on the deployment guide to deploy this solution to your own Azure subscription.
 
-You can run this template virtually by using GitHub Codespaces. The button will open a web-based VS Code instance in your browser:
+> **Note:** This solution accelerator requires **Azure Developer CLI (azd) version 1.18.0 or higher**. Please ensure you have the latest version installed before proceeding with deployment. [Download azd here](https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/install-azd).
 
-1. Open the template (this may take several minutes)
-    [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](placeholder)
-2. Open a terminal window
-3. Sign into your Azure account:
+[Click here to launch the deployment guide](./docs/DeploymentGuide.md)
+<br/><br/>
 
-    ```shell
-     azd auth login --use-device-code
-    ```
+| [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/microsoft/EdgeAI-Video-Agents-Solution) | [![Open in Dev Containers](https://img.shields.io/static/v1?style=for-the-badge&label=Dev%20Containers&message=Open&color=blue&logo=visualstudiocode)](https://vscode.dev/redirect?url=vscode://ms-vscode-remote.remote-containers/cloneInVolume?url=https://github.com/microsoft/EdgeAI-Video-Agents-Solution) | [![Open in Visual Studio Code Web](https://img.shields.io/static/v1?style=for-the-badge&label=Visual%20Studio%20Code%20(Web)&message=Open&color=blue&logo=visualstudiocode&logoColor=white)](https://vscode.dev/azure/?vscode-azure-exp=foundry&agentPayload=eyJiYXNlVXJsIjogImh0dHBzOi8vcmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbS9taWNyb3NvZnQvTXVsdGktQWdlbnQtQ3VzdG9tLUF1dG9tYXRpb24tRW5naW5lLVNvbHV0aW9uLUFjY2VsZXJhdG9yL3JlZnMvaGVhZHMvbWFpbi9pbmZyYS92c2NvZGVfd2ViIiwgImluZGV4VXJsIjogIi9pbmRleC5qc29uIiwgInZhcmlhYmxlcyI6IHsiYWdlbnRJZCI6ICIiLCAiY29ubmVjdGlvblN0cmluZyI6ICIiLCAidGhyZWFkSWQiOiAiIiwgInVzZXJNZXNzYWdlIjogIiIsICJwbGF5Z3JvdW5kTmFtZSI6ICIiLCAibG9jYXRpb24iOiAiIiwgInN1YnNjcmlwdGlvbklkIjogIiIsICJyZXNvdXJjZUlkIjogIiIsICJwcm9qZWN0UmVzb3VyY2VJZCI6ICIiLCAiZW5kcG9pbnQiOiAiIn0sICJjb2RlUm91dGUiOiBbImFpLXByb2plY3RzLXNkayIsICJweXRob24iLCAiZGVmYXVsdC1henVyZS1hdXRoIiwgImVuZHBvaW50Il19) |
+|---|---|---|
 
-4. [any other steps needed for your template]
-5. Provision the Azure resources and deploy your code:
+<br/>
 
-    ```shell
-    azd up
-    ```
+> ⚠️ **Important: Check Azure OpenAI Quota Availability**
+ <br/>To ensure sufficient quota is available in your subscription, please follow [quota check instructions guide](./docs/quota_check.md) before you deploy the solution.
 
-6. (Add steps to start up the sample app)
-
-### VS Code Dev Containers
-
-A related option is VS Code Dev Containers, which will open the project in your local VS Code using the [Dev Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers):
-
-1. Start Docker Desktop (install it if not already installed)
-2. Open the project:
-    [![Open in Dev Containers](https://img.shields.io/static/v1?style=for-the-badge&label=Dev%20Containers&message=Open&color=blue&logo=visualstudiocode)](placeholder)
-3. In the VS Code window that opens, once the project files show up (this may take several minutes), open a terminal window.
-4. Sign into your Azure account:
-
-    ```shell
-     azd auth login
-    ```
-
-5. [any other steps needed for your template]
-6. Provision the Azure resources and deploy your code:
-
-    ```shell
-    azd up
-    ```
-
-7. (Add steps to start up the sample app)
-
-8. Configure a CI/CD pipeline:
-
-    ```shell
-    azd pipeline config
-    ```
-
-### Local Environment
+<br/>
 
 ### Prerequisites
-
-(ideally very short, if any)
-
-* Install [azd](https://aka.ms/install-azd)
-  * Windows: `winget install microsoft.azd`
-  * Linux: `curl -fsSL https://aka.ms/install-azd.sh | bash`
-  * MacOS: `brew tap azure/azd && brew install azd`
-* OS
-* Library version
-* This template uses [MODEL 1] and [MODEL 2] which may not be available in all Azure regions. Check for [up-to-date region availability](https://learn.microsoft.com/azure/ai-services/openai/concepts/models#standard-deployment-model-availability) and select a region during deployment accordingly
-  * We recommend using [SUGGESTED REGION]
-* ...
-
-### Installation
-
-(ideally very short)
-
-* list of any prerequisites
-* ...
-
-## Quickstart
-
-(Add steps to get up and running quickly)
-
-1. Bring down the template code:
-
-    ```shell
-    azd init --template [name-of-repo]
-    ```
-
-    This will perform a git clone
-
-2. Sign into your Azure account:
-
-    ```shell
-     azd auth login
-    ```
-
-3. [Packages or anything else that needs to be installed]
-
-    ```shell
-    npm install ...
-    ```
-
-4. ...
-5. Provision and deploy the project to Azure:
-
-    ```shell
-    azd up
-    ```
-
-6. (Add steps to start up the sample app)
-
-7. Configure a CI/CD pipeline:
-
-    ```shell
-    azd pipeline config
-    ```
-
-### Local Development
-
-Describe how to run and develop the app 
-
-### Extending Bicep IaC files
-
-Once the application is developed, the Bicep files may need to be extended with additional service modules and configuration. We include a script to list the available API versions for each service, including an indicator for latest stable releases.
-
-To use it, change directory to the [scripts folder](./scripts), and locate and run the script called `listAPIVersions`, for your corresponding platform. 
-
-> [!IMPORTANT]
-> This script needs the [Azure CLI] to be installed in your system or available in your setup.
-
-## Guidance
-
-### Region Availability
-
-This template uses [MODEL 1] and [MODEL 2] which may not be available in all Azure regions. Check for [up-to-date region availability](https://learn.microsoft.com/azure/ai-services/openai/concepts/models#standard-deployment-model-availability) and select a region during deployment accordingly
-  * We recommend using [SUGGESTED REGION]
-
-### Quotas
-
-Apart from making sure the selected model is available in a preferred region, you may need to make sure your subscription has remaining quota available. We provide a tool, in the form of a script, for this purpose.
-
-To use it, change directory to the [scripts folder](./scripts), and locate and run the script called `listAIQuotas`, for your corresponding platform. 
-
-> [!IMPORTANT]
-> This script needs the [Azure CLI] to be installed in your system or available in your setup.
+- **Azure Subscription** — An active Azure subscription. [Create one for free](https://azure.microsoft.com/free/).
+- **VI Arc Extension Approval** — Submit your subscription for approval via [this form](https://aka.ms/vi-register) before deploying.
+- **GPU Quota** — Sufficient GPU quota for `Standard_NC4as_T4_v3` VMs in your target region (minimum 4 vCPUs for the NCasv3 family).
+- **Azure CLI** — Version 2.x or higher. [Install Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli).
+- **kubectl** — Kubernetes command-line tool. [Install kubectl](https://kubernetes.io/docs/tasks/tools/).
+- **Helm 3** — Kubernetes package manager. [Install Helm](https://helm.sh/docs/intro/install/).
+- **Azure Developer CLI (azd)** — Version 1.18.0 or higher. [Install azd](https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/install-azd).
 
 ### Costs
+Use the [Azure pricing calculator](https://azure.microsoft.com/en-us/pricing/calculator) to calculate the cost of this solution in your subscription. [Review a sample pricing sheet for the architecture](https://azure.com/e/86d0eefbe4dd4a23981c1d3d4f6fe7ed).
+| Product | Description | Cost |
+|---|---|---|
+| [Azure OpenAI Service](https://learn.microsoft.com/azure/ai-services/openai/) | Powers the AI agents for task automation | [Pricing](https://azure.microsoft.com/pricing/details/cognitive-services/openai-service/) |
+| [Azure Container Apps](https://learn.microsoft.com/azure/container-apps/) | Hosts the web application frontend | [Pricing](https://azure.microsoft.com/pricing/details/container-apps/) |
+| [Azure Cosmos DB](https://learn.microsoft.com/azure/cosmos-db/) | Stores metadata and processing results | [Pricing](https://azure.microsoft.com/pricing/details/cosmos-db/) |
+| [Azure Container Registry](https://learn.microsoft.com/azure/container-registry/) | Stores container images for deployment | [Pricing](https://azure.microsoft.com/pricing/details/container-registry/) |
 
-You can estimate the cost of this project's architecture with [Azure's pricing calculator](https://azure.microsoft.com/pricing/calculator/)
+<br/>
 
-* [Azure Product] - [plan type] [link to pricing for product](https://azure.microsoft.com/pricing/)
+>⚠️ **Important:** To avoid unnecessary costs, remember to take down your app if it's no longer in use,
+either by deleting the resource group in the Portal or running `azd down`.
 
-### Security
+<br /><br />
+<h2><img src="./docs/images/readme/business-scenario.png" width="48" />
+Business Scenario
+</h2>
 
-> [!NOTE]
-> When implementing this template please specify whether the template uses Managed Identity or Key Vault
+|![image](./docs/images/readme/application.png)|
+|---|
 
-This template has either [Managed Identity](https://learn.microsoft.com/entra/identity/managed-identities-azure-resources/overview) or Key Vault built in to eliminate the need for developers to manage these credentials. Applications can use managed identities to obtain Microsoft Entra tokens without having to manage any credentials. Additionally, we have added a [GitHub Action tool](https://github.com/microsoft/security-devops-action) that scans the infrastructure-as-code files and generates a report containing any detected issues. To ensure best practices in your repo we recommend anyone creating solutions based on our templates ensure that the [Github secret scanning](https://docs.github.com/code-security/secret-scanning/about-secret-scanning) setting is enabled in your repos.
+<br/>
 
-### Resources
 
-(Any additional resources or related projects)
+### Business value
+<details>
+  <summary>Click to learn more about what value this solution provides</summary>
 
-* Link to supporting information
-* Link to similar sample
-* [Develop Python apps that use Azure AI services](https://learn.microsoft.com/azure/developer/python/azure-ai-for-python-developers)
-* ...
+  - **Real-Time Decision Making** — Enable immediate, automated responses to events captured in video feeds, reducing the time from observation to action from hours or days to seconds.
+  - **Reduced Operational Costs** — Automate video monitoring and analysis tasks that previously required dedicated staff for manual review, significantly lowering labor costs.
+  - **Edge Data Sovereignty** — Process sensitive video data locally at the edge, ensuring compliance with data residency regulations and reducing bandwidth costs from streaming video to the cloud.
+  - **Scalable Intelligence** — Deploy consistent AI-powered video analysis across multiple locations (stores, factories, facilities) using a centralized cloud management model via Azure Arc.
+  - **Actionable Insights** — Transform raw video feeds into structured, actionable business intelligence through multimodal AI analysis and agent-driven automation.
+
+</details>
+
+### Use Case
+<details>
+  <summary>Click to learn more about what use cases this solution provides</summary>
+
+| Use Case | Persona   | Challenges | Summary/Approach |
+|----------|-----------|------------|------------------|
+| Retail Analytics | Store Manager | Manual monitoring of customer behavior across multiple camera feeds is time-consuming and error-prone | AI agents analyze video feeds in real time for foot traffic patterns, shelf interaction, customer demographics, and queue lengths to optimize store layout and staffing |
+| Manufacturing Quality Control | Quality Engineer | Visual inspection of production lines requires constant human attention and is subject to fatigue-related errors | Automated defect detection and quality monitoring via edge-deployed video analysis with AI agents that flag anomalies and trigger alerts in real time |
+| Safety & Compliance Monitoring | Safety Officer | Reviewing security footage after incidents is reactive rather than preventive | Real-time safety monitoring with AI agents that detect PPE violations, unauthorized access, hazardous conditions, and automatically generate compliance reports |
+| Smart City & Traffic Management | Urban Planner | Collecting and analyzing traffic data across a city requires expensive infrastructure and manual data processing | Edge-deployed video analysis at intersections provides real-time traffic flow data, incident detection, and pedestrian safety monitoring powered by AI agents |
+
+</details>
+
+<br /><br />
+
+<h2><img src="./docs/images/readme/supporting-documentation.png" width="48" />
+Supporting documentation
+</h2>
+
+### Security guidelines
+
+
+<br/>
+
+### Cross references
+Check out similar solution accelerators
+
+| Solution Accelerator | Description |
+|---|---|
+| [Document Knowledge Mining](https://github.com/microsoft/Document-Knowledge-Mining-Solution-Accelerator) | Extract structured information from unstructured documents using AI |
+| [Modernize your Code](https://github.com/microsoft/Modernize-your-Code-Solution-Accelerator) | Automate the translation of SQL queries between different dialects |
+| [Conversation Knowledge Mining](https://github.com/microsoft/Conversation-Knowledge-Mining-Solution-Accelerator) | Enable organizations to derive insights from volumes of conversational data using generative AI |
+
+<br/>
+
+## Provide feedback
+
+Have questions, find a bug, or want to request a feature? [Submit a new issue](https://github.com/microsoft/EdgeAI-Video-Agents-Solution/issues) on this repo and we'll connect.
+
+<br/>
+
+## Responsible AI Transparency FAQ
+Please refer to [Transparency FAQ](./docs/TRANSPARENCY_FAQ.md) for responsible AI transparency details of this solution accelerator.
+
+<br/>
+
+## Disclaimers
+This release is an artificial intelligence (AI) system that generates text based on user input. The text generated by this system may include ungrounded content, meaning that it is not verified by any reliable source or based on any factual data. The data included in this release is synthetic, meaning that it is artificially created by the system and may contain factual errors or inconsistencies. Users of this release are responsible for determining the accuracy, validity, and suitability of any content generated by the system for their intended purposes. Users should not rely on the system output as a source of truth or as a substitute for human judgment or expertise.
+
+This release only supports English language input and output. Users should not attempt to use the system with any other language or format. The system output may not be compatible with any translation tools or services, and may lose its meaning or coherence if translated.
+
+This release does not reflect the opinions, views, or values of Microsoft Corporation or any of its affiliates, subsidiaries, or partners. The system output is solely based on the system's own logic and algorithms, and does not represent any endorsement, recommendation, or advice from Microsoft or any other entity. Microsoft disclaims any liability or responsibility for any damages, losses, or harms arising from the use of this release or its output by any user or third party.
+
+This release does not provide any financial advice, legal advice and is not designed to replace the role of qualified client advisors in appropriately advising clients. Users should not use the system output for any financial decisions, legal guidance or transactions, and should consult with a professional financial  advisor and or legal advisor as appropriate before taking any action based on the system output. Microsoft is not a financial institution or a fiduciary, and does not offer any financial products or services through this release or its output.
+
+This release is intended as a proof of concept only, and is not a finished or polished product. It is not intended for commercial use or distribution, and is subject to change or discontinuation without notice. Any planned deployment of this release or its output should include comprehensive testing and evaluation to ensure it is fit for purpose and meets the user's requirements and expectations. Microsoft does not guarantee the quality, performance, reliability, or availability of this release or its output, and does not provide any warranty or support for it.
+
+This Software requires the use of third-party components which are governed by separate proprietary or open-source licenses as identified below, and you must comply with the terms of each applicable license in order to use the Software. You acknowledge and agree that this license does not grant you a license or other right to use any such third-party proprietary or open-source components.
+
+To the extent that the Software includes components or code used in or derived from Microsoft products or services, including without limitation Microsoft Azure Services (collectively, "Microsoft Products and Services"), you must also comply with the Product Terms applicable to such Microsoft Products and Services. You acknowledge and agree that the license governing the Software does not grant you a license or other right to use Microsoft Products and Services. Nothing in the license or this ReadMe file will serve to supersede, amend, terminate or modify any terms in the Product Terms for any Microsoft Products and Services.
+
+You must also comply with all domestic and international export laws and regulations that apply to the Software, which include restrictions on destinations, end users, and end use. For further information on export restrictions, visit https://aka.ms/exporting.
+
+You acknowledge that the Software and Microsoft Products and Services (1) are not designed, intended or made available as a medical device(s), and (2) are not designed or intended to be a substitute for professional medical advice, diagnosis, treatment, or judgment and should not be used to replace or as a substitute for professional medical advice, diagnosis, treatment, or judgment. Customer is solely responsible for displaying and/or obtaining appropriate consents, warnings, disclaimers, and acknowledgements to end users of Customer's implementation of the Online Services.
+
+You acknowledge the Software is not subject to SOC 1 and SOC 2 compliance audits. No Microsoft technology, nor any of its component technologies, including the Software, is intended or made available as a substitute for the professional advice, opinion, or judgment of a certified financial services professional. Do not use the Software to replace, substitute, or provide professional financial advice or judgment.
+
+BY ACCESSING OR USING THE SOFTWARE, YOU ACKNOWLEDGE THAT THE SOFTWARE IS NOT DESIGNED OR INTENDED TO SUPPORT ANY USE IN WHICH A SERVICE INTERRUPTION, DEFECT, ERROR, OR OTHER FAILURE OF THE SOFTWARE COULD RESULT IN THE DEATH OR SERIOUS BODILY INJURY OF ANY PERSON OR IN PHYSICAL OR ENVIRONMENTAL DAMAGE (COLLECTIVELY, "HIGH-RISK USE"), AND THAT YOU WILL ENSURE THAT, IN THE EVENT OF ANY INTERRUPTION, DEFECT, ERROR, OR OTHER FAILURE OF THE SOFTWARE, THE SAFETY OF PEOPLE, PROPERTY, AND THE ENVIRONMENT ARE NOT REDUCED BELOW A LEVEL THAT IS REASONABLY, APPROPRIATE, AND LEGAL, WHETHER IN GENERAL OR IN A SPECIFIC INDUSTRY. BY ACCESSING THE SOFTWARE, YOU FURTHER ACKNOWLEDGE THAT YOUR HIGH-RISK USE OF THE SOFTWARE IS AT YOUR OWN RISK.
