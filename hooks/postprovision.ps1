@@ -69,10 +69,79 @@ else {
 azd env set AZURE_ARC_CLUSTER_NAME "$ARC_CLUSTER_NAME"
 
 # =====================================================
-# Step 3: Deploy VI Arc Extension via Bicep
+# Step 3: Create Public IP and construct Endpoint URI
 # =====================================================
 Write-Host ""
-Write-Host ">> Step 3: Deploying Video Indexer Arc extension..."
+Write-Host ">> Step 3: Creating Public IP and constructing Video Indexer endpoint URI..."
+
+# Get AKS managed cluster resource group
+$AKS_MC_RG = (az aks show `
+        --resource-group "$env:AZURE_RESOURCE_GROUP" `
+        --name "$env:AZURE_AKS_CLUSTER_NAME" `
+        --query "nodeResourceGroup" -o tsv)
+
+Write-Host "   AKS MC resource group: $AKS_MC_RG"
+
+# Generate or reuse DNS label
+if ($env:AZURE_DNS_LABEL) {
+    $DNS_LABEL = $env:AZURE_DNS_LABEL
+    Write-Host "   Reusing existing DNS label: $DNS_LABEL"
+}
+else {
+    $RANDOM_SUFFIX = Get-Random -Minimum 100 -Maximum 999
+    $DNS_LABEL = "$($env:AZURE_ENV_NAME)$RANDOM_SUFFIX"
+    Write-Host "   Generated DNS label: $DNS_LABEL"
+}
+
+$PUBLIC_IP_NAME = "$($env:AZURE_ENV_NAME)-inbound-ip"
+
+# Check if public IP already exists
+$PUBLIC_IP_EXISTS = $null
+try {
+    $PUBLIC_IP_EXISTS = (az network public-ip show `
+            --resource-group "$AKS_MC_RG" `
+            --name "$PUBLIC_IP_NAME" `
+            --query "name" -o tsv 2>$null)
+}
+catch {
+    $PUBLIC_IP_EXISTS = $null
+}
+
+if ($PUBLIC_IP_EXISTS) {
+    Write-Host "   Public IP '$PUBLIC_IP_NAME' already exists. Skipping creation."
+}
+else {
+    az network public-ip create `
+        --resource-group "$AKS_MC_RG" `
+        --name "$PUBLIC_IP_NAME" `
+        --sku Standard `
+        --allocation-method Static `
+        --dns-name "$DNS_LABEL"
+    Write-Host "   Public IP '$PUBLIC_IP_NAME' created with DNS label '$DNS_LABEL'."
+}
+
+# Get the static IP address
+$STATIC_IP = (az network public-ip show `
+        --resource-group "$AKS_MC_RG" `
+        --name "$PUBLIC_IP_NAME" `
+        --query "ipAddress" -o tsv)
+
+Write-Host "   Static IP: $STATIC_IP"
+
+# Construct endpoint URI
+$VIDEO_INDEXER_ENDPOINT_URI = "https://${DNS_LABEL}.$($env:AZURE_LOCATION).cloudapp.azure.com"
+Write-Host "   Endpoint URI: $VIDEO_INDEXER_ENDPOINT_URI"
+
+# Persist to azd env
+azd env set AZURE_DNS_LABEL "$DNS_LABEL"
+azd env set AZURE_STATIC_IP "$STATIC_IP"
+azd env set AZURE_VIDEO_INDEXER_ENDPOINT_URI "$VIDEO_INDEXER_ENDPOINT_URI"
+
+# =====================================================
+# Step 4: Deploy VI Arc Extension via Bicep
+# =====================================================
+Write-Host ""
+Write-Host ">> Step 4: Deploying Video Indexer Arc extension..."
 
 az deployment group create `
     --resource-group "$env:AZURE_RESOURCE_GROUP" `
@@ -80,7 +149,8 @@ az deployment group create `
     --parameters `
     arcConnectedClusterName="$ARC_CLUSTER_NAME" `
     accountId="$env:AZURE_VIDEO_INDEXER_ACCOUNT_ID" `
-    accountResourceId="$env:AZURE_VIDEO_INDEXER_ACCOUNT_RESOURCE_ID"
+    accountResourceId="$env:AZURE_VIDEO_INDEXER_ACCOUNT_RESOURCE_ID" `
+    videoIndexerEndpointUri="$VIDEO_INDEXER_ENDPOINT_URI"
 
 Write-Host "   Video Indexer Arc extension deployed."
 

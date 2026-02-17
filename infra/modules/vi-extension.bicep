@@ -20,9 +20,6 @@ param extensionName string = 'videoindexer'
 @description('Release train for the extension')
 param releaseTrain string = 'stable'
 
-@description('Extension version')
-param version string
-
 @description('Whether to use GPU for summarization')
 param useGpuForSummarization bool = false
 
@@ -93,7 +90,6 @@ resource extension 'Microsoft.KubernetesConfiguration/extensions@2022-11-01' = {
     extensionType: 'microsoft.videoindexer'
     autoUpgradeMinorVersion: true
     releaseTrain: releaseTrain
-    version: version
     scope: {
       cluster: {}
     }
