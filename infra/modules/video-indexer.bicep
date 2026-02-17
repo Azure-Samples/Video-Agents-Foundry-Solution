@@ -26,6 +26,7 @@ resource videoIndexerAccount 'Microsoft.VideoIndexer/accounts@2024-01-01' = {
   properties: {
     storageServices: {
       resourceId: storageAccountId
+      userAssignedIdentity: managedIdentityId
     }
   }
 }

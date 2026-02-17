@@ -8,7 +8,7 @@ param location string
 param tags object = {}
 
 @description('Kubernetes version')
-param kubernetesVersion string = '1.29'
+param kubernetesVersion string = '1.32.10'
 
 @description('VM size for the system node pool')
 param systemVmSize string = 'Standard_DS2_v2'

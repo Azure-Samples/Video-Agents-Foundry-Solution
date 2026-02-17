@@ -23,7 +23,7 @@ param principalId string = ''
 param createRoleForUser bool = true
 
 @description('Kubernetes version for the AKS cluster')
-param kubernetesVersion string = '1.29'
+param kubernetesVersion string = '1.32'
 
 @description('VM size for the GPU node pool')
 param gpuVmSize string = 'Standard_NC4as_T4_v3'
