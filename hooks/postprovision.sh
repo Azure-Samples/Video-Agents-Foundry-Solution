@@ -125,10 +125,24 @@ azd env set AZURE_STATIC_IP "${STATIC_IP}"
 azd env set AZURE_VIDEO_INDEXER_ENDPOINT_URI "${VIDEO_INDEXER_ENDPOINT_URI}"
 
 # =====================================================
-# Step 4: Deploy VI Arc Extension via Bicep
+# Step 4: Deploy Cert Manager via Bicep
 # =====================================================
 echo ""
-echo ">> Step 4: Deploying Video Indexer Arc extension..."
+echo ">> Step 4: Deploying Cert Manager extension..."
+
+az deployment group create \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
+    --template-file ./infra/modules/cert-manager.bicep \
+    --parameters \
+        arcConnectedClusterName="$ARC_CLUSTER_NAME"
+
+echo "   Cert Manager extension deployed."
+
+# =====================================================
+# Step 5: Deploy VI Arc Extension via Bicep
+# =====================================================
+echo ""
+echo ">> Step 5: Deploying Video Indexer Arc extension..."
 
 az deployment group create \
     --resource-group "$AZURE_RESOURCE_GROUP" \
