@@ -63,7 +63,7 @@ infra/
     storage.bicep          # Storage Account + Blob container
     managed-identity.bicep # User-Assigned Managed Identity + role assignments
     aks.bicep              # AKS Cluster with GPU node pool
-    video-indexer.bicep    # Video Indexer Account
+    vi-account.bicep       # Video Indexer Account
     vi-extension.bicep     # Video Indexer Arc Extension on Arc-connected cluster
 hooks/
   postprovision.ps1       # Post-provision: Arc-connect AKS cluster
@@ -183,7 +183,7 @@ hooks/
 
 ---
 
-### 5. `infra/modules/video-indexer.bicep` - Video Indexer Account
+### 5. `infra/modules/vi-account.bicep` - Video Indexer Account
 
 **Deployment scope:** `resourceGroup`
 

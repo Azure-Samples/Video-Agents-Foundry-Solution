@@ -105,7 +105,7 @@ module aks 'modules/aks.bicep' = {
 // Module: Video Indexer Account
 // =====================================================
 
-module videoIndexer 'modules/video-indexer.bicep' = {
+module videoIndexer 'modules/vi-account.bicep' = {
   name: 'video-indexer-deployment'
   scope: rg
   params: {

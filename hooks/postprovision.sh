@@ -69,8 +69,6 @@ azd env set AZURE_ARC_CLUSTER_NAME "$ARC_CLUSTER_NAME"
 echo ""
 echo ">> Step 3: Deploying Video Indexer Arc extension..."
 
-# Get the VI extension version (latest stable)
-VI_EXTENSION_VERSION=${VI_EXTENSION_VERSION:-"1.0.0"}
 
 az deployment group create \
     --resource-group "$AZURE_RESOURCE_GROUP" \
@@ -78,8 +76,7 @@ az deployment group create \
     --parameters \
         arcConnectedClusterName="$ARC_CLUSTER_NAME" \
         accountId="$AZURE_VIDEO_INDEXER_ACCOUNT_ID" \
-        accountResourceId="$AZURE_VIDEO_INDEXER_ACCOUNT_RESOURCE_ID" \
-        version="$VI_EXTENSION_VERSION"
+        accountResourceId="$AZURE_VIDEO_INDEXER_ACCOUNT_RESOURCE_ID"
 
 echo "   Video Indexer Arc extension deployed."
 
