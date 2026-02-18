@@ -25,13 +25,13 @@ param createRoleForUser bool = true
 @description('Kubernetes version for the AKS cluster')
 param kubernetesVersion string = '1.32'
 
-@description('VM size for the GPU node pool')
-param gpuVmSize string = 'Standard_NC4as_T4_v3'
+@description('VM size for the GPU Deepstream node pool')
+param gpuVmSize string = 'Standard_NC40ads_H100_v5'
 
-@description('Number of GPU nodes in the AKS cluster')
+@description('Maximum number of GPU Deepstream nodes')
 @minValue(1)
 @maxValue(10)
-param gpuNodeCount int = 1
+param gpuMaxNodeCount int = 1
 
 // =====================================================
 // Variables
@@ -97,7 +97,7 @@ module aks 'modules/aks.bicep' = {
     tags: tags
     kubernetesVersion: kubernetesVersion
     gpuVmSize: gpuVmSize
-    gpuNodeCount: gpuNodeCount
+    gpuMaxNodeCount: gpuMaxNodeCount
   }
 }
 
