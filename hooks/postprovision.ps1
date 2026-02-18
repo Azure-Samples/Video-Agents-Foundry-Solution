@@ -36,11 +36,29 @@ az aks get-credentials `
 Write-Host "   AKS credentials configured."
 
 # =====================================================
-# Step 2: Connect AKS to Azure Arc
+# Step 2: Install NVIDIA GPU Operator
+# =====================================================
+Write-Host ""
+Write-Host ">> Step 2: Installing NVIDIA GPU Operator..."
+
+# Add NVIDIA Helm repo (idempotent)
+helm repo add nvidia https://helm.ngc.nvidia.com/nvidia 2>$null
+helm repo update
+
+# Install or upgrade the GPU operator
+helm upgrade -i gpu-operator --wait `
+    -n gpu-operator --create-namespace `
+    --version v25.10.01 `
+    nvidia/gpu-operator
+
+Write-Host "   NVIDIA GPU Operator installed."
+
+# =====================================================
+# Step 3: Connect AKS to Azure Arc
 # =====================================================
 $ARC_CLUSTER_NAME = "arc-$env:AZURE_AKS_CLUSTER_NAME"
 Write-Host ""
-Write-Host ">> Step 2: Connecting AKS cluster to Azure Arc as '$ARC_CLUSTER_NAME'..."
+Write-Host ">> Step 3: Connecting AKS cluster to Azure Arc as '$ARC_CLUSTER_NAME'..."
 
 # Check if already connected
 $ARC_EXISTS = $null
@@ -69,10 +87,10 @@ else {
 azd env set AZURE_ARC_CLUSTER_NAME "$ARC_CLUSTER_NAME"
 
 # =====================================================
-# Step 3: Create Public IP and construct Endpoint URI
+# Step 4: Create Public IP and construct Endpoint URI
 # =====================================================
 Write-Host ""
-Write-Host ">> Step 3: Creating Public IP and constructing Video Indexer endpoint URI..."
+Write-Host ">> Step 4: Creating Public IP and constructing Video Indexer endpoint URI..."
 
 # Get AKS managed cluster resource group
 $AKS_MC_RG = (az aks show `
@@ -138,10 +156,10 @@ azd env set AZURE_STATIC_IP "$STATIC_IP"
 azd env set AZURE_VIDEO_INDEXER_ENDPOINT_URI "$VIDEO_INDEXER_ENDPOINT_URI"
 
 # =====================================================
-# Step 4: Deploy Cert Manager via Bicep
+# Step 5: Deploy Cert Manager via Bicep
 # =====================================================
 Write-Host ""
-Write-Host ">> Step 4: Deploying Cert Manager extension..."
+Write-Host ">> Step 5: Deploying Cert Manager extension..."
 
 az deployment group create `
     --resource-group "$env:AZURE_RESOURCE_GROUP" `
@@ -152,10 +170,10 @@ az deployment group create `
 Write-Host "   Cert Manager extension deployed."
 
 # =====================================================
-# Step 5: Deploy VI Arc Extension via Bicep
+# Step 6: Deploy VI Arc Extension via Bicep
 # =====================================================
 Write-Host ""
-Write-Host ">> Step 5: Deploying Video Indexer Arc extension..."
+Write-Host ">> Step 6: Deploying Video Indexer Arc extension..."
 
 az deployment group create `
     --resource-group "$env:AZURE_RESOURCE_GROUP" `
