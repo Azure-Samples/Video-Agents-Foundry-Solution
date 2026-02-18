@@ -96,6 +96,20 @@ resource aksCluster 'Microsoft.ContainerService/managedClusters@2024-09-01' = {
         type: 'VirtualMachineScaleSets'
       }
       {
+        name: 'workload'
+        count: 0
+        minCount: 0
+        maxCount: 10
+        vmSize: 'Standard_D32a_v4'
+        osType: 'Linux'
+        osSKU: 'AzureLinux'
+        osDiskSizeGB: 100
+        mode: 'User'
+        enableAutoScaling: true
+        type: 'VirtualMachineScaleSets'
+        maxPods: 110
+      }
+      {
         name: 'gpudeepstrm'
         count: 0
         minCount: 0
