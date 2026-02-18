@@ -13,6 +13,9 @@ param kubernetesVersion string = '1.32'
 @description('VM size for the system node pool')
 param systemVmSize string = 'Standard_D4a_v4'
 
+@description('VM size for the workload node pool')
+param workloadVmSize string = 'Standard_D32a_v4'
+
 @description('VM size for the GPU Deepstream node pool')
 param gpuVmSize string = 'Standard_NC40ads_H100_v5'
 
@@ -100,7 +103,7 @@ resource aksCluster 'Microsoft.ContainerService/managedClusters@2024-09-01' = {
         count: 0
         minCount: 0
         maxCount: 10
-        vmSize: 'Standard_D32a_v4'
+        vmSize: workloadVmSize
         osType: 'Linux'
         osSKU: 'AzureLinux'
         osDiskSizeGB: 100
