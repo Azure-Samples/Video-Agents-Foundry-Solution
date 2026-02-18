@@ -133,3 +133,6 @@ output oidcIssuerUrl string = aksCluster.properties.oidcIssuerProfile.issuerURL
 
 @description('Deepstream workload label value used for node selection')
 output deepstreamWorkloadLabelValue string = deepstreamWorkloadLabel
+
+@description('AKS node resource group name')
+output nodeResourceGroup string = aksCluster.properties.nodeResourceGroup

@@ -103,6 +103,25 @@ module aks 'modules/aks.bicep' = {
 }
 
 // =====================================================
+// Module: Policy Exemption for AKS CSI Driver
+// =====================================================
+// The AKS Azure File CSI driver creates storage accounts with shared key
+// access in the node resource group. The subscription-level policy
+// 'PreventSharedKeyAccessForStorageAccount' blocks this. This exemption
+// narrows the exception to only the AKS node RG.
+
+var aksNodeResourceGroup = '${abbrs.aksCluster}${resourceToken}-nodes'
+
+module policyExemption 'modules/policy-exemption.bicep' = {
+  name: 'policy-exemption-deployment'
+  scope: resourceGroup(aksNodeResourceGroup)
+  dependsOn: [aks]
+  params: {
+    policyAssignmentId: '/subscriptions/${subscription().subscriptionId}/providers/Microsoft.Authorization/policyAssignments/PreventSharedKeyAccessForStorageAccount'
+  }
+}
+
+// =====================================================
 // Module: Video Indexer Account
 // =====================================================
 
