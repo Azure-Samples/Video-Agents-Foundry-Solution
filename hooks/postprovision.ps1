@@ -182,3 +182,6 @@ Write-Host "  - Arc Cluster:      $ARC_CLUSTER_NAME"
 Write-Host "  - VI Account:       $env:AZURE_VIDEO_INDEXER_ACCOUNT_NAME"
 Write-Host "  - Storage Account:  $env:AZURE_STORAGE_ACCOUNT_NAME"
 Write-Host ""
+
+Write-Host "You can access the Video Indexer portal at: $VIDEO_INDEXER_ENDPOINT_URI"
+Start-Process $VIDEO_INDEXER_ENDPOINT_URI

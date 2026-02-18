@@ -169,3 +169,10 @@ echo "  - Arc Cluster:      $ARC_CLUSTER_NAME"
 echo "  - VI Account:       $AZURE_VIDEO_INDEXER_ACCOUNT_NAME"
 echo "  - Storage Account:  $AZURE_STORAGE_ACCOUNT_NAME"
 echo ""
+
+echo "You can access the Video Indexer portal at: $VIDEO_INDEXER_ENDPOINT_URI"
+case "$(uname)" in
+    Darwin*) open "$URL" ;;
+    Linux*) xdg-open "$URL" ;;
+    *) echo "Unsupported OS" ;;
+esac
