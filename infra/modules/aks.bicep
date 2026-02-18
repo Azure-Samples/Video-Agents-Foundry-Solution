@@ -27,6 +27,9 @@ param dnsPrefix string = name
 @description('Node resource group name')
 param nodeResourceGroup string = '${name}-nodes'
 
+@description('Node label value used to target deepstream workloads')
+var deepstreamWorkloadLabel = 'deepstream'
+
 resource aksCluster 'Microsoft.ContainerService/managedClusters@2024-09-01' = {
   name: name
   location: location
@@ -108,7 +111,7 @@ resource aksCluster 'Microsoft.ContainerService/managedClusters@2024-09-01' = {
           'nvidia.com/gpu=true:NoSchedule'
         ]
         nodeLabels: {
-          workload: 'deepstream'
+          workload: deepstreamWorkloadLabel
         }
         maxPods: 110
       }
@@ -127,3 +130,6 @@ output principalId string = aksCluster.identity.principalId
 
 @description('AKS OIDC issuer URL')
 output oidcIssuerUrl string = aksCluster.properties.oidcIssuerProfile.issuerURL
+
+@description('Deepstream workload label value used for node selection')
+output deepstreamWorkloadLabelValue string = deepstreamWorkloadLabel

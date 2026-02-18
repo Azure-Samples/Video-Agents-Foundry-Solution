@@ -133,3 +133,4 @@ output AZURE_VIDEO_INDEXER_ACCOUNT_NAME string = videoIndexer.outputs.name
 output AZURE_STORAGE_ACCOUNT_ID string = storage.outputs.id
 output AZURE_PRINCIPAL_ID string = principalId
 output CREATE_ROLE_FOR_USER bool = createRoleForUser
+output AZURE_DEEPSTREAM_NODE_SELECTOR_VALUE string = aks.outputs.deepstreamWorkloadLabelValue

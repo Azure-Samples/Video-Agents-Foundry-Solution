@@ -26,6 +26,9 @@ param useGpuForSummarization bool = false
 @description('Tolerations key for GPU scheduling')
 param tolerationsKeyForGpu string = 'nvidia.com/gpu'
 
+@description('Node selector value for deepstream workloads')
+param deepstreamNodeSelectorValue string
+
 @description('Enable live video stream')
 param liveVideoStreamEnabled bool = true
 
@@ -36,16 +39,10 @@ param agentsEnabled bool = true
 param mediaUploadsEnabled bool = true
 
 @description('Enable live summarization')
-param liveSummarizationEnabled bool = true
+param liveSummarizationEnabled bool = false
 
 @description('Enable media server streams')
 param mediaServerStreamsEnabled bool = true
-
-@description('APIM internals base URL')
-param apimInternalsBaseUrl string = ''
-
-@description('APIM operations base URL')
-param apimOperationsBaseUrl string = ''
 
 // Base config properties
 @description('Storage class for persistent volumes')
@@ -57,24 +54,15 @@ var baseConfigProperties = {
   'videoIndexer.accountResourceId': accountResourceId
   'videoIndexer.mediaUploadsEnabled': string(mediaUploadsEnabled)
   'videoIndexer.liveVideoStreamEnabled': string(liveVideoStreamEnabled)
-  'videoIndexer.agents.enabled': agentsEnabled
+  'videoIndexer.agents.enabled': string(agentsEnabled)
   'ViAi.mediaServerStreams.enabled': string(mediaServerStreamsEnabled)
   'storage.storageClass': storageClass
   'storage.accessMode': 'ReadWriteMany'
   'ViAi.gpu.enabled': string(useGpuForSummarization)
   'ViAi.gpu.tolerations.key': tolerationsKeyForGpu
+  'ViAi.deepstream.nodeSelector.workload': deepstreamNodeSelectorValue
   'ViAi.LiveSummarization.enabled': string(liveSummarizationEnabled)
 }
-
-// Add APIM URLs if provided
-var apimConfigProperties = !empty(apimInternalsBaseUrl) && !empty(apimOperationsBaseUrl)
-  ? {
-      'videoIndexer.webApi.config.apimInternalsBaseUrl': apimInternalsBaseUrl
-      'videoIndexer.webApi.config.apimOperationsBaseUrl': apimOperationsBaseUrl
-    }
-  : {}
-
-var extensionConfigProperties = union(baseConfigProperties, apimConfigProperties)
 
 resource connectedCluster 'Microsoft.Kubernetes/connectedClusters@2024-01-01' existing = {
   name: arcConnectedClusterName
@@ -93,7 +81,7 @@ resource extension 'Microsoft.KubernetesConfiguration/extensions@2022-11-01' = {
     scope: {
       cluster: {}
     }
-    configurationSettings: extensionConfigProperties
+    configurationSettings: baseConfigProperties
   }
 }
 

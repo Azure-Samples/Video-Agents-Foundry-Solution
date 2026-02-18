@@ -230,7 +230,8 @@ az deployment group create \
         arcConnectedClusterName="$ARC_CLUSTER_NAME" \
         accountId="$AZURE_VIDEO_INDEXER_ACCOUNT_ID" \
         accountResourceId="$AZURE_VIDEO_INDEXER_ACCOUNT_RESOURCE_ID" \
-        videoIndexerEndpointUri="$VIDEO_INDEXER_ENDPOINT_URI"
+        videoIndexerEndpointUri="$VIDEO_INDEXER_ENDPOINT_URI" \
+        deepstreamNodeSelectorValue="$AZURE_DEEPSTREAM_NODE_SELECTOR_VALUE"
 
 echo "   Video Indexer Arc extension deployed."
 
