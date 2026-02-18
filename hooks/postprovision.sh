@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 # =============================================================================
 # Post-Provision Script: Connect AKS to Azure Arc and deploy VI extension
@@ -15,7 +15,57 @@ if [ "$CREATE_IN_LOCAL" = "false" ]; then
     exit 0
 fi
 
-# Check if the Azure CLI is authenticated
+# =====================================================
+# Validate required environment variables
+# =====================================================
+MISSING_VARS=""
+for var in AZURE_SUBSCRIPTION_ID AZURE_RESOURCE_GROUP AZURE_AKS_CLUSTER_NAME \
+           AZURE_LOCATION AZURE_ENV_NAME AZURE_VIDEO_INDEXER_ACCOUNT_ID \
+           AZURE_VIDEO_INDEXER_ACCOUNT_RESOURCE_ID AZURE_DEEPSTREAM_NODE_SELECTOR_VALUE; do
+    eval val=\$$var
+    if [ -z "$val" ]; then
+        MISSING_VARS="${MISSING_VARS}  - ${var}
+"
+    fi
+done
+
+if [ -n "$MISSING_VARS" ]; then
+    echo "ERROR: The following required environment variables are not set:" >&2
+    printf "%s" "$MISSING_VARS" >&2
+    echo "Run 'azd env get-values' to check your environment." >&2
+    exit 1
+fi
+
+# =====================================================
+# Check prerequisites
+# =====================================================
+for cmd in helm kubectl az; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+        echo "ERROR: '$cmd' is required but not found in PATH." >&2
+        exit 1
+    fi
+done
+
+for ext in connectedk8s k8s-extension; do
+    if ! az extension show --name "$ext" >/dev/null 2>&1; then
+        echo "Installing Azure CLI extension: $ext"
+        az extension add --name "$ext" --yes
+    fi
+done
+
+# =====================================================
+# Register required Azure providers
+# =====================================================
+echo ""
+echo ">> Registering required Azure resource providers..."
+for provider in Microsoft.Kubernetes Microsoft.KubernetesConfiguration Microsoft.ExtendedLocation; do
+    az provider register --namespace "$provider" --wait false 2>/dev/null || true
+done
+echo "   Provider registration initiated."
+
+# =====================================================
+# Authenticate and set subscription
+# =====================================================
 EXPIRED_TOKEN=$(az ad signed-in-user show --query 'id' -o tsv 2>/dev/null || true)
 
 if [ -z "$EXPIRED_TOKEN" ]; then
@@ -23,7 +73,12 @@ if [ -z "$EXPIRED_TOKEN" ]; then
     az login -o none
 fi
 
-az account set -s $AZURE_SUBSCRIPTION_ID
+az account set -s "$AZURE_SUBSCRIPTION_ID"
+
+# =====================================================
+# Configuration
+# =====================================================
+GPU_OPERATOR_VERSION="${GPU_OPERATOR_VERSION:-v25.10.01}"
 
 # =====================================================
 # Step 1: Get AKS credentials
@@ -33,15 +88,18 @@ echo ">> Step 1: Getting AKS cluster credentials..."
 az aks get-credentials \
     --resource-group "$AZURE_RESOURCE_GROUP" \
     --name "$AZURE_AKS_CLUSTER_NAME" \
+    --admin \
     --overwrite-existing
 
-echo "   AKS credentials configured."
+KUBE_CONTEXT="${AZURE_AKS_CLUSTER_NAME}-admin"
+
+echo "   AKS credentials configured (context: ${KUBE_CONTEXT})."
 
 # =====================================================
 # Step 2: Install NVIDIA GPU Operator
 # =====================================================
 echo ""
-echo ">> Step 2: Installing NVIDIA GPU Operator..."
+echo ">> Step 2: Installing NVIDIA GPU Operator (${GPU_OPERATOR_VERSION})..."
 
 # Add NVIDIA Helm repo (idempotent)
 helm repo add nvidia https://helm.ngc.nvidia.com/nvidia 2>/dev/null || true
@@ -50,7 +108,8 @@ helm repo update
 # Install or upgrade the GPU operator
 helm upgrade -i gpu-operator --wait \
     -n gpu-operator --create-namespace \
-    --version v25.10.01 \
+    --version "$GPU_OPERATOR_VERSION" \
+    --kube-context "$KUBE_CONTEXT" \
     nvidia/gpu-operator
 
 echo "   NVIDIA GPU Operator installed."
@@ -100,7 +159,7 @@ if [ -n "$AZURE_DNS_LABEL" ]; then
     DNS_LABEL="$AZURE_DNS_LABEL"
     echo "   Reusing existing DNS label: ${DNS_LABEL}"
 else
-    RANDOM_SUFFIX=$(shuf -i 100-999 -n 1)
+    RANDOM_SUFFIX=$((RANDOM % 900 + 100))
     DNS_LABEL="${AZURE_ENV_NAME}${RANDOM_SUFFIX}"
     echo "   Generated DNS label: ${DNS_LABEL}"
 fi
@@ -148,11 +207,19 @@ azd env set AZURE_VIDEO_INDEXER_ENDPOINT_URI "${VIDEO_INDEXER_ENDPOINT_URI}"
 echo ""
 echo ">> Step 5: Enabling App Routing on AKS cluster..."
 
-az aks approuting enable \
-    -g "$AZURE_RESOURCE_GROUP" \
-    -n "$AZURE_AKS_CLUSTER_NAME"
+APPROUTING_ENABLED=$(az aks show \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
+    --name "$AZURE_AKS_CLUSTER_NAME" \
+    --query "ingressProfile.webAppRouting.enabled" -o tsv 2>/dev/null || true)
 
-echo "   App Routing enabled."
+if [ "$APPROUTING_ENABLED" = "true" ]; then
+    echo "   App Routing already enabled. Skipping."
+else
+    az aks approuting enable \
+        -g "$AZURE_RESOURCE_GROUP" \
+        -n "$AZURE_AKS_CLUSTER_NAME"
+    echo "   App Routing enabled."
+fi
 
 # =====================================================
 # Step 6: Create Nginx Ingress Controller (HTTP only)
@@ -160,7 +227,7 @@ echo "   App Routing enabled."
 echo ""
 echo ">> Step 6: Creating Nginx Ingress Controller..."
 
-cat <<EOF | kubectl apply -f -
+cat <<EOF | kubectl --context "$KUBE_CONTEXT" apply -f -
 apiVersion: approuting.kubernetes.azure.com/v1alpha1
 kind: NginxIngressController
 metadata:
@@ -186,7 +253,7 @@ TIMEOUT=120
 ELAPSED=0
 EXTERNAL_IP=""
 while [ $ELAPSED -lt $TIMEOUT ]; do
-    EXTERNAL_IP=$(kubectl get svc nginx -n app-routing-system -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+    EXTERNAL_IP=$(kubectl --context "$KUBE_CONTEXT" get svc nginx -n app-routing-system -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
     if [ -n "$EXTERNAL_IP" ]; then
         break
     fi
@@ -197,10 +264,10 @@ done
 if [ -n "$EXTERNAL_IP" ]; then
     echo "   Ingress Controller is ready."
     echo "   External IP: ${EXTERNAL_IP}"
-    kubectl get svc nginx -n app-routing-system
+    kubectl --context "$KUBE_CONTEXT" get svc nginx -n app-routing-system
 else
     echo "   WARNING: External IP not yet assigned after ${TIMEOUT}s. Check manually:"
-    echo "   kubectl get svc nginx -n app-routing-system -w"
+    echo "   kubectl --context ${KUBE_CONTEXT} get svc nginx -n app-routing-system -w"
 fi
 
 # =====================================================
@@ -236,6 +303,27 @@ az deployment group create \
 echo "   Video Indexer Arc extension deployed."
 
 # =====================================================
+# Step 10: Post-deployment health checks
+# =====================================================
+echo ""
+echo ">> Step 10: Running post-deployment health checks..."
+
+echo -n "   Arc connection status: "
+ARC_STATUS=$(az connectedk8s show \
+    --name "$ARC_CLUSTER_NAME" \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
+    --query "connectivityStatus" -o tsv 2>/dev/null || echo "unknown")
+echo "$ARC_STATUS"
+
+echo -n "   GPU operator pods running: "
+GPU_PODS=$(kubectl --context "$KUBE_CONTEXT" get pods -n gpu-operator --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l | tr -d ' ')
+echo "$GPU_PODS"
+
+echo -n "   VI extension pods running: "
+VI_PODS=$(kubectl --context "$KUBE_CONTEXT" get pods -n video-indexer --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l | tr -d ' ')
+echo "$VI_PODS"
+
+# =====================================================
 # Summary
 # =====================================================
 echo ""
@@ -252,7 +340,7 @@ echo ""
 
 echo "You can access the Video Indexer portal at: $VIDEO_INDEXER_ENDPOINT_URI"
 case "$(uname)" in
-    Darwin*) open "$URL" ;;
-    Linux*) xdg-open "$URL" ;;
+    Darwin*) open "$VIDEO_INDEXER_ENDPOINT_URI" ;;
+    Linux*) xdg-open "$VIDEO_INDEXER_ENDPOINT_URI" ;;
     *) echo "Unsupported OS" ;;
 esac

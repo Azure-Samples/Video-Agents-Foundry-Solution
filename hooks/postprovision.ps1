@@ -13,7 +13,57 @@ if ($env:CREATE_IN_LOCAL -eq "false") {
     exit 0
 }
 
-# Check if the Azure CLI is authenticated
+# =====================================================
+# Validate required environment variables
+# =====================================================
+$requiredVars = @(
+    'AZURE_SUBSCRIPTION_ID',
+    'AZURE_RESOURCE_GROUP',
+    'AZURE_AKS_CLUSTER_NAME',
+    'AZURE_LOCATION',
+    'AZURE_ENV_NAME',
+    'AZURE_VIDEO_INDEXER_ACCOUNT_ID',
+    'AZURE_VIDEO_INDEXER_ACCOUNT_RESOURCE_ID',
+    'AZURE_DEEPSTREAM_NODE_SELECTOR_VALUE'
+)
+
+$missing = $requiredVars | Where-Object { -not (Get-Item "env:$_" -ErrorAction SilentlyContinue) }
+if ($missing) {
+    Write-Error "The following required environment variables are not set:`n  $($missing -join "`n  ")`nRun 'azd env get-values' to check your environment."
+    exit 1
+}
+
+# =====================================================
+# Check prerequisites
+# =====================================================
+foreach ($cmd in @('helm', 'kubectl', 'az')) {
+    if (-not (Get-Command $cmd -ErrorAction SilentlyContinue)) {
+        Write-Error "'$cmd' is required but not found in PATH."
+        exit 1
+    }
+}
+
+foreach ($ext in @('connectedk8s', 'k8s-extension')) {
+    $installed = az extension show --name $ext 2>$null | ConvertFrom-Json -ErrorAction SilentlyContinue
+    if (-not $installed) {
+        Write-Host "Installing Azure CLI extension: $ext"
+        az extension add --name $ext --yes
+    }
+}
+
+# =====================================================
+# Register required Azure providers
+# =====================================================
+Write-Host ""
+Write-Host ">> Registering required Azure resource providers..."
+foreach ($provider in @('Microsoft.Kubernetes', 'Microsoft.KubernetesConfiguration', 'Microsoft.ExtendedLocation')) {
+    az provider register --namespace $provider --wait false 2>$null
+}
+Write-Host "   Provider registration initiated."
+
+# =====================================================
+# Authenticate and set subscription
+# =====================================================
 $EXPIRED_TOKEN = (az ad signed-in-user show --query 'id' -o tsv 2>$null)
 
 if (-not $EXPIRED_TOKEN) {
@@ -24,6 +74,11 @@ if (-not $EXPIRED_TOKEN) {
 az account set -s $env:AZURE_SUBSCRIPTION_ID
 
 # =====================================================
+# Configuration
+# =====================================================
+$gpuOperatorVersion = if ($env:GPU_OPERATOR_VERSION) { $env:GPU_OPERATOR_VERSION } else { "v25.10.01" }
+
+# =====================================================
 # Step 1: Get AKS credentials
 # =====================================================
 Write-Host ""
@@ -31,15 +86,18 @@ Write-Host ">> Step 1: Getting AKS cluster credentials..."
 az aks get-credentials `
     --resource-group "$env:AZURE_RESOURCE_GROUP" `
     --name "$env:AZURE_AKS_CLUSTER_NAME" `
+    --admin `
     --overwrite-existing
 
-Write-Host "   AKS credentials configured."
+$KubeContext = "$($env:AZURE_AKS_CLUSTER_NAME)-admin"
+
+Write-Host "   AKS credentials configured (context: $KubeContext)."
 
 # =====================================================
 # Step 2: Install NVIDIA GPU Operator
 # =====================================================
 Write-Host ""
-Write-Host ">> Step 2: Installing NVIDIA GPU Operator..."
+Write-Host ">> Step 2: Installing NVIDIA GPU Operator ($gpuOperatorVersion)..."
 
 # Add NVIDIA Helm repo (idempotent)
 helm repo add nvidia https://helm.ngc.nvidia.com/nvidia 2>$null
@@ -48,7 +106,8 @@ helm repo update
 # Install or upgrade the GPU operator
 helm upgrade -i gpu-operator --wait `
     -n gpu-operator --create-namespace `
-    --version v25.10.01 `
+    --version $gpuOperatorVersion `
+    --kube-context $KubeContext `
     nvidia/gpu-operator
 
 Write-Host "   NVIDIA GPU Operator installed."
@@ -106,7 +165,7 @@ if ($env:AZURE_DNS_LABEL) {
     Write-Host "   Reusing existing DNS label: $DNS_LABEL"
 }
 else {
-    $RANDOM_SUFFIX = Get-Random -Minimum 100 -Maximum 999
+    $RANDOM_SUFFIX = Get-Random -Minimum 100 -Maximum 1000
     $DNS_LABEL = "$($env:AZURE_ENV_NAME)$RANDOM_SUFFIX"
     Write-Host "   Generated DNS label: $DNS_LABEL"
 }
@@ -161,11 +220,26 @@ azd env set AZURE_VIDEO_INDEXER_ENDPOINT_URI "$VIDEO_INDEXER_ENDPOINT_URI"
 Write-Host ""
 Write-Host ">> Step 5: Enabling App Routing on AKS cluster..."
 
-az aks approuting enable `
-    -g "$env:AZURE_RESOURCE_GROUP" `
-    -n "$env:AZURE_AKS_CLUSTER_NAME"
+$approutingEnabled = $null
+try {
+    $approutingEnabled = (az aks show `
+            --resource-group "$env:AZURE_RESOURCE_GROUP" `
+            --name "$env:AZURE_AKS_CLUSTER_NAME" `
+            --query "ingressProfile.webAppRouting.enabled" -o tsv 2>$null)
+}
+catch {
+    $approutingEnabled = $null
+}
 
-Write-Host "   App Routing enabled."
+if ($approutingEnabled -eq "true") {
+    Write-Host "   App Routing already enabled. Skipping."
+}
+else {
+    az aks approuting enable `
+        -g "$env:AZURE_RESOURCE_GROUP" `
+        -n "$env:AZURE_AKS_CLUSTER_NAME"
+    Write-Host "   App Routing enabled."
+}
 
 # =====================================================
 # Step 6: Create Nginx Ingress Controller (HTTP only)
@@ -186,7 +260,7 @@ spec:
     service.beta.kubernetes.io/azure-load-balancer-resource-group: $AKS_MC_RG
 "@
 
-$NGINX_YAML | kubectl apply -f -
+$NGINX_YAML | kubectl --context $KubeContext apply -f -
 
 Write-Host "   Nginx Ingress Controller created."
 
@@ -202,7 +276,7 @@ $Elapsed = 0
 $ExternalIP = $null
 while ($Elapsed -lt $Timeout) {
     try {
-        $ExternalIP = (kubectl get svc nginx -n app-routing-system -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>$null)
+        $ExternalIP = (kubectl --context $KubeContext get svc nginx -n app-routing-system -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>$null)
     }
     catch {
         $ExternalIP = $null
@@ -217,11 +291,11 @@ while ($Elapsed -lt $Timeout) {
 if ($ExternalIP) {
     Write-Host "   Ingress Controller is ready."
     Write-Host "   External IP: $ExternalIP"
-    kubectl get svc nginx -n app-routing-system
+    kubectl --context $KubeContext get svc nginx -n app-routing-system
 }
 else {
     Write-Host "   WARNING: External IP not yet assigned after ${Timeout}s. Check manually:"
-    Write-Host "   kubectl get svc nginx -n app-routing-system -w"
+    Write-Host "   kubectl --context $KubeContext get svc nginx -n app-routing-system -w"
 }
 
 # =====================================================
@@ -255,6 +329,40 @@ az deployment group create `
     deepstreamNodeSelectorValue="$env:AZURE_DEEPSTREAM_NODE_SELECTOR_VALUE"
 
 Write-Host "   Video Indexer Arc extension deployed."
+
+# =====================================================
+# Step 10: Post-deployment health checks
+# =====================================================
+Write-Host ""
+Write-Host ">> Step 10: Running post-deployment health checks..."
+
+$arcStatus = $null
+try {
+    $arcStatus = (az connectedk8s show `
+            --name "$ARC_CLUSTER_NAME" `
+            --resource-group "$env:AZURE_RESOURCE_GROUP" `
+            --query "connectivityStatus" -o tsv 2>$null)
+}
+catch {
+    $arcStatus = "unknown"
+}
+Write-Host "   Arc connection status: $arcStatus"
+
+try {
+    $gpuPods = (kubectl --context $KubeContext get pods -n gpu-operator --field-selector=status.phase=Running --no-headers 2>$null | Measure-Object -Line).Lines
+}
+catch {
+    $gpuPods = 0
+}
+Write-Host "   GPU operator pods running: $gpuPods"
+
+try {
+    $viPods = (kubectl --context $KubeContext get pods -n video-indexer --field-selector=status.phase=Running --no-headers 2>$null | Measure-Object -Line).Lines
+}
+catch {
+    $viPods = 0
+}
+Write-Host "   VI extension pods running: $viPods"
 
 # =====================================================
 # Summary

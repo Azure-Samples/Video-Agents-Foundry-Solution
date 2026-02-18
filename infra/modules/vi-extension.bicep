@@ -1,14 +1,14 @@
 @description('Video Indexer account ID (GUID)')
-param accountId string = ''
+param accountId string
 
 @description('Video Indexer account resource ID')
-param accountResourceId string = ''
+param accountResourceId string
 
 @description('Video Indexer endpoint URI')
-param videoIndexerEndpointUri string = ''
+param videoIndexerEndpointUri string
 
 @description('Name of the Azure Arc-connected cluster')
-param arcConnectedClusterName string = ''
+param arcConnectedClusterName string
 
 @description('Name of the VI extension')
 param extensionName string = 'videoindexer'
@@ -79,7 +79,9 @@ resource extension 'Microsoft.KubernetesConfiguration/extensions@2022-11-01' = {
     autoUpgradeMinorVersion: true
     releaseTrain: releaseTrain
     scope: {
-      cluster: {}
+      cluster: {
+        releaseNamespace: 'video-indexer'
+      }
     }
     configurationSettings: baseConfigProperties
   }

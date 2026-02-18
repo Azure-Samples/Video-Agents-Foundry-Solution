@@ -41,6 +41,7 @@ var abbrs = loadJsonContent('abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var _resourceGroupName = !empty(resourceGroupName) ? resourceGroupName : '${abbrs.resourceGroup}${environmentName}'
 var tags = {
+  'provisioned-by': 'azd'
   'azd-env-name': environmentName
 }
 
