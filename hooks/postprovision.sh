@@ -21,7 +21,8 @@ fi
 MISSING_VARS=""
 for var in AZURE_SUBSCRIPTION_ID AZURE_RESOURCE_GROUP AZURE_AKS_CLUSTER_NAME \
            AZURE_LOCATION AZURE_ENV_NAME AZURE_VIDEO_INDEXER_ACCOUNT_ID \
-           AZURE_VIDEO_INDEXER_ACCOUNT_RESOURCE_ID AZURE_DEEPSTREAM_NODE_SELECTOR_VALUE; do
+           AZURE_VIDEO_INDEXER_ACCOUNT_RESOURCE_ID AZURE_DEEPSTREAM_NODE_SELECTOR_VALUE \
+           AZURE_AKS_NODE_RESOURCE_GROUP; do
     eval val=\$$var
     if [ -z "$val" ]; then
         MISSING_VARS="${MISSING_VARS}  - ${var}
@@ -146,11 +147,8 @@ azd env set AZURE_ARC_CLUSTER_NAME "$ARC_CLUSTER_NAME"
 echo ""
 echo ">> Step 4: Creating Public IP and constructing Video Indexer endpoint URI..."
 
-# Get AKS managed cluster resource group
-AKS_MC_RG=$(az aks show \
-    --resource-group "$AZURE_RESOURCE_GROUP" \
-    --name "$AZURE_AKS_CLUSTER_NAME" \
-    --query "nodeResourceGroup" -o tsv)
+# Get AKS managed cluster resource group from Bicep output
+AKS_MC_RG="$AZURE_AKS_NODE_RESOURCE_GROUP"
 
 echo "   AKS MC resource group: ${AKS_MC_RG}"
 

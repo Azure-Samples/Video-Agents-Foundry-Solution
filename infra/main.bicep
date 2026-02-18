@@ -134,6 +134,7 @@ module videoIndexer 'modules/vi-account.bicep' = {
 output AZURE_RESOURCE_GROUP string = rg.name
 output AZURE_LOCATION string = location
 output AZURE_AKS_CLUSTER_NAME string = aks.outputs.name
+output AZURE_AKS_NODE_RESOURCE_GROUP string = aks.outputs.nodeResourceGroup
 output AZURE_STORAGE_ACCOUNT_NAME string = storage.outputs.name
 output AZURE_MANAGED_IDENTITY_ID string = managedIdentity.outputs.id
 output AZURE_MANAGED_IDENTITY_CLIENT_ID string = managedIdentity.outputs.clientId

@@ -24,7 +24,8 @@ $requiredVars = @(
     'AZURE_ENV_NAME',
     'AZURE_VIDEO_INDEXER_ACCOUNT_ID',
     'AZURE_VIDEO_INDEXER_ACCOUNT_RESOURCE_ID',
-    'AZURE_DEEPSTREAM_NODE_SELECTOR_VALUE'
+    'AZURE_DEEPSTREAM_NODE_SELECTOR_VALUE',
+    'AZURE_AKS_NODE_RESOURCE_GROUP'
 )
 
 $missing = $requiredVars | Where-Object { -not (Get-Item "env:$_" -ErrorAction SilentlyContinue) }
@@ -151,11 +152,8 @@ azd env set AZURE_ARC_CLUSTER_NAME "$ARC_CLUSTER_NAME"
 Write-Host ""
 Write-Host ">> Step 4: Creating Public IP and constructing Video Indexer endpoint URI..."
 
-# Get AKS managed cluster resource group
-$AKS_MC_RG = (az aks show `
-        --resource-group "$env:AZURE_RESOURCE_GROUP" `
-        --name "$env:AZURE_AKS_CLUSTER_NAME" `
-        --query "nodeResourceGroup" -o tsv)
+# Get AKS managed cluster resource group from Bicep output
+$AKS_MC_RG = $env:AZURE_AKS_NODE_RESOURCE_GROUP
 
 Write-Host "   AKS MC resource group: $AKS_MC_RG"
 
