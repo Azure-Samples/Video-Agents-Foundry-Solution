@@ -16,13 +16,23 @@ param systemVmSize string = 'Standard_D4a_v4'
 @description('VM size for the workload node pool')
 param workloadVmSize string = 'Standard_D32a_v4'
 
-@description('VM size for the GPU Deepstream node pool')
+@description('VM size for the GPU workload node pool')
 param gpuVmSize string = 'Standard_NC40ads_H100_v5'
 
-@description('Maximum number of GPU Deepstream nodes')
+@description('Maximum number of system nodes')
 @minValue(1)
 @maxValue(10)
-param gpuMaxNodeCount int = 1
+param systemMaxNodeCount int = 2
+
+@description('Maximum number of workload nodes')
+@minValue(1)
+@maxValue(10)
+param workloadMaxNodeCount int = 10
+
+@description('Maximum number of GPU nodes')
+@minValue(1)
+@maxValue(10)
+param gpuMaxNodeCount int = 10
 
 @description('DNS prefix for the AKS cluster')
 param dnsPrefix string = name
@@ -90,7 +100,7 @@ resource aksCluster 'Microsoft.ContainerService/managedClusters@2024-09-01' = {
     agentPoolProfiles: [
       {
         name: 'system'
-        count: 2
+        count: systemMaxNodeCount
         vmSize: systemVmSize
         osType: 'Linux'
         osSKU: 'AzureLinux'
@@ -102,7 +112,7 @@ resource aksCluster 'Microsoft.ContainerService/managedClusters@2024-09-01' = {
         name: 'workload'
         count: 0
         minCount: 0
-        maxCount: 10
+        maxCount: workloadMaxNodeCount
         vmSize: workloadVmSize
         osType: 'Linux'
         osSKU: 'AzureLinux'
@@ -113,7 +123,7 @@ resource aksCluster 'Microsoft.ContainerService/managedClusters@2024-09-01' = {
         maxPods: 110
       }
       {
-        name: 'gpudeepstrm'
+        name: 'gpuworkload'
         count: 0
         minCount: 0
         maxCount: gpuMaxNodeCount
