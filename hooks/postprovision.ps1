@@ -156,10 +156,79 @@ azd env set AZURE_STATIC_IP "$STATIC_IP"
 azd env set AZURE_VIDEO_INDEXER_ENDPOINT_URI "$VIDEO_INDEXER_ENDPOINT_URI"
 
 # =====================================================
-# Step 5: Deploy Cert Manager via Bicep
+# Step 5: Enable App Routing (HTTP only)
 # =====================================================
 Write-Host ""
-Write-Host ">> Step 5: Deploying Cert Manager extension..."
+Write-Host ">> Step 5: Enabling App Routing on AKS cluster..."
+
+az aks approuting enable `
+    -g "$env:AZURE_RESOURCE_GROUP" `
+    -n "$env:AZURE_AKS_CLUSTER_NAME"
+
+Write-Host "   App Routing enabled."
+
+# =====================================================
+# Step 6: Create Nginx Ingress Controller (HTTP only)
+# =====================================================
+Write-Host ""
+Write-Host ">> Step 6: Creating Nginx Ingress Controller..."
+
+$NGINX_YAML = @"
+apiVersion: approuting.kubernetes.azure.com/v1alpha1
+kind: NginxIngressController
+metadata:
+  name: nginx
+spec:
+  ingressClassName: nginx
+  controllerNamePrefix: nginx
+  loadBalancerAnnotations:
+    service.beta.kubernetes.io/azure-pip-name: $PUBLIC_IP_NAME
+    service.beta.kubernetes.io/azure-load-balancer-resource-group: $AKS_MC_RG
+"@
+
+$NGINX_YAML | kubectl apply -f -
+
+Write-Host "   Nginx Ingress Controller created."
+
+# =====================================================
+# Step 7: Verify Ingress Controller
+# =====================================================
+Write-Host ""
+Write-Host ">> Step 7: Verifying Ingress Controller..."
+
+Write-Host "   Waiting for external IP assignment (up to 120s)..."
+$Timeout = 120
+$Elapsed = 0
+$ExternalIP = $null
+while ($Elapsed -lt $Timeout) {
+    try {
+        $ExternalIP = (kubectl get svc nginx -n app-routing-system -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>$null)
+    }
+    catch {
+        $ExternalIP = $null
+    }
+    if ($ExternalIP) {
+        break
+    }
+    Start-Sleep -Seconds 5
+    $Elapsed += 5
+}
+
+if ($ExternalIP) {
+    Write-Host "   Ingress Controller is ready."
+    Write-Host "   External IP: $ExternalIP"
+    kubectl get svc nginx -n app-routing-system
+}
+else {
+    Write-Host "   WARNING: External IP not yet assigned after ${Timeout}s. Check manually:"
+    Write-Host "   kubectl get svc nginx -n app-routing-system -w"
+}
+
+# =====================================================
+# Step 8: Deploy Cert Manager via Bicep
+# =====================================================
+Write-Host ""
+Write-Host ">> Step 8: Deploying Cert Manager extension..."
 
 az deployment group create `
     --resource-group "$env:AZURE_RESOURCE_GROUP" `
@@ -170,10 +239,10 @@ az deployment group create `
 Write-Host "   Cert Manager extension deployed."
 
 # =====================================================
-# Step 6: Deploy VI Arc Extension via Bicep
+# Step 9: Deploy VI Arc Extension via Bicep
 # =====================================================
 Write-Host ""
-Write-Host ">> Step 6: Deploying Video Indexer Arc extension..."
+Write-Host ">> Step 9: Deploying Video Indexer Arc extension..."
 
 az deployment group create `
     --resource-group "$env:AZURE_RESOURCE_GROUP" `
