@@ -112,6 +112,26 @@ module policyExemption 'modules/policy-exemption.bicep' = {
 }
 
 // =====================================================
+// Module: Policy Exemption for GPU Operator container images
+// =====================================================
+// The NVIDIA GPU Operator deploys containers from registry.k8s.io and nvcr.io.
+// The subscription-level policy 'k8sazurecustomcontainerallowed' restricts
+// allowed container registries and blocks these images via Gatekeeper.
+// This exemption allows the GPU Operator to pull its required images.
+
+module gpuOperatorPolicyExemption 'modules/policy-exemption.bicep' = {
+  name: 'gpu-operator-policy-exemption-deployment'
+  scope: resourceGroup(_resourceGroupName)
+  dependsOn: [aks]
+  params: {
+    name: 'AllowGpuOperatorContainerImages'
+    policyAssignmentId: '/subscriptions/${subscription().subscriptionId}/providers/Microsoft.Authorization/policyAssignments/52c74d72d4fd4969b082fd85'
+    displayName: 'Allow GPU Operator container images from registry.k8s.io and nvcr.io'
+    exemptionDescription: 'Allow GPU Operator container images from registry.k8s.io and nvcr.io. This exemption is scoped to the AKS resource group.'
+  }
+}
+
+// =====================================================
 // Module: Video Indexer Account
 // =====================================================
 
