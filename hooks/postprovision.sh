@@ -190,9 +190,10 @@ STATIC_IP=$(az network public-ip show \
 
 echo "   Static IP: ${STATIC_IP}"
 
-# Construct endpoint URI
-VIDEO_INDEXER_ENDPOINT_URI="https://${DNS_LABEL}.${AZURE_LOCATION}.cloudapp.azure.com"
+# Construct endpoint URI (HTTP by default — switch to https:// after configuring SSL/TLS)
+VIDEO_INDEXER_ENDPOINT_URI="http://${DNS_LABEL}.${AZURE_LOCATION}.cloudapp.azure.com"
 echo "   Endpoint URI: ${VIDEO_INDEXER_ENDPOINT_URI}"
+echo "   NOTE: Using HTTP. To enable HTTPS, configure SSL/TLS on the Nginx Ingress Controller (see AKS-CLUSTER-SETUP.md)."
 
 # Persist to azd env
 azd env set AZURE_DNS_LABEL "${DNS_LABEL}"
