@@ -36,10 +36,6 @@ By deploying the Video Indexer Arc extension on an Arc-enabled AKS cluster with 
 |![image](./docs/images/readme/architecture.png)|
 |---|
 
-### Agentic architecture
-|![image](./docs/images/readme/agent_flow.png)|
-|---|
-
 <br/>
 
 ### Additional resources

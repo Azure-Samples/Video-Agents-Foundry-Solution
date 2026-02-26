@@ -32,6 +32,8 @@ param kubernetesVersion string = '1.32'
 var abbrs = loadJsonContent('abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var _resourceGroupName = !empty(resourceGroupName) ? resourceGroupName : '${abbrs.resourceGroup}${environmentName}'
+var aksNodeResourceGroup = '${abbrs.aksCluster}${resourceToken}-nodes'
+
 var tags = {
   'provisioned-by': 'azd'
   'azd-env-name': environmentName
@@ -86,6 +88,7 @@ module aks 'modules/aks.bicep' = {
   scope: rg
   params: {
     name: '${abbrs.aksCluster}${resourceToken}'
+    nodeResourceGroup: aksNodeResourceGroup
     location: location
     tags: tags
     kubernetesVersion: kubernetesVersion
@@ -99,8 +102,6 @@ module aks 'modules/aks.bicep' = {
 // access in the node resource group. The subscription-level policy
 // 'PreventSharedKeyAccessForStorageAccount' blocks this. This exemption
 // narrows the exception to only the AKS node RG.
-
-var aksNodeResourceGroup = '${abbrs.aksCluster}${resourceToken}-nodes'
 
 module policyExemption 'modules/policy-exemption.bicep' = {
   name: 'policy-exemption-deployment'
@@ -154,7 +155,7 @@ module videoIndexer 'modules/vi-account.bicep' = {
 output AZURE_RESOURCE_GROUP string = rg.name
 output AZURE_LOCATION string = location
 output AZURE_AKS_CLUSTER_NAME string = aks.outputs.name
-output AZURE_AKS_NODE_RESOURCE_GROUP string = aks.outputs.nodeResourceGroup
+output AZURE_AKS_NODE_RESOURCE_GROUP string = aksNodeResourceGroup
 output AZURE_STORAGE_ACCOUNT_NAME string = storage.outputs.name
 output AZURE_MANAGED_IDENTITY_ID string = managedIdentity.outputs.id
 output AZURE_MANAGED_IDENTITY_CLIENT_ID string = managedIdentity.outputs.clientId

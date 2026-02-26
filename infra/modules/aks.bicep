@@ -17,7 +17,7 @@ param systemVmSize string = 'Standard_D4a_v4'
 param workloadVmSize string = 'Standard_D32a_v4'
 
 @description('VM size for the GPU workload node pool')
-param gpuVmSize string = 'Standard_NC40ads_H100_v5'
+param gpuVmSize string = 'Standard_NC24ads_A100_v4'
 
 @description('Maximum number of system nodes')
 @minValue(1)
@@ -32,13 +32,13 @@ param workloadMaxNodeCount int = 10
 @description('Maximum number of GPU nodes')
 @minValue(1)
 @maxValue(10)
-param gpuMaxNodeCount int = 10
+param gpuMaxNodeCount int = 3
 
 @description('DNS prefix for the AKS cluster')
 param dnsPrefix string = name
 
 @description('Node resource group name')
-param nodeResourceGroup string = '${name}-nodes'
+param nodeResourceGroup string
 
 @description('Node label value used to target deepstream workloads')
 var deepstreamWorkloadLabel = 'deepstream'

@@ -1,6 +1,6 @@
 using './main.bicep'
 
-param environmentName = readEnvironmentVariable('AZURE_ENV_NAME')
+param environmentName = readEnvironmentVariable('AZURE_ENV_NAME', 'azd-foundry-solution')
 param resourceGroupName = readEnvironmentVariable('AZURE_RESOURCE_GROUP', '')
 param location = readEnvironmentVariable('AZURE_LOCATION', 'eastus2')
 param principalId = readEnvironmentVariable('AZURE_PRINCIPAL_ID', '')
