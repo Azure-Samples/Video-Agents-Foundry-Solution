@@ -32,7 +32,7 @@ param kubernetesVersion string = '1.32'
 var abbrs = loadJsonContent('abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var _resourceGroupName = !empty(resourceGroupName) ? resourceGroupName : '${abbrs.resourceGroup}${environmentName}'
-var aksNodeResourceGroup = '${abbrs.aksCluster}${resourceToken}-nodes'
+var aksNodeResourceGroup = '${_resourceGroupName}-nodes'
 
 var tags = {
   'provisioned-by': 'azd'
