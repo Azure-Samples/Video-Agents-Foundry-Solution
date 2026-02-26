@@ -4,9 +4,9 @@
 
 $ErrorActionPreference = "Stop"
 
-Write-Host "=============================================="
-Write-Host "Post-Up: Health Check & Deployment Summary"
-Write-Host "=============================================="
+. "$PSScriptRoot/common.ps1"
+
+Write-Banner "Post-Up: Health Check & Deployment Summary"
 
 $HealthIssues = 0
 
@@ -19,13 +19,8 @@ Write-Host ">> Getting AKS credentials..."
 $HasClusterAccess = $false
 if ($env:AZURE_RESOURCE_GROUP -and $env:AZURE_AKS_CLUSTER_NAME) {
     try {
-        az aks get-credentials `
-            --resource-group $env:AZURE_RESOURCE_GROUP `
-            --name $env:AZURE_AKS_CLUSTER_NAME `
-            --admin `
-            --overwrite-existing 2>$null
+        $KubeContext = Connect-AksCluster
         $HasClusterAccess = $true
-        $KubeContext = "$($env:AZURE_AKS_CLUSTER_NAME)-admin"
     }
     catch {
         Write-Host "   WARNING: Could not get AKS credentials. Skipping Kubernetes health checks."
@@ -98,7 +93,7 @@ Write-Host ">> Step 2: GPU Operator Health..."
 if ($HasClusterAccess) {
     $gpuNsExists = $null
     try {
-        $gpuNsExists = kubectl --context $KubeContext get namespace gpu-operator --no-headers 2>$null
+        $gpuNsExists = kubectl --context $KubeContext get namespace $NS_GPU_OPERATOR --no-headers 2>$null
     }
     catch {
         $gpuNsExists = $null
@@ -106,10 +101,8 @@ if ($HasClusterAccess) {
 
     if ($gpuNsExists) {
         try {
-            $gpuRunning = (kubectl --context $KubeContext get pods -n gpu-operator `
-                --field-selector=status.phase=Running --no-headers 2>$null | Measure-Object -Line).Lines
-            $gpuTotal = (kubectl --context $KubeContext get pods -n gpu-operator `
-                --no-headers 2>$null | Measure-Object -Line).Lines
+            $gpuRunning = Get-RunningPodCount -Namespace $NS_GPU_OPERATOR -KubeContext $KubeContext
+            $gpuTotal = Get-TotalPodCount -Namespace $NS_GPU_OPERATOR -KubeContext $KubeContext
             Write-Host "   GPU Operator pods: $gpuRunning/$gpuTotal Running"
             if ($gpuRunning -lt $gpuTotal) {
                 Write-Host "   Some pods are still initializing (GPU driver install can take several minutes)"
@@ -157,8 +150,7 @@ if ($arcClusterName) {
 
     if ($HasClusterAccess) {
         try {
-            $arcPods = (kubectl --context $KubeContext get pods -n azure-arc `
-                --no-headers 2>$null | Measure-Object -Line).Lines
+            $arcPods = Get-TotalPodCount -Namespace $NS_AZURE_ARC -KubeContext $KubeContext
             Write-Host "   Arc agent pods: $arcPods"
         }
         catch {
@@ -179,8 +171,7 @@ Write-Host ">> Step 4: Ingress & Networking Health..."
 
 if ($HasClusterAccess) {
     try {
-        $ingressPods = (kubectl --context $KubeContext get pods -n app-routing-system `
-            --no-headers 2>$null | Measure-Object -Line).Lines
+        $ingressPods = Get-TotalPodCount -Namespace $NS_APP_ROUTING -KubeContext $KubeContext
         Write-Host "   Ingress pods (app-routing-system): $ingressPods"
     }
     catch {
@@ -246,10 +237,8 @@ if ($arcClusterName) {
 
     if ($HasClusterAccess) {
         try {
-            $viRunning = (kubectl --context $KubeContext get pods -n video-indexer `
-                --field-selector=status.phase=Running --no-headers 2>$null | Measure-Object -Line).Lines
-            $viTotal = (kubectl --context $KubeContext get pods -n video-indexer `
-                --no-headers 2>$null | Measure-Object -Line).Lines
+            $viRunning = Get-RunningPodCount -Namespace $NS_VIDEO_INDEXER -KubeContext $KubeContext
+            $viTotal = Get-TotalPodCount -Namespace $NS_VIDEO_INDEXER -KubeContext $KubeContext
             Write-Host "   VI pods: $viRunning/$viTotal Running"
         }
         catch {
@@ -270,7 +259,7 @@ Write-Host ">> Step 6: Cert Manager Health..."
 if ($HasClusterAccess) {
     $cmNsExists = $null
     try {
-        $cmNsExists = kubectl --context $KubeContext get namespace cert-manager --no-headers 2>$null
+        $cmNsExists = kubectl --context $KubeContext get namespace $NS_CERT_MANAGER --no-headers 2>$null
     }
     catch {
         $cmNsExists = $null
@@ -278,10 +267,8 @@ if ($HasClusterAccess) {
 
     if ($cmNsExists) {
         try {
-            $cmRunning = (kubectl --context $KubeContext get pods -n cert-manager `
-                --field-selector=status.phase=Running --no-headers 2>$null | Measure-Object -Line).Lines
-            $cmTotal = (kubectl --context $KubeContext get pods -n cert-manager `
-                --no-headers 2>$null | Measure-Object -Line).Lines
+            $cmRunning = Get-RunningPodCount -Namespace $NS_CERT_MANAGER -KubeContext $KubeContext
+            $cmTotal = Get-TotalPodCount -Namespace $NS_CERT_MANAGER -KubeContext $KubeContext
             Write-Host "   Cert Manager pods: $cmRunning/$cmTotal Running"
         }
         catch {
@@ -301,9 +288,7 @@ else {
 # Summary Dashboard
 # =====================================================
 Write-Host ""
-Write-Host "=============================================="
-Write-Host "  Video Indexer Arc - Deployment Complete"
-Write-Host "=============================================="
+Write-Banner "Video Indexer Arc - Deployment Complete"
 Write-Host ""
 Write-Host "  Resource Group:  $(if ($env:AZURE_RESOURCE_GROUP) { $env:AZURE_RESOURCE_GROUP } else { 'n/a' })"
 Write-Host "  AKS Cluster:     $(if ($env:AZURE_AKS_CLUSTER_NAME) { $env:AZURE_AKS_CLUSTER_NAME } else { 'n/a' })"
@@ -343,7 +328,7 @@ Write-Host "  2. Upload a video to verify end-to-end indexing"
 Write-Host "  3. Monitor GPU utilization:"
 Write-Host "     kubectl top nodes"
 Write-Host "  4. View VI extension logs:"
-Write-Host "     kubectl logs -n video-indexer -l app=videoindexer --tail=100"
+Write-Host "     kubectl logs -n $NS_VIDEO_INDEXER -l app=videoindexer --tail=100"
 Write-Host "  5. To tear down all resources:"
 Write-Host "     azd down"
 Write-Host ""

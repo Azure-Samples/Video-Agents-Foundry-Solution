@@ -4,9 +4,9 @@
 
 $ErrorActionPreference = "Stop"
 
-Write-Host "=============================================="
-Write-Host "Pre-Up: Deployment Preview"
-Write-Host "=============================================="
+. "$PSScriptRoot/common.ps1"
+
+Write-Banner "Pre-Up: Deployment Preview"
 
 # =====================================================
 # Step 1: Validate azd environment
@@ -77,9 +77,7 @@ else {
 # Step 3: Deployment summary
 # =====================================================
 Write-Host ""
-Write-Host "=============================================="
-Write-Host "  Video Indexer Arc - Deployment Summary"
-Write-Host "=============================================="
+Write-Banner "Video Indexer Arc - Deployment Summary"
 Write-Host ""
 Write-Host "  Environment:  $($env:AZURE_ENV_NAME)"
 Write-Host "  Subscription: $(if ($env:AZURE_SUBSCRIPTION_ID) { $env:AZURE_SUBSCRIPTION_ID } else { 'not set' })"
@@ -87,11 +85,10 @@ Write-Host "  Location:     $(if ($env:AZURE_LOCATION) { $env:AZURE_LOCATION } e
 Write-Host ""
 Write-Host "  Infrastructure (via azd provision):"
 Write-Host "    - AKS cluster with GPU node pool"
-Write-Host "      (Standard_NC24ads_A100_v4)"
+Write-Host "      ($VI_VM_SIZE)"
 Write-Host "    - Storage Account"
 Write-Host "    - Managed Identity"
 Write-Host "    - Video Indexer Account"
-Write-Host "    - Policy Exemptions"
 Write-Host ""
 Write-Host "  Post-provision automation:"
 Write-Host "    - NVIDIA GPU Operator (via Helm)"
@@ -105,7 +102,7 @@ Write-Host "  Estimated time: 25-40 minutes"
 Write-Host "    Bicep provisioning:   ~15-25 min (GPU node pool)"
 Write-Host "    Post-provision setup: ~10-15 min"
 Write-Host ""
-Write-Host "  NOTE: Standard_NC24ads_A100_v4 GPU VMs incur"
+Write-Host "  NOTE: $VI_VM_SIZE GPU VMs incur"
 Write-Host "  significant costs while the AKS cluster is running."
 Write-Host "  Run 'azd down' when done to stop charges."
 Write-Host ""

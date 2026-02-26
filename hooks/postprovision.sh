@@ -6,9 +6,9 @@
 
 set -e
 
-echo "=============================================="
-echo "Post-provision: Video Indexer Arc Setup"
-echo "=============================================="
+source "$(dirname "$0")/common.sh"
+
+write_banner "Post-provision: Video Indexer Arc Setup"
 
 if [ "$CREATE_IN_LOCAL" = "false" ]; then
     echo "Skipping postprovision.sh script execution as it is not in local."
@@ -18,35 +18,16 @@ fi
 # =====================================================
 # Validate required environment variables
 # =====================================================
-MISSING_VARS=""
-for var in AZURE_SUBSCRIPTION_ID AZURE_RESOURCE_GROUP AZURE_AKS_CLUSTER_NAME \
-           AZURE_LOCATION AZURE_ENV_NAME AZURE_VIDEO_INDEXER_ACCOUNT_ID \
-           AZURE_VIDEO_INDEXER_ACCOUNT_RESOURCE_ID AZURE_DEEPSTREAM_NODE_SELECTOR_VALUE \
-           AZURE_AKS_NODE_RESOURCE_GROUP; do
-    eval val=\$$var
-    if [ -z "$val" ]; then
-        MISSING_VARS="${MISSING_VARS}  - ${var}
-"
-    fi
-done
+assert_env_vars AZURE_SUBSCRIPTION_ID AZURE_RESOURCE_GROUP AZURE_AKS_CLUSTER_NAME \
+    AZURE_LOCATION AZURE_ENV_NAME AZURE_VIDEO_INDEXER_ACCOUNT_ID \
+    AZURE_VIDEO_INDEXER_ACCOUNT_RESOURCE_ID AZURE_DEEPSTREAM_NODE_SELECTOR_VALUE \
+    AZURE_AKS_NODE_RESOURCE_GROUP
 
-if [ -n "$MISSING_VARS" ]; then
-    echo "ERROR: The following required environment variables are not set:" >&2
-    printf "%s" "$MISSING_VARS" >&2
-    echo "Run 'azd env get-values' to check your environment." >&2
-    exit 1
-fi
+# NOTE: CLI tools (az, helm, kubectl) are validated in preprovision. No need to re-check here.
 
 # =====================================================
-# Check prerequisites
+# Ensure required Azure CLI extensions are installed
 # =====================================================
-for cmd in helm kubectl az; do
-    if ! command -v "$cmd" >/dev/null 2>&1; then
-        echo "ERROR: '$cmd' is required but not found in PATH." >&2
-        exit 1
-    fi
-done
-
 for ext in connectedk8s k8s-extension; do
     if ! az extension show --name "$ext" >/dev/null 2>&1; then
         echo "Installing Azure CLI extension: $ext"
@@ -54,15 +35,7 @@ for ext in connectedk8s k8s-extension; do
     fi
 done
 
-# =====================================================
-# Register required Azure providers
-# =====================================================
-echo ""
-echo ">> Registering required Azure resource providers..."
-for provider in Microsoft.Kubernetes Microsoft.KubernetesConfiguration Microsoft.ExtendedLocation; do
-    az provider register --namespace "$provider" --wait false 2>/dev/null || true
-done
-echo "   Provider registration initiated."
+# NOTE: Azure resource providers are registered in preprovision. No need to re-register here.
 
 # =====================================================
 # Authenticate and set subscription
@@ -84,31 +57,22 @@ GPU_OPERATOR_VERSION="${GPU_OPERATOR_VERSION:-v25.10.01}"
 # =====================================================
 # Step 1: Get AKS credentials
 # =====================================================
-echo ""
-echo ">> Step 1: Getting AKS cluster credentials..."
-az aks get-credentials \
-    --resource-group "$AZURE_RESOURCE_GROUP" \
-    --name "$AZURE_AKS_CLUSTER_NAME" \
-    --admin \
-    --overwrite-existing
-
-KUBE_CONTEXT="${AZURE_AKS_CLUSTER_NAME}-admin"
-
+write_step "1" "Getting AKS cluster credentials..."
+KUBE_CONTEXT=$(connect_aks_cluster)
 echo "   AKS credentials configured (context: ${KUBE_CONTEXT})."
 
 # =====================================================
 # Step 2: Install NVIDIA GPU Operator
 # =====================================================
-echo ""
-echo ">> Step 2: Installing NVIDIA GPU Operator (${GPU_OPERATOR_VERSION})..."
+write_step "2" "Installing NVIDIA GPU Operator (${GPU_OPERATOR_VERSION})..."
 
 # Add NVIDIA Helm repo (idempotent)
-helm repo add nvidia https://helm.ngc.nvidia.com/nvidia 2>/dev/null || true
+helm repo add "$NVIDIA_HELM_REPO_NAME" "$NVIDIA_HELM_REPO_URL" 2>/dev/null || true
 helm repo update
 
 # Install or upgrade the GPU operator
 helm upgrade -i gpu-operator --wait \
-    -n gpu-operator --create-namespace \
+    -n "$NS_GPU_OPERATOR" --create-namespace \
     --version "$GPU_OPERATOR_VERSION" \
     --kube-context "$KUBE_CONTEXT" \
     nvidia/gpu-operator
@@ -118,9 +82,8 @@ echo "   NVIDIA GPU Operator installed."
 # =====================================================
 # Step 3: Connect AKS to Azure Arc
 # =====================================================
-ARC_CLUSTER_NAME="arc-${AZURE_AKS_CLUSTER_NAME}"
-echo ""
-echo ">> Step 3: Connecting AKS cluster to Azure Arc as '${ARC_CLUSTER_NAME}'..."
+ARC_CLUSTER_NAME="${ARC_CLUSTER_PREFIX}${AZURE_AKS_CLUSTER_NAME}"
+write_step "3" "Connecting AKS cluster to Azure Arc as '${ARC_CLUSTER_NAME}'..."
 
 # Check if already connected
 ARC_EXISTS=$(az connectedk8s show \
@@ -144,8 +107,7 @@ azd env set AZURE_ARC_CLUSTER_NAME "$ARC_CLUSTER_NAME"
 # =====================================================
 # Step 4: Create Public IP and construct Endpoint URI
 # =====================================================
-echo ""
-echo ">> Step 4: Creating Public IP and constructing Video Indexer endpoint URI..."
+write_step "4" "Creating Public IP and constructing Video Indexer endpoint URI..."
 
 # Get AKS managed cluster resource group from Bicep output
 AKS_MC_RG="$AZURE_AKS_NODE_RESOURCE_GROUP"
@@ -203,8 +165,7 @@ azd env set AZURE_VIDEO_INDEXER_ENDPOINT_URI "${VIDEO_INDEXER_ENDPOINT_URI}"
 # =====================================================
 # Step 5: Enable App Routing (HTTP only)
 # =====================================================
-echo ""
-echo ">> Step 5: Enabling App Routing on AKS cluster..."
+write_step "5" "Enabling App Routing on AKS cluster..."
 
 APPROUTING_ENABLED=$(az aks show \
     --resource-group "$AZURE_RESOURCE_GROUP" \
@@ -223,8 +184,7 @@ fi
 # =====================================================
 # Step 6: Create Nginx Ingress Controller (HTTP only)
 # =====================================================
-echo ""
-echo ">> Step 6: Creating Nginx Ingress Controller..."
+write_step "6" "Creating Nginx Ingress Controller..."
 
 cat <<EOF | kubectl --context "$KUBE_CONTEXT" apply -f -
 apiVersion: approuting.kubernetes.azure.com/v1alpha1
@@ -244,15 +204,13 @@ echo "   Nginx Ingress Controller created."
 # =====================================================
 # Step 7: Verify Ingress Controller
 # =====================================================
-echo ""
-echo ">> Step 7: Verifying Ingress Controller..."
+write_step "7" "Verifying Ingress Controller..."
 
-echo "   Waiting for external IP assignment (up to 120s)..."
-TIMEOUT=120
+echo "   Waiting for external IP assignment (up to ${TIMEOUT_INGRESS_IP}s)..."
 ELAPSED=0
 EXTERNAL_IP=""
-while [ $ELAPSED -lt $TIMEOUT ]; do
-    EXTERNAL_IP=$(kubectl --context "$KUBE_CONTEXT" get svc nginx -n app-routing-system -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+while [ $ELAPSED -lt $TIMEOUT_INGRESS_IP ]; do
+    EXTERNAL_IP=$(kubectl --context "$KUBE_CONTEXT" get svc nginx -n "$NS_APP_ROUTING" -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
     if [ -n "$EXTERNAL_IP" ]; then
         break
     fi
@@ -263,17 +221,16 @@ done
 if [ -n "$EXTERNAL_IP" ]; then
     echo "   Ingress Controller is ready."
     echo "   External IP: ${EXTERNAL_IP}"
-    kubectl --context "$KUBE_CONTEXT" get svc nginx -n app-routing-system
+    kubectl --context "$KUBE_CONTEXT" get svc nginx -n "$NS_APP_ROUTING"
 else
-    echo "   WARNING: External IP not yet assigned after ${TIMEOUT}s. Check manually:"
-    echo "   kubectl --context ${KUBE_CONTEXT} get svc nginx -n app-routing-system -w"
+    echo "   WARNING: External IP not yet assigned after ${TIMEOUT_INGRESS_IP}s. Check manually:"
+    echo "   kubectl --context ${KUBE_CONTEXT} get svc nginx -n ${NS_APP_ROUTING} -w"
 fi
 
 # =====================================================
 # Step 8: Deploy Cert Manager via Bicep
 # =====================================================
-echo ""
-echo ">> Step 8: Deploying Cert Manager extension..."
+write_step "8" "Deploying Cert Manager extension..."
 
 az deployment group create \
     --resource-group "$AZURE_RESOURCE_GROUP" \
@@ -286,8 +243,7 @@ echo "   Cert Manager extension deployed."
 # =====================================================
 # Step 9: Deploy VI Arc Extension via Bicep
 # =====================================================
-echo ""
-echo ">> Step 9: Deploying Video Indexer Arc extension..."
+write_step "9" "Deploying Video Indexer Arc extension..."
 
 az deployment group create \
     --resource-group "$AZURE_RESOURCE_GROUP" \
@@ -304,8 +260,7 @@ echo "   Video Indexer Arc extension deployed."
 # =====================================================
 # Step 10: Post-deployment health checks
 # =====================================================
-echo ""
-echo ">> Step 10: Running post-deployment health checks..."
+write_step "10" "Running post-deployment health checks..."
 
 echo -n "   Arc connection status: "
 ARC_STATUS=$(az connectedk8s show \
@@ -314,21 +269,17 @@ ARC_STATUS=$(az connectedk8s show \
     --query "connectivityStatus" -o tsv 2>/dev/null || echo "unknown")
 echo "$ARC_STATUS"
 
-echo -n "   GPU operator pods running: "
-GPU_PODS=$(kubectl --context "$KUBE_CONTEXT" get pods -n gpu-operator --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l | tr -d ' ')
-echo "$GPU_PODS"
+GPU_PODS=$(get_running_pod_count "$NS_GPU_OPERATOR" "$KUBE_CONTEXT")
+echo "   GPU operator pods running: $GPU_PODS"
 
-echo -n "   VI extension pods running: "
-VI_PODS=$(kubectl --context "$KUBE_CONTEXT" get pods -n video-indexer --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l | tr -d ' ')
-echo "$VI_PODS"
+VI_PODS=$(get_running_pod_count "$NS_VIDEO_INDEXER" "$KUBE_CONTEXT")
+echo "   VI extension pods running: $VI_PODS"
 
 # =====================================================
 # Summary
 # =====================================================
 echo ""
-echo "=============================================="
-echo "Post-provision completed successfully!"
-echo "=============================================="
+write_banner "Post-provision completed successfully!"
 echo ""
 echo "Resources created:"
 echo "  - AKS Cluster:      $AZURE_AKS_CLUSTER_NAME"

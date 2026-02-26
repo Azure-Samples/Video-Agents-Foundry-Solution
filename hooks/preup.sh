@@ -6,9 +6,9 @@
 
 set -e
 
-echo "=============================================="
-echo "Pre-Up: Deployment Preview"
-echo "=============================================="
+source "$(dirname "$0")/common.sh"
+
+write_banner "Pre-Up: Deployment Preview"
 
 # =====================================================
 # Step 1: Validate azd environment
@@ -60,9 +60,7 @@ fi
 # Step 3: Deployment summary
 # =====================================================
 echo ""
-echo "=============================================="
-echo "  Video Indexer Arc - Deployment Summary"
-echo "=============================================="
+write_banner "Video Indexer Arc - Deployment Summary"
 echo ""
 echo "  Environment:  ${AZURE_ENV_NAME}"
 echo "  Subscription: ${AZURE_SUBSCRIPTION_ID:-not set}"
@@ -70,11 +68,10 @@ echo "  Location:     ${AZURE_LOCATION:-not set}"
 echo ""
 echo "  Infrastructure (via azd provision):"
 echo "    - AKS cluster with GPU node pool"
-echo "      (Standard_NC24ads_A100_v4)"
+echo "      (${VI_VM_SIZE})"
 echo "    - Storage Account"
 echo "    - Managed Identity"
 echo "    - Video Indexer Account"
-echo "    - Policy Exemptions"
 echo ""
 echo "  Post-provision automation:"
 echo "    - NVIDIA GPU Operator (via Helm)"
@@ -88,7 +85,7 @@ echo "  Estimated time: 25-40 minutes"
 echo "    Bicep provisioning:   ~15-25 min (GPU node pool)"
 echo "    Post-provision setup: ~10-15 min"
 echo ""
-echo "  NOTE: Standard_NC24ads_A100_v4 GPU VMs incur"
+echo "  NOTE: ${VI_VM_SIZE} GPU VMs incur"
 echo "  significant costs while the AKS cluster is running."
 echo "  Run 'azd down' when done to stop charges."
 echo ""

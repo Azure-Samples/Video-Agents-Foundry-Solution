@@ -6,9 +6,9 @@
 
 set -e
 
-echo "=============================================="
-echo "Post-Up: Health Check & Deployment Summary"
-echo "=============================================="
+source "$(dirname "$0")/common.sh"
+
+write_banner "Post-Up: Health Check & Deployment Summary"
 
 HEALTH_ISSUES=0
 
@@ -23,16 +23,8 @@ if [ -z "${AZURE_RESOURCE_GROUP:-}" ] || [ -z "${AZURE_AKS_CLUSTER_NAME:-}" ]; t
     echo "   Skipping Kubernetes health checks."
     HAS_CLUSTER_ACCESS=false
 else
-    az aks get-credentials \
-        --resource-group "$AZURE_RESOURCE_GROUP" \
-        --name "$AZURE_AKS_CLUSTER_NAME" \
-        --admin \
-        --overwrite-existing 2>/dev/null || {
-        echo "   WARNING: Could not get AKS credentials. Skipping Kubernetes health checks."
-        HAS_CLUSTER_ACCESS=false
-    }
+    KUBE_CONTEXT=$(connect_aks_cluster)
     HAS_CLUSTER_ACCESS=true
-    KUBE_CONTEXT="${AZURE_AKS_CLUSTER_NAME}-admin"
 fi
 
 # =====================================================
@@ -74,12 +66,10 @@ echo ""
 echo ">> Step 2: GPU Operator Health..."
 
 if [ "$HAS_CLUSTER_ACCESS" = "true" ]; then
-    GPU_NS_EXISTS=$(kubectl --context "$KUBE_CONTEXT" get namespace gpu-operator --no-headers 2>/dev/null || true)
+    GPU_NS_EXISTS=$(kubectl --context "$KUBE_CONTEXT" get namespace "$NS_GPU_OPERATOR" --no-headers 2>/dev/null || true)
     if [ -n "$GPU_NS_EXISTS" ]; then
-        GPU_RUNNING=$(kubectl --context "$KUBE_CONTEXT" get pods -n gpu-operator \
-            --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l | tr -d ' ')
-        GPU_TOTAL=$(kubectl --context "$KUBE_CONTEXT" get pods -n gpu-operator \
-            --no-headers 2>/dev/null | wc -l | tr -d ' ')
+        GPU_RUNNING=$(get_running_pod_count "$NS_GPU_OPERATOR" "$KUBE_CONTEXT")
+        GPU_TOTAL=$(get_total_pod_count "$NS_GPU_OPERATOR" "$KUBE_CONTEXT")
         echo "   GPU Operator pods: ${GPU_RUNNING}/${GPU_TOTAL} Running"
         if [ "$GPU_RUNNING" -lt "$GPU_TOTAL" ]; then
             echo "   Some pods are still initializing (GPU driver install can take several minutes)"
@@ -113,8 +103,7 @@ if [ -n "$ARC_CLUSTER_NAME" ]; then
     fi
 
     if [ "$HAS_CLUSTER_ACCESS" = "true" ]; then
-        ARC_PODS=$(kubectl --context "$KUBE_CONTEXT" get pods -n azure-arc \
-            --no-headers 2>/dev/null | wc -l | tr -d ' ' || echo "0")
+        ARC_PODS=$(get_total_pod_count "$NS_AZURE_ARC" "$KUBE_CONTEXT")
         echo "   Arc agent pods: ${ARC_PODS}"
     fi
 else
@@ -129,8 +118,7 @@ echo ""
 echo ">> Step 4: Ingress & Networking Health..."
 
 if [ "$HAS_CLUSTER_ACCESS" = "true" ]; then
-    INGRESS_PODS=$(kubectl --context "$KUBE_CONTEXT" get pods -n app-routing-system \
-        --no-headers 2>/dev/null | wc -l | tr -d ' ' || echo "0")
+    INGRESS_PODS=$(get_total_pod_count "$NS_APP_ROUTING" "$KUBE_CONTEXT")
     echo "   Ingress pods (app-routing-system): ${INGRESS_PODS}"
 
     if [ -n "${AZURE_STATIC_IP:-}" ]; then
@@ -177,10 +165,8 @@ if [ -n "$ARC_CLUSTER_NAME" ]; then
     fi
 
     if [ "$HAS_CLUSTER_ACCESS" = "true" ]; then
-        VI_RUNNING=$(kubectl --context "$KUBE_CONTEXT" get pods -n video-indexer \
-            --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l | tr -d ' ' || echo "0")
-        VI_TOTAL=$(kubectl --context "$KUBE_CONTEXT" get pods -n video-indexer \
-            --no-headers 2>/dev/null | wc -l | tr -d ' ' || echo "0")
+        VI_RUNNING=$(get_running_pod_count "$NS_VIDEO_INDEXER" "$KUBE_CONTEXT")
+        VI_TOTAL=$(get_total_pod_count "$NS_VIDEO_INDEXER" "$KUBE_CONTEXT")
         echo "   VI pods: ${VI_RUNNING}/${VI_TOTAL} Running"
     fi
 else
@@ -194,12 +180,10 @@ echo ""
 echo ">> Step 6: Cert Manager Health..."
 
 if [ "$HAS_CLUSTER_ACCESS" = "true" ]; then
-    CM_NS_EXISTS=$(kubectl --context "$KUBE_CONTEXT" get namespace cert-manager --no-headers 2>/dev/null || true)
+    CM_NS_EXISTS=$(kubectl --context "$KUBE_CONTEXT" get namespace "$NS_CERT_MANAGER" --no-headers 2>/dev/null || true)
     if [ -n "$CM_NS_EXISTS" ]; then
-        CM_RUNNING=$(kubectl --context "$KUBE_CONTEXT" get pods -n cert-manager \
-            --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l | tr -d ' ')
-        CM_TOTAL=$(kubectl --context "$KUBE_CONTEXT" get pods -n cert-manager \
-            --no-headers 2>/dev/null | wc -l | tr -d ' ')
+        CM_RUNNING=$(get_running_pod_count "$NS_CERT_MANAGER" "$KUBE_CONTEXT")
+        CM_TOTAL=$(get_total_pod_count "$NS_CERT_MANAGER" "$KUBE_CONTEXT")
         echo "   Cert Manager pods: ${CM_RUNNING}/${CM_TOTAL} Running"
     else
         echo "   Cert Manager namespace not found"
@@ -213,9 +197,7 @@ fi
 # Summary Dashboard
 # =====================================================
 echo ""
-echo "=============================================="
-echo "  Video Indexer Arc - Deployment Complete"
-echo "=============================================="
+write_banner "Video Indexer Arc - Deployment Complete"
 echo ""
 echo "  Resource Group:  ${AZURE_RESOURCE_GROUP:-n/a}"
 echo "  AKS Cluster:     ${AZURE_AKS_CLUSTER_NAME:-n/a}"
@@ -255,7 +237,7 @@ echo "  2. Upload a video to verify end-to-end indexing"
 echo "  3. Monitor GPU utilization:"
 echo "     kubectl top nodes"
 echo "  4. View VI extension logs:"
-echo "     kubectl logs -n video-indexer -l app=videoindexer --tail=100"
+echo "     kubectl logs -n ${NS_VIDEO_INDEXER} -l app=videoindexer --tail=100"
 echo "  5. To tear down all resources:"
 echo "     azd down"
 echo ""

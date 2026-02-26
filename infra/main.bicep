@@ -96,43 +96,6 @@ module aks 'modules/aks.bicep' = {
 }
 
 // =====================================================
-// Module: Policy Exemption for AKS CSI Driver
-// =====================================================
-// The AKS Azure File CSI driver creates storage accounts with shared key
-// access in the node resource group. The subscription-level policy
-// 'PreventSharedKeyAccessForStorageAccount' blocks this. This exemption
-// narrows the exception to only the AKS node RG.
-
-module policyExemption 'modules/policy-exemption.bicep' = {
-  name: 'policy-exemption-deployment'
-  scope: resourceGroup(aksNodeResourceGroup)
-  dependsOn: [aks]
-  params: {
-    policyAssignmentId: '/subscriptions/${subscription().subscriptionId}/providers/Microsoft.Authorization/policyAssignments/PreventSharedKeyAccessForStorageAccount'
-  }
-}
-
-// =====================================================
-// Module: Policy Exemption for GPU Operator container images
-// =====================================================
-// The NVIDIA GPU Operator deploys containers from registry.k8s.io and nvcr.io.
-// The subscription-level policy 'k8sazurecustomcontainerallowed' restricts
-// allowed container registries and blocks these images via Gatekeeper.
-// This exemption allows the GPU Operator to pull its required images.
-
-module gpuOperatorPolicyExemption 'modules/policy-exemption.bicep' = {
-  name: 'gpu-operator-policy-exemption-deployment'
-  scope: resourceGroup(_resourceGroupName)
-  dependsOn: [aks]
-  params: {
-    name: 'AllowGpuOperatorContainerImages'
-    policyAssignmentId: '/subscriptions/${subscription().subscriptionId}/providers/Microsoft.Authorization/policyAssignments/52c74d72d4fd4969b082fd85'
-    displayName: 'Allow GPU Operator container images from registry.k8s.io and nvcr.io'
-    exemptionDescription: 'Allow GPU Operator container images from registry.k8s.io and nvcr.io. This exemption is scoped to the AKS resource group.'
-  }
-}
-
-// =====================================================
 // Module: Video Indexer Account
 // =====================================================
 

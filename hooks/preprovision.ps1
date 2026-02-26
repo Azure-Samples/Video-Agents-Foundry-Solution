@@ -4,17 +4,14 @@
 
 $ErrorActionPreference = "Stop"
 
-Write-Host "=============================================="
-Write-Host "Pre-provision: Validation & Pre-flight Checks"
-Write-Host "=============================================="
+. "$PSScriptRoot/common.ps1"
 
-$ErrorCount = 0
+Write-Banner "Pre-provision: Validation & Pre-flight Checks"
 
 # =====================================================
 # Step 1: Check Azure CLI authentication
 # =====================================================
-Write-Host ""
-Write-Host ">> Step 1: Checking Azure CLI authentication..."
+Write-Step "1" "Checking Azure CLI authentication..."
 
 $accountInfo = $null
 try {
@@ -46,43 +43,16 @@ if ($env:AZURE_SUBSCRIPTION_ID) {
 # =====================================================
 # Step 2: Check required CLI tools
 # =====================================================
-Write-Host ""
-Write-Host ">> Step 2: Checking required CLI tools..."
+Write-Step "2" "Checking required CLI tools..."
 
-foreach ($cmd in @('az', 'helm', 'kubectl')) {
-    if (Get-Command $cmd -ErrorAction SilentlyContinue) {
-        Write-Host "   ${cmd}: OK"
-    }
-    else {
-        Write-Host "   ${cmd}: MISSING" -ForegroundColor Red
-        $ErrorCount++
-    }
-}
-
-# Optional tools
-foreach ($cmd in @('kubelogin', 'jq')) {
-    if (Get-Command $cmd -ErrorAction SilentlyContinue) {
-        Write-Host "   ${cmd}: OK"
-    }
-    else {
-        Write-Host "   ${cmd}: not found (optional, but recommended)"
-    }
-}
-
-if ($ErrorCount -gt 0) {
-    Write-Error "$ErrorCount required tool(s) missing. Install them before proceeding."
-    exit 1
-}
+Assert-CliTools -Required @('az', 'helm', 'kubectl') -Optional @('kubelogin', 'jq')
 
 # =====================================================
 # Step 3: Validate required environment variables
 # =====================================================
-Write-Host ""
-Write-Host ">> Step 3: Validating pre-provision environment variables..."
+Write-Step "3" "Validating pre-provision environment variables..."
 
 $preProvisionVars = @('AZURE_SUBSCRIPTION_ID', 'AZURE_LOCATION', 'AZURE_ENV_NAME')
-$missingVars = @()
-
 foreach ($var in $preProvisionVars) {
     $val = [System.Environment]::GetEnvironmentVariable($var)
     if ($val) {
@@ -90,90 +60,48 @@ foreach ($var in $preProvisionVars) {
     }
     else {
         Write-Host "   ${var}: MISSING" -ForegroundColor Red
-        $missingVars += $var
     }
 }
-
-if ($missingVars.Count -gt 0) {
-    Write-Error "The following required environment variables are not set:`n  $($missingVars -join "`n  ")`nSet them with 'azd env set <KEY> <VALUE>'."
-    exit 1
-}
+# Use the shared assertion for the actual error check
+Assert-EnvVars $preProvisionVars
 
 # =====================================================
 # Step 4: Register required Azure resource providers
 # =====================================================
-Write-Host ""
-Write-Host ">> Step 4: Checking Azure resource provider registrations..."
+Write-Step "4" "Checking Azure resource provider registrations..."
 
-$providersRegistering = 0
-foreach ($provider in @('Microsoft.Kubernetes', 'Microsoft.KubernetesConfiguration', 'Microsoft.ExtendedLocation', 'Microsoft.ContainerService', 'Microsoft.Network')) {
-    $state = $null
-    try {
-        $state = (az provider show -n $provider --query "registrationState" -o tsv 2>$null)
-    }
-    catch {
-        $state = "Unknown"
-    }
-
-    switch ($state) {
-        "Registered" {
-            Write-Host "   ${provider}: Registered"
-        }
-        "Registering" {
-            Write-Host "   ${provider}: Registering (in progress)"
-            $providersRegistering++
-        }
-        { $_ -in @("NotRegistered", "Unregistered") } {
-            Write-Host "   ${provider}: Not registered - registering now..."
-            az provider register --namespace $provider --wait false 2>$null
-            $providersRegistering++
-        }
-        default {
-            Write-Host "   ${provider}: $state (unexpected state)"
-        }
-    }
-}
-
-if ($providersRegistering -gt 0) {
-    Write-Host ""
-    Write-Host "   NOTE: $providersRegistering provider(s) are being registered."
-    Write-Host "   Registration can take 2-5 minutes. Provisioning will proceed,"
-    Write-Host "   but if it fails, wait a few minutes and retry."
-}
+$null = Register-RequiredProviders
 
 # =====================================================
 # Step 5: Validate region supports required VM size
 # =====================================================
-Write-Host ""
-Write-Host ">> Step 5: Checking region capability for GPU VMs..."
+Write-Step "5" "Checking region capability for GPU VMs..."
 
-$vmSize = "Standard_NC24ads_A100_v4"
 $vmAvailable = $null
 try {
     $vmAvailable = (az vm list-sizes --location $env:AZURE_LOCATION `
-        --query "[?name=='$vmSize']" -o tsv 2>$null)
+        --query "[?name=='$VI_VM_SIZE']" -o tsv 2>$null)
 }
 catch {
     $vmAvailable = $null
 }
 
 if (-not $vmAvailable) {
-    Write-Error "VM size '$vmSize' is not available in region '$($env:AZURE_LOCATION)'.`nThis VM is required for the GPU node pool.`n`nAvailable regions for $vmSize include:`n  eastus, eastus2, westus2, westus3, southcentralus,`n  northeurope, westeurope, southeastasia, australiaeast`n`nChange region with: azd env set AZURE_LOCATION <region>"
+    Write-Error "VM size '$VI_VM_SIZE' is not available in region '$($env:AZURE_LOCATION)'.`nThis VM is required for the GPU node pool.`n`nAvailable regions for $VI_VM_SIZE include:`n  eastus, eastus2, westus2, westus3, southcentralus,`n  northeurope, westeurope, southeastasia, australiaeast`n`nChange region with: azd env set AZURE_LOCATION <region>"
     exit 1
 }
 
-Write-Host "   ${vmSize}: available in $($env:AZURE_LOCATION)"
+Write-Host "   ${VI_VM_SIZE}: available in $($env:AZURE_LOCATION)"
 
 # =====================================================
 # Step 6: Check GPU VM quota
 # =====================================================
-Write-Host ""
-Write-Host ">> Step 6: Checking GPU VM quota..."
+Write-Step "6" "Checking GPU VM quota..."
 
 $quotaJson = $null
 try {
     $quotaJson = (az vm list-usage --location $env:AZURE_LOCATION `
-        --query "[?contains(name.value, 'StandardNCADSA100v4Family')]" `
+        --query "[?contains(name.value, '$VI_GPU_QUOTA_FAMILY')]" `
         -o json 2>$null) | ConvertFrom-Json
 }
 catch {
@@ -182,7 +110,6 @@ catch {
 
 $currentUsage = 0
 $quotaLimit = 0
-$needed = 24
 
 if ($quotaJson -and $quotaJson.Count -gt 0) {
     $currentUsage = $quotaJson[0].currentValue
@@ -192,36 +119,34 @@ if ($quotaJson -and $quotaJson.Count -gt 0) {
 $available = $quotaLimit - $currentUsage
 
 if ($quotaLimit -eq 0) {
-    Write-Host "   WARNING: Could not determine GPU quota for $vmSize." -ForegroundColor Yellow
-    Write-Host "   Family: StandardNCADSA100v4Family"
+    Write-Host "   WARNING: Could not determine GPU quota for $VI_VM_SIZE." -ForegroundColor Yellow
+    Write-Host "   Family: $VI_GPU_QUOTA_FAMILY"
     Write-Host "   This may indicate zero quota in this subscription/region."
     Write-Host ""
     Write-Host "   Request GPU quota at:"
-    Write-Host "   https://portal.azure.com/#view/Microsoft_Azure_Capacity/QuotaMenuBlade/~/myQuotas"
+    Write-Host "   $QUOTA_URL"
     Write-Host ""
     Write-Host "   Proceeding anyway - provisioning will fail if quota is insufficient."
 }
-elseif ($available -lt $needed) {
-    Write-Error "Insufficient GPU quota in $($env:AZURE_LOCATION).`n  VM Size:   $vmSize ($needed cores)`n  Available: $available cores ($currentUsage/$quotaLimit used)`n  Required:  $needed cores`n`nRequest quota increase at:`nhttps://portal.azure.com/#view/Microsoft_Azure_Capacity/QuotaMenuBlade/~/myQuotas"
+elseif ($available -lt $VI_GPU_CORES_NEEDED) {
+    Write-Error "Insufficient GPU quota in $($env:AZURE_LOCATION).`n  VM Size:   $VI_VM_SIZE ($VI_GPU_CORES_NEEDED cores)`n  Available: $available cores ($currentUsage/$quotaLimit used)`n  Required:  $VI_GPU_CORES_NEEDED cores`n`nRequest quota increase at:`n$QUOTA_URL"
     exit 1
 }
 else {
     Write-Host "   GPU quota: $available cores available ($currentUsage/$quotaLimit used)"
-    Write-Host "   Required:  $needed cores for $vmSize"
+    Write-Host "   Required:  $VI_GPU_CORES_NEEDED cores for $VI_VM_SIZE"
 }
 
 # =====================================================
 # Summary
 # =====================================================
 Write-Host ""
-Write-Host "=============================================="
-Write-Host "Pre-provision validation passed!"
-Write-Host "=============================================="
+Write-Banner "Pre-provision validation passed!"
 Write-Host ""
 Write-Host "  Subscription: $(if ($subName) { $subName } else { $env:AZURE_SUBSCRIPTION_ID })"
 Write-Host "  Location:     $($env:AZURE_LOCATION)"
 Write-Host "  Environment:  $($env:AZURE_ENV_NAME)"
-Write-Host "  GPU VM:       $vmSize ($available cores available)"
+Write-Host "  GPU VM:       $VI_VM_SIZE ($available cores available)"
 Write-Host "  Providers:    all registered"
 Write-Host "  Tools:        all present"
 Write-Host ""

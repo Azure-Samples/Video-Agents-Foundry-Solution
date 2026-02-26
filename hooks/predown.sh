@@ -6,9 +6,9 @@
 
 set -e
 
-echo "=============================================="
-echo "Pre-Down: Graceful Teardown Preparation"
-echo "=============================================="
+source "$(dirname "$0")/common.sh"
+
+write_banner "Pre-Down: Graceful Teardown Preparation"
 
 CLEANUP_ERRORS=0
 
@@ -28,7 +28,7 @@ echo "  Arc Cluster:     ${AZURE_ARC_CLUSTER_NAME:-not set}"
 echo "  VI Account:      ${AZURE_VIDEO_INDEXER_ACCOUNT_ID:-not set}"
 echo "  Storage Account: and all stored data"
 echo "  Public IP:       ${AZURE_STATIC_IP:-not set}"
-echo "  GPU Nodes:       Standard_NC24ads_A100_v4"
+echo "  GPU Nodes:       ${VI_VM_SIZE}"
 echo ""
 echo "  This action CANNOT be undone."
 echo "  Re-provisioning takes 25-40 minutes."
@@ -53,13 +53,8 @@ echo ">> Step 2: Getting AKS cluster credentials..."
 
 HAS_CLUSTER_ACCESS=false
 if [ -n "${AZURE_RESOURCE_GROUP:-}" ] && [ -n "${AZURE_AKS_CLUSTER_NAME:-}" ]; then
-    az aks get-credentials \
-        --resource-group "$AZURE_RESOURCE_GROUP" \
-        --name "$AZURE_AKS_CLUSTER_NAME" \
-        --admin \
-        --overwrite-existing 2>/dev/null && {
+    KUBE_CONTEXT=$(connect_aks_cluster) && {
         HAS_CLUSTER_ACCESS=true
-        KUBE_CONTEXT="${AZURE_AKS_CLUSTER_NAME}-admin"
         echo "   AKS credentials configured."
     } || {
         echo "   WARNING: Could not get AKS credentials."
@@ -92,9 +87,9 @@ if [ -n "$ARC_CLUSTER_NAME" ] && [ -n "${AZURE_RESOURCE_GROUP:-}" ]; then
 
     # Wait for namespace cleanup if cluster is accessible
     if [ "$HAS_CLUSTER_ACCESS" = "true" ]; then
-        echo "   Waiting for video-indexer namespace cleanup (up to 60s)..."
-        kubectl --context "$KUBE_CONTEXT" wait --for=delete namespace/video-indexer \
-            --timeout=60s 2>/dev/null || true
+        echo "   Waiting for ${NS_VIDEO_INDEXER} namespace cleanup (up to ${TIMEOUT_NS_CLEANUP}s)..."
+        kubectl --context "$KUBE_CONTEXT" wait --for=delete namespace/$NS_VIDEO_INDEXER \
+            --timeout=${TIMEOUT_NS_CLEANUP}s 2>/dev/null || true
     fi
 else
     echo "   Skipped (no Arc cluster configured)"
@@ -129,7 +124,7 @@ echo ""
 echo ">> Step 5: Removing NVIDIA GPU Operator..."
 
 if [ "$HAS_CLUSTER_ACCESS" = "true" ]; then
-    helm uninstall gpu-operator -n gpu-operator \
+    helm uninstall gpu-operator -n "$NS_GPU_OPERATOR" \
         --kube-context "$KUBE_CONTEXT" 2>/dev/null && {
         echo "   GPU Operator: Helm release removed"
     } || {
@@ -137,8 +132,8 @@ if [ "$HAS_CLUSTER_ACCESS" = "true" ]; then
         CLEANUP_ERRORS=$((CLEANUP_ERRORS + 1))
     }
 
-    kubectl --context "$KUBE_CONTEXT" delete namespace gpu-operator \
-        --timeout=120s 2>/dev/null || true
+    kubectl --context "$KUBE_CONTEXT" delete namespace "$NS_GPU_OPERATOR" \
+        --timeout=${TIMEOUT_NS_DELETE}s 2>/dev/null || true
     echo "   GPU Operator namespace: cleaned up"
 else
     echo "   Skipped (no cluster access)"
@@ -176,7 +171,7 @@ if [ "$HAS_CLUSTER_ACCESS" = "true" ]; then
         2>/dev/null || true
 
     # Delete LoadBalancer services to release public IP
-    kubectl --context "$KUBE_CONTEXT" delete svc nginx -n app-routing-system \
+    kubectl --context "$KUBE_CONTEXT" delete svc nginx -n "$NS_APP_ROUTING" \
         2>/dev/null || true
 
     echo "   Ingress resources: cleaned up"
@@ -188,9 +183,7 @@ fi
 # Summary
 # =====================================================
 echo ""
-echo "=============================================="
-echo "Pre-down cleanup complete"
-echo "=============================================="
+write_banner "Pre-down cleanup complete"
 echo ""
 echo "  VI Extension:   removed"
 echo "  Cert Manager:   removed"

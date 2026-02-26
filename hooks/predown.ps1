@@ -4,9 +4,9 @@
 
 $ErrorActionPreference = "Stop"
 
-Write-Host "=============================================="
-Write-Host "Pre-Down: Graceful Teardown Preparation"
-Write-Host "=============================================="
+. "$PSScriptRoot/common.ps1"
+
+Write-Banner "Pre-Down: Graceful Teardown Preparation"
 
 $CleanupErrors = 0
 
@@ -26,7 +26,7 @@ Write-Host "  Arc Cluster:     $(if ($env:AZURE_ARC_CLUSTER_NAME) { $env:AZURE_A
 Write-Host "  VI Account:      $(if ($env:AZURE_VIDEO_INDEXER_ACCOUNT_ID) { $env:AZURE_VIDEO_INDEXER_ACCOUNT_ID } else { 'not set' })"
 Write-Host "  Storage Account: and all stored data"
 Write-Host "  Public IP:       $(if ($env:AZURE_STATIC_IP) { $env:AZURE_STATIC_IP } else { 'not set' })"
-Write-Host "  GPU Nodes:       Standard_NC24ads_A100_v4"
+Write-Host "  GPU Nodes:       $VI_VM_SIZE"
 Write-Host ""
 Write-Host "  This action CANNOT be undone."
 Write-Host "  Re-provisioning takes 25-40 minutes."
@@ -52,13 +52,8 @@ Write-Host ">> Step 2: Getting AKS cluster credentials..."
 $HasClusterAccess = $false
 if ($env:AZURE_RESOURCE_GROUP -and $env:AZURE_AKS_CLUSTER_NAME) {
     try {
-        az aks get-credentials `
-            --resource-group $env:AZURE_RESOURCE_GROUP `
-            --name $env:AZURE_AKS_CLUSTER_NAME `
-            --admin `
-            --overwrite-existing 2>$null
+        $KubeContext = Connect-AksCluster
         $HasClusterAccess = $true
-        $KubeContext = "$($env:AZURE_AKS_CLUSTER_NAME)-admin"
         Write-Host "   AKS credentials configured."
     }
     catch {
@@ -95,10 +90,10 @@ if ($arcClusterName -and $env:AZURE_RESOURCE_GROUP) {
 
     # Wait for namespace cleanup if cluster is accessible
     if ($HasClusterAccess) {
-        Write-Host "   Waiting for video-indexer namespace cleanup (up to 60s)..."
+        Write-Host "   Waiting for $NS_VIDEO_INDEXER namespace cleanup (up to ${TIMEOUT_NS_CLEANUP}s)..."
         try {
-            kubectl --context $KubeContext wait --for=delete namespace/video-indexer `
-                --timeout=60s 2>$null
+            kubectl --context $KubeContext wait --for=delete namespace/$NS_VIDEO_INDEXER `
+                --timeout=${TIMEOUT_NS_CLEANUP}s 2>$null
         }
         catch {
             # Namespace may already be gone
@@ -142,7 +137,7 @@ Write-Host ">> Step 5: Removing NVIDIA GPU Operator..."
 
 if ($HasClusterAccess) {
     try {
-        helm uninstall gpu-operator -n gpu-operator `
+        helm uninstall gpu-operator -n $NS_GPU_OPERATOR `
             --kube-context $KubeContext 2>$null
         Write-Host "   GPU Operator: Helm release removed"
     }
@@ -152,8 +147,8 @@ if ($HasClusterAccess) {
     }
 
     try {
-        kubectl --context $KubeContext delete namespace gpu-operator `
-            --timeout=120s 2>$null
+        kubectl --context $KubeContext delete namespace $NS_GPU_OPERATOR `
+            --timeout=${TIMEOUT_NS_DELETE}s 2>$null
     }
     catch {
         # Namespace may already be gone
@@ -202,7 +197,7 @@ if ($HasClusterAccess) {
     }
 
     try {
-        kubectl --context $KubeContext delete svc nginx -n app-routing-system 2>$null
+        kubectl --context $KubeContext delete svc nginx -n $NS_APP_ROUTING 2>$null
     }
     catch {
         # May not exist
@@ -218,9 +213,7 @@ else {
 # Summary
 # =====================================================
 Write-Host ""
-Write-Host "=============================================="
-Write-Host "Pre-down cleanup complete"
-Write-Host "=============================================="
+Write-Banner "Pre-down cleanup complete"
 Write-Host ""
 Write-Host "  VI Extension:   removed"
 Write-Host "  Cert Manager:   removed"

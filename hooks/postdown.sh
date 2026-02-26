@@ -6,9 +6,9 @@
 
 set -e
 
-echo "=============================================="
-echo "Post-Down: Local State Cleanup"
-echo "=============================================="
+source "$(dirname "$0")/common.sh"
+
+write_banner "Post-Down: Local State Cleanup"
 
 # =====================================================
 # Step 1: Clean up kubectl context
@@ -116,21 +116,19 @@ echo ">> Step 4: Cleaning up Helm repos..."
 
 HELM_REPOS=$(helm repo list -o json 2>/dev/null || echo "[]")
 
-if echo "$HELM_REPOS" | grep -q '"nvidia"' 2>/dev/null; then
-    helm repo remove nvidia 2>/dev/null && {
-        echo "   Removed Helm repo: nvidia"
-    } || echo "   Failed to remove nvidia repo"
+if echo "$HELM_REPOS" | grep -q "\"${NVIDIA_HELM_REPO_NAME}\"" 2>/dev/null; then
+    helm repo remove "$NVIDIA_HELM_REPO_NAME" 2>/dev/null && {
+        echo "   Removed Helm repo: ${NVIDIA_HELM_REPO_NAME}"
+    } || echo "   Failed to remove ${NVIDIA_HELM_REPO_NAME} repo"
 else
-    echo "   nvidia repo: not present (already clean)"
+    echo "   ${NVIDIA_HELM_REPO_NAME} repo: not present (already clean)"
 fi
 
 # =====================================================
 # Summary
 # =====================================================
 echo ""
-echo "=============================================="
-echo "  Video Indexer Arc - Teardown Complete"
-echo "=============================================="
+write_banner "Video Indexer Arc - Teardown Complete"
 echo ""
 echo "  Azure Resources:   deleted (or deletion in progress)"
 echo "  kubectl Context:   removed"

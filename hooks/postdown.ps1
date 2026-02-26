@@ -4,9 +4,9 @@
 
 $ErrorActionPreference = "Stop"
 
-Write-Host "=============================================="
-Write-Host "Post-Down: Local State Cleanup"
-Write-Host "=============================================="
+. "$PSScriptRoot/common.ps1"
+
+Write-Banner "Post-Down: Local State Cleanup"
 
 # =====================================================
 # Step 1: Clean up kubectl context
@@ -182,26 +182,24 @@ catch {
     $helmRepos = @()
 }
 
-if ($helmRepos | Where-Object { $_.name -eq "nvidia" }) {
+if ($helmRepos | Where-Object { $_.name -eq "$NVIDIA_HELM_REPO_NAME" }) {
     try {
-        helm repo remove nvidia 2>$null
-        Write-Host "   Removed Helm repo: nvidia"
+        helm repo remove $NVIDIA_HELM_REPO_NAME 2>$null
+        Write-Host "   Removed Helm repo: $NVIDIA_HELM_REPO_NAME"
     }
     catch {
-        Write-Host "   Failed to remove nvidia repo"
+        Write-Host "   Failed to remove $NVIDIA_HELM_REPO_NAME repo"
     }
 }
 else {
-    Write-Host "   nvidia repo: not present (already clean)"
+    Write-Host "   $NVIDIA_HELM_REPO_NAME repo: not present (already clean)"
 }
 
 # =====================================================
 # Summary
 # =====================================================
 Write-Host ""
-Write-Host "=============================================="
-Write-Host "  Video Indexer Arc - Teardown Complete"
-Write-Host "=============================================="
+Write-Banner "Video Indexer Arc - Teardown Complete"
 Write-Host ""
 Write-Host "  Azure Resources:   deleted (or deletion in progress)"
 Write-Host "  kubectl Context:   removed"
