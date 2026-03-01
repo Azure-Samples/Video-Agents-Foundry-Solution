@@ -12,10 +12,6 @@ Write-Banner "Pre-Down: Graceful Teardown Preparation"
 # Step 1: Destruction warning
 # =====================================================
 Write-Host ""
-Write-Host "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" -ForegroundColor Red
-Write-Host "!            DESTRUCTIVE OPERATION              !" -ForegroundColor Red
-Write-Host "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" -ForegroundColor Red
-Write-Host ""
 Write-Host "  'azd down' will DESTROY the following resources:"
 Write-Host ""
 Write-Host "  Resource Group:  $(if ($env:AZURE_RESOURCE_GROUP) { $env:AZURE_RESOURCE_GROUP } else { 'not set' })"

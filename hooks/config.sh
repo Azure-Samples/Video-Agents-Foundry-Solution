@@ -36,6 +36,4 @@ REQUIRED_PROVIDERS=(
     "Microsoft.Kubernetes"
     "Microsoft.KubernetesConfiguration"
     "Microsoft.ExtendedLocation"
-    "Microsoft.ContainerService"
-    "Microsoft.Network"
 )

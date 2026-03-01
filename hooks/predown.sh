@@ -14,10 +14,6 @@ write_banner "Pre-Down: Graceful Teardown Preparation"
 # Step 1: Destruction warning
 # =====================================================
 echo ""
-echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
-echo "!            DESTRUCTIVE OPERATION              !"
-echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
-echo ""
 echo "  'azd down' will DESTROY the following resources:"
 echo ""
 echo "  Resource Group:  ${AZURE_RESOURCE_GROUP:-not set}"
