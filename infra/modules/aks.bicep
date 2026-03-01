@@ -32,10 +32,15 @@ param systemMaxNodeCount int = 2
 @maxValue(10)
 param workloadMaxNodeCount int = 10
 
-@description('Maximum number of GPU nodes')
+@description('Maximum number of deepstream GPU nodes')
 @minValue(1)
 @maxValue(10)
-param gpuMaxNodeCount int = 3
+param deepstreamGpuMaxNodeCount int = 1
+
+@description('Maximum number of inference GPU nodes')
+@minValue(1)
+@maxValue(10)
+param inferenceGpuMaxNodeCount int = 2
 
 @description('DNS prefix for the AKS cluster')
 param dnsPrefix string = name
@@ -132,7 +137,7 @@ resource aksCluster 'Microsoft.ContainerService/managedClusters@2024-09-01' = {
         name: 'deepstreamWorkload'
         count: 0
         minCount: 0
-        maxCount: gpuMaxNodeCount
+        maxCount: deepstreamGpuMaxNodeCount
         vmSize: deepstreamGpuVmSize
         osType: 'Linux'
         osSKU: 'Ubuntu'
@@ -150,15 +155,13 @@ resource aksCluster 'Microsoft.ContainerService/managedClusters@2024-09-01' = {
       }
       {
         name: 'inferenceWorkload'
-        count: 0
-        minCount: 0
-        maxCount: gpuMaxNodeCount
+        count: inferenceGpuMaxNodeCount
         vmSize: inferenceGpuVmSize
         osType: 'Linux'
         osSKU: 'Ubuntu'
         osDiskSizeGB: 200
         mode: 'User'
-        enableAutoScaling: true
+        enableAutoScaling: false
         type: 'VirtualMachineScaleSets'
         nodeTaints: [
           'nvidia.com/gpu=true:NoSchedule'
