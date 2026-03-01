@@ -25,6 +25,18 @@ param createRoleForUser bool = true
 @description('Kubernetes version for the AKS cluster')
 param kubernetesVersion string
 
+@description('VM size for the GPU deepstream workload node pool')
+param deepstreamGpuVmSize string
+
+@description('VM size for the GPU inference workload node pool')
+param inferenceGpuVmSize string
+
+@description('Maximum number of deepstream GPU nodes')
+param deepstreamGpuMaxNodeCount int
+
+@description('Maximum number of inference GPU nodes')
+param inferenceGpuMaxNodeCount int
+
 // =====================================================
 // Variables
 // =====================================================
@@ -91,6 +103,10 @@ module aks 'modules/aks.bicep' = {
     location: location
     tags: tags
     kubernetesVersion: kubernetesVersion
+    deepstreamGpuVmSize: deepstreamGpuVmSize
+    inferenceGpuVmSize: inferenceGpuVmSize
+    deepstreamGpuMaxNodeCount: deepstreamGpuMaxNodeCount
+    inferenceGpuMaxNodeCount: inferenceGpuMaxNodeCount
   }
 }
 

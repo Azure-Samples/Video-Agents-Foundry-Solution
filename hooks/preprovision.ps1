@@ -73,68 +73,95 @@ Write-Step "4" "Checking Azure resource provider registrations..."
 $null = Register-RequiredProviders
 
 # =====================================================
-# Step 5: Validate region supports required VM size
+# Step 5: Validate region supports required VM sizes
 # =====================================================
 Write-Step "5" "Checking region capability for GPU VMs..."
 
-$vmAvailable = $null
-try {
-    $vmAvailable = (az vm list-sizes --location $env:AZURE_LOCATION `
-        --query "[?name=='$VI_VM_SIZE']" -o tsv 2>$null)
-}
-catch {
+foreach ($gpuVm in @($DEEPSTREAM_GPU_VM_SIZE, $INFERENCE_GPU_VM_SIZE)) {
     $vmAvailable = $null
-}
+    try {
+        $vmAvailable = (az vm list-sizes --location $env:AZURE_LOCATION `
+            --query "[?name=='$gpuVm']" -o tsv 2>$null)
+    }
+    catch {
+        $vmAvailable = $null
+    }
 
-if (-not $vmAvailable) {
-    Write-Error "VM size '$VI_VM_SIZE' is not available in region '$($env:AZURE_LOCATION)'.`nThis VM is required for the GPU node pool.`n`nAvailable regions for $VI_VM_SIZE include:`n  eastus, eastus2, westus2, westus3, southcentralus,`n  northeurope, westeurope, southeastasia, australiaeast`n`nChange region with: azd env set AZURE_LOCATION <region>"
-    exit 1
-}
+    if (-not $vmAvailable) {
+        Write-Error "VM size '$gpuVm' is not available in region '$($env:AZURE_LOCATION)'.`nThis VM is required for a GPU node pool.`n`nChange region with: azd env set AZURE_LOCATION <region>"
+        exit 1
+    }
 
-Write-Host "   ${VI_VM_SIZE}: available in $($env:AZURE_LOCATION)"
+    Write-Host "   ${gpuVm}: available in $($env:AZURE_LOCATION)"
+}
 
 # =====================================================
 # Step 6: Check GPU VM quota
 # =====================================================
 Write-Step "6" "Checking GPU VM quota..."
 
-$quotaJson = $null
-try {
-    $quotaJson = (az vm list-usage --location $env:AZURE_LOCATION `
-        --query "[?contains(name.value, '$VI_GPU_QUOTA_FAMILY')]" `
-        -o json 2>$null) | ConvertFrom-Json
-}
-catch {
+$allPassed = $true
+
+function Test-GpuQuota {
+    param (
+        [string]$PoolName,
+        [string]$VmSize,
+        [string]$Family,
+        [int]$CoresPerVm,
+        [int]$MaxNodes
+    )
+
+    $coresNeeded = $CoresPerVm * $MaxNodes
+
     $quotaJson = @()
+    try {
+        $quotaJson = (az vm list-usage --location $env:AZURE_LOCATION `
+            --query "[?contains(name.value, '$Family')]" `
+            -o json 2>$null) | ConvertFrom-Json
+    }
+    catch {
+        $quotaJson = @()
+    }
+
+    $currentUsage = 0
+    $quotaLimit = 0
+
+    if ($quotaJson -and $quotaJson.Count -gt 0) {
+        $currentUsage = $quotaJson[0].currentValue
+        $quotaLimit = $quotaJson[0].limit
+    }
+
+    $available = $quotaLimit - $currentUsage
+
+    Write-Host "   [$PoolName] $VmSize — $MaxNodes node(s) x $CoresPerVm cores = $coresNeeded cores needed"
+
+    if ($quotaLimit -eq 0) {
+        Write-Host "   [$PoolName] WARNING: Could not determine quota (family: $Family)." -ForegroundColor Yellow
+        Write-Host "   This may indicate zero quota in this subscription/region."
+        Write-Host "   Request GPU quota at: $QUOTA_URL"
+        Write-Host "   Proceeding anyway - provisioning will fail if quota is insufficient."
+    }
+    elseif ($available -lt $coresNeeded) {
+        Write-Host "   [$PoolName] ERROR: Insufficient quota — $available cores available, $coresNeeded required ($currentUsage/$quotaLimit used)" -ForegroundColor Red
+        Write-Host "   Request quota increase at: $QUOTA_URL"
+        return $false
+    }
+    else {
+        Write-Host "   [$PoolName] OK — $available cores available ($currentUsage/$quotaLimit used)"
+    }
+
+    return $true
 }
 
-$currentUsage = 0
-$quotaLimit = 0
-
-if ($quotaJson -and $quotaJson.Count -gt 0) {
-    $currentUsage = $quotaJson[0].currentValue
-    $quotaLimit = $quotaJson[0].limit
+if (-not (Test-GpuQuota -PoolName "Deepstream" -VmSize $DEEPSTREAM_GPU_VM_SIZE -Family $DEEPSTREAM_GPU_QUOTA_FAMILY -CoresPerVm $DEEPSTREAM_GPU_CORES_PER_VM -MaxNodes $DEEPSTREAM_GPU_MAX_NODE_COUNT)) {
+    $allPassed = $false
+}
+if (-not (Test-GpuQuota -PoolName "Inference" -VmSize $INFERENCE_GPU_VM_SIZE -Family $INFERENCE_GPU_QUOTA_FAMILY -CoresPerVm $INFERENCE_GPU_CORES_PER_VM -MaxNodes $INFERENCE_GPU_MAX_NODE_COUNT)) {
+    $allPassed = $false
 }
 
-$available = $quotaLimit - $currentUsage
-
-if ($quotaLimit -eq 0) {
-    Write-Host "   WARNING: Could not determine GPU quota for $VI_VM_SIZE." -ForegroundColor Yellow
-    Write-Host "   Family: $VI_GPU_QUOTA_FAMILY"
-    Write-Host "   This may indicate zero quota in this subscription/region."
-    Write-Host ""
-    Write-Host "   Request GPU quota at:"
-    Write-Host "   $QUOTA_URL"
-    Write-Host ""
-    Write-Host "   Proceeding anyway - provisioning will fail if quota is insufficient."
-}
-elseif ($available -lt $VI_GPU_CORES_NEEDED) {
-    Write-Error "Insufficient GPU quota in $($env:AZURE_LOCATION).`n  VM Size:   $VI_VM_SIZE ($VI_GPU_CORES_NEEDED cores)`n  Available: $available cores ($currentUsage/$quotaLimit used)`n  Required:  $VI_GPU_CORES_NEEDED cores`n`nRequest quota increase at:`n$QUOTA_URL"
+if (-not $allPassed) {
     exit 1
-}
-else {
-    Write-Host "   GPU quota: $available cores available ($currentUsage/$quotaLimit used)"
-    Write-Host "   Required:  $VI_GPU_CORES_NEEDED cores for $VI_VM_SIZE"
 }
 
 # =====================================================
@@ -143,11 +170,12 @@ else {
 Write-Host ""
 Write-Banner "Pre-provision validation passed!"
 Write-Host ""
-Write-Host "  Subscription: $(if ($subName) { $subName } else { $env:AZURE_SUBSCRIPTION_ID })"
-Write-Host "  Location:     $($env:AZURE_LOCATION)"
-Write-Host "  Environment:  $($env:AZURE_ENV_NAME)"
-Write-Host "  GPU VM:       $VI_VM_SIZE ($available cores available)"
-Write-Host "  Providers:    all registered"
-Write-Host "  Tools:        all present"
+Write-Host "  Subscription:    $(if ($subName) { $subName } else { $env:AZURE_SUBSCRIPTION_ID })"
+Write-Host "  Location:        $($env:AZURE_LOCATION)"
+Write-Host "  Environment:     $($env:AZURE_ENV_NAME)"
+Write-Host "  Deepstream GPU:  $DEEPSTREAM_GPU_VM_SIZE ($DEEPSTREAM_GPU_MAX_NODE_COUNT node(s))"
+Write-Host "  Inference GPU:   $INFERENCE_GPU_VM_SIZE ($INFERENCE_GPU_MAX_NODE_COUNT node(s))"
+Write-Host "  Providers:       all registered"
+Write-Host "  Tools:           all present"
 Write-Host ""
 Write-Host "Proceeding with provisioning..."

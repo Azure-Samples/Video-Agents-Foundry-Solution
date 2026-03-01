@@ -24,15 +24,6 @@ hooks:
     posix:
       shell: sh
       run: ./hooks/postprovision.sh
-  preup:
-    windows:
-      shell: pwsh
-      run: ./hooks/preup.ps1
-      interactive: true
-    posix:
-      shell: sh
-      run: ./hooks/preup.sh
-      interactive: true
   postup:
     windows:
       shell: pwsh
@@ -42,19 +33,3 @@ hooks:
       shell: sh
       run: ./hooks/postup.sh
       interactive: true
-  predown:
-    windows:
-      shell: pwsh
-      run: ./hooks/predown.ps1
-      interactive: true
-    posix:
-      shell: sh
-      run: ./hooks/predown.sh
-      interactive: true
-  postdown:
-    windows:
-      shell: pwsh
-      run: ./hooks/postdown.ps1
-    posix:
-      shell: sh
-      run: ./hooks/postdown.sh

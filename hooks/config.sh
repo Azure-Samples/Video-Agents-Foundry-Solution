@@ -4,10 +4,18 @@
 # =============================================================================
 # Source this file via: source "$(dirname "$0")/config.sh"
 
-# ── Compute ──────────────────────────────────────────────────────────────────
-VI_VM_SIZE="Standard_NC24ads_A100_v4"
-VI_GPU_QUOTA_FAMILY="StandardNCADSA100v4Family"
-VI_GPU_CORES_NEEDED=24
+# ── GPU Compute (set via azd env vars, defaults in main.bicepparam) ──────
+# Deepstream GPU pool
+DEEPSTREAM_GPU_VM_SIZE="${DEEPSTREAM_GPU_VM_SIZE:?Set via: azd env set DEEPSTREAM_GPU_VM_SIZE <value>}"
+DEEPSTREAM_GPU_QUOTA_FAMILY="standardNVADSA10v5Family"
+DEEPSTREAM_GPU_MAX_NODE_COUNT="${DEEPSTREAM_GPU_MAX_NODE_COUNT:?Set via: azd env set DEEPSTREAM_GPU_MAX_NODE_COUNT <value>}"
+DEEPSTREAM_GPU_CORES_PER_VM=36
+
+# Inference GPU pool
+INFERENCE_GPU_VM_SIZE="${INFERENCE_GPU_VM_SIZE:?Set via: azd env set INFERENCE_GPU_VM_SIZE <value>}"
+INFERENCE_GPU_QUOTA_FAMILY="StandardNCADSA100v4Family"
+INFERENCE_GPU_MAX_NODE_COUNT="${INFERENCE_GPU_MAX_NODE_COUNT:?Set via: azd env set INFERENCE_GPU_MAX_NODE_COUNT <value>}"
+INFERENCE_GPU_CORES_PER_VM=24
 
 # ── Kubernetes Namespaces ────────────────────────────────────────────────────
 NS_GPU_OPERATOR="gpu-operator"

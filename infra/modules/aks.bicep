@@ -17,10 +17,10 @@ param systemVmSize string = 'Standard_D4a_v4'
 param workloadVmSize string = 'Standard_D32a_v4'
 
 @description('VM size for the GPU deepstream workload node pool')
-param deepstreamGpuVmSize string = 'Standard_NV36ads_A10_v5'
+param deepstreamGpuVmSize string
 
 @description('VM size for the GPU inference workload node pool')
-param inferenceGpuVmSize string = 'Standard_NC24ads_A100_v4'
+param inferenceGpuVmSize string
 
 @description('Maximum number of system nodes')
 @minValue(1)
@@ -35,12 +35,12 @@ param workloadMaxNodeCount int = 10
 @description('Maximum number of deepstream GPU nodes')
 @minValue(1)
 @maxValue(10)
-param deepstreamGpuMaxNodeCount int = 1
+param deepstreamGpuMaxNodeCount int
 
 @description('Maximum number of inference GPU nodes')
 @minValue(1)
 @maxValue(10)
-param inferenceGpuMaxNodeCount int = 2
+param inferenceGpuMaxNodeCount int
 
 @description('DNS prefix for the AKS cluster')
 param dnsPrefix string = name

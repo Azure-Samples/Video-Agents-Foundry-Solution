@@ -3,10 +3,18 @@
 # =============================================================================
 # Source this file via: . "$PSScriptRoot/config.ps1"
 
-# ── Compute ──────────────────────────────────────────────────────────────────
-$Script:VI_VM_SIZE = "Standard_NC24ads_A100_v4"
-$Script:VI_GPU_QUOTA_FAMILY = "StandardNCADSA100v4Family"
-$Script:VI_GPU_CORES_NEEDED = 24
+# ── GPU Compute (set via azd env vars, defaults in main.bicepparam) ──────
+# Deepstream GPU pool
+$Script:DEEPSTREAM_GPU_VM_SIZE = if ($env:DEEPSTREAM_GPU_VM_SIZE) { $env:DEEPSTREAM_GPU_VM_SIZE } else { "Standard_NV36ads_A10_v5" }
+$Script:DEEPSTREAM_GPU_QUOTA_FAMILY = "standardNVADSA10v5Family"
+$Script:DEEPSTREAM_GPU_MAX_NODE_COUNT = if ($env:DEEPSTREAM_GPU_MAX_NODE_COUNT) { [int]$env:DEEPSTREAM_GPU_MAX_NODE_COUNT } else { 1 }
+$Script:DEEPSTREAM_GPU_CORES_PER_VM = 36
+
+# Inference GPU pool
+$Script:INFERENCE_GPU_VM_SIZE = if ($env:INFERENCE_GPU_VM_SIZE) { $env:INFERENCE_GPU_VM_SIZE } else { "Standard_NC24ads_A100_v4" }
+$Script:INFERENCE_GPU_QUOTA_FAMILY = "StandardNCADSA100v4Family"
+$Script:INFERENCE_GPU_MAX_NODE_COUNT = if ($env:INFERENCE_GPU_MAX_NODE_COUNT) { [int]$env:INFERENCE_GPU_MAX_NODE_COUNT } else { 2 }
+$Script:INFERENCE_GPU_CORES_PER_VM = 24
 
 # ── Kubernetes Namespaces ────────────────────────────────────────────────────
 $Script:NS_GPU_OPERATOR = "gpu-operator"
