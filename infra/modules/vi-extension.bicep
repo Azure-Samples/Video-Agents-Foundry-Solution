@@ -29,6 +29,9 @@ param tolerationsKeyForGpu string = 'nvidia.com/gpu'
 @description('Node selector value for deepstream workloads')
 param deepstreamNodeSelectorValue string
 
+@description('Node selector value for inference workloads')
+param inferenceNodeSelectorValue string
+
 @description('Enable live video stream')
 param liveVideoStreamEnabled bool = true
 
@@ -55,12 +58,13 @@ var baseConfigProperties = {
   'videoIndexer.mediaUploadsEnabled': string(mediaUploadsEnabled)
   'videoIndexer.liveVideoStreamEnabled': string(liveVideoStreamEnabled)
   'videoIndexer.agents.enabled': string(agentsEnabled)
-  'ViAi.mediaServerStreams.enabled': string(mediaServerStreamsEnabled)
   'storage.storageClass': storageClass
   'storage.accessMode': 'ReadWriteMany'
   'ViAi.gpu.enabled': string(useGpuForSummarization)
   'ViAi.gpu.tolerations.key': tolerationsKeyForGpu
+  'ViAi.mediaServerStreams.enabled': string(mediaServerStreamsEnabled)
   'ViAi.deepstream.nodeSelector.workload': deepstreamNodeSelectorValue
+  'ViAi.inference.nodeSelector.workload': inferenceNodeSelectorValue
   'ViAi.LiveSummarization.enabled': string(liveSummarizationEnabled)
 }
 

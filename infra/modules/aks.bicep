@@ -8,7 +8,7 @@ param location string
 param tags object = {}
 
 @description('Kubernetes version')
-param kubernetesVersion string = '1.32'
+param kubernetesVersion string
 
 @description('VM size for the system node pool')
 param systemVmSize string = 'Standard_D4a_v4'
@@ -16,8 +16,11 @@ param systemVmSize string = 'Standard_D4a_v4'
 @description('VM size for the workload node pool')
 param workloadVmSize string = 'Standard_D32a_v4'
 
-@description('VM size for the GPU workload node pool')
-param gpuVmSize string = 'Standard_NC24ads_A100_v4'
+@description('VM size for the GPU deepstream workload node pool')
+param deepstreamGpuVmSize string = 'Standard_NV36ads_A10_v5'
+
+@description('VM size for the GPU inference workload node pool')
+param inferenceGpuVmSize string = 'Standard_NC24ads_A100_v4'
 
 @description('Maximum number of system nodes')
 @minValue(1)
@@ -42,6 +45,9 @@ param nodeResourceGroup string
 
 @description('Node label value used to target deepstream workloads')
 var deepstreamWorkloadLabel = 'deepstream'
+
+@description('Node label value used to target inference workloads')
+var inferenceWorkloadLabel = 'inference'
 
 resource aksCluster 'Microsoft.ContainerService/managedClusters@2024-09-01' = {
   name: name
@@ -123,11 +129,11 @@ resource aksCluster 'Microsoft.ContainerService/managedClusters@2024-09-01' = {
         maxPods: 110
       }
       {
-        name: 'gpuworkload'
+        name: 'deepstreamWorkload'
         count: 0
         minCount: 0
         maxCount: gpuMaxNodeCount
-        vmSize: gpuVmSize
+        vmSize: deepstreamGpuVmSize
         osType: 'Linux'
         osSKU: 'Ubuntu'
         osDiskSizeGB: 200
@@ -139,6 +145,26 @@ resource aksCluster 'Microsoft.ContainerService/managedClusters@2024-09-01' = {
         ]
         nodeLabels: {
           workload: deepstreamWorkloadLabel
+        }
+        maxPods: 110
+      }
+      {
+        name: 'inferenceWorkload'
+        count: 0
+        minCount: 0
+        maxCount: gpuMaxNodeCount
+        vmSize: inferenceGpuVmSize
+        osType: 'Linux'
+        osSKU: 'Ubuntu'
+        osDiskSizeGB: 200
+        mode: 'User'
+        enableAutoScaling: true
+        type: 'VirtualMachineScaleSets'
+        nodeTaints: [
+          'nvidia.com/gpu=true:NoSchedule'
+        ]
+        nodeLabels: {
+          workload: inferenceWorkloadLabel
         }
         maxPods: 110
       }
@@ -161,5 +187,5 @@ output oidcIssuerUrl string = aksCluster.properties.oidcIssuerProfile.issuerURL
 @description('Deepstream workload label value used for node selection')
 output deepstreamWorkloadLabelValue string = deepstreamWorkloadLabel
 
-@description('AKS node resource group name')
-output nodeResourceGroup string = aksCluster.properties.nodeResourceGroup
+@description('Inference workload label value used for node selection')
+output inferenceWorkloadLabelValue string = inferenceWorkloadLabel
