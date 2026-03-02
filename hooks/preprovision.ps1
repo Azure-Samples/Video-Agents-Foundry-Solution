@@ -77,22 +77,25 @@ $null = Register-RequiredProviders
 # =====================================================
 Write-Step "5" "Checking region capability for GPU VMs..."
 
+$gpuVmCores = @{}
+
 foreach ($gpuVm in @($DEEPSTREAM_GPU_VM_SIZE, $INFERENCE_GPU_VM_SIZE)) {
-    $vmAvailable = $null
+    $vmInfo = $null
     try {
-        $vmAvailable = (az vm list-sizes --location $env:AZURE_LOCATION `
-            --query "[?name=='$gpuVm']" -o tsv 2>$null)
+        $vmInfo = (az vm list-sizes --location $env:AZURE_LOCATION `
+                --query "[?name=='$gpuVm'] | [0]" -o json 2>$null) | ConvertFrom-Json
     }
     catch {
-        $vmAvailable = $null
+        $vmInfo = $null
     }
 
-    if (-not $vmAvailable) {
+    if (-not $vmInfo) {
         Write-Error "VM size '$gpuVm' is not available in region '$($env:AZURE_LOCATION)'.`nThis VM is required for a GPU node pool.`n`nChange region with: azd env set AZURE_LOCATION <region>"
         exit 1
     }
 
-    Write-Host "   ${gpuVm}: available in $($env:AZURE_LOCATION)"
+    $gpuVmCores[$gpuVm] = $vmInfo.numberOfCores
+    Write-Host "   ${gpuVm}: available in $($env:AZURE_LOCATION) ($($vmInfo.numberOfCores) cores)"
 }
 
 # =====================================================
@@ -107,20 +110,25 @@ function Test-GpuQuota {
         [string]$PoolName,
         [string]$VmSize,
         [string]$Family,
-        [int]$CoresPerVm,
         [int]$MaxNodes
     )
 
+    $CoresPerVm = $gpuVmCores[$VmSize]
     $coresNeeded = $CoresPerVm * $MaxNodes
 
     $quotaJson = @()
     try {
-        $quotaJson = (az vm list-usage --location $env:AZURE_LOCATION `
-            --query "[?contains(name.value, '$Family')]" `
-            -o json 2>$null) | ConvertFrom-Json
+        $raw = (az vm list-usage --location $env:AZURE_LOCATION `
+                --query "[?contains(name.value, '$Family')]" `
+                -o json 2>&1)
+        if ($LASTEXITCODE -ne 0) {
+            throw "az vm list-usage failed: $raw"
+        }
+        $quotaJson = $raw | ConvertFrom-Json
     }
     catch {
-        $quotaJson = @()
+        Write-Host "   [$PoolName] ERROR: Failed to query GPU quota — $_" -ForegroundColor Red
+        return $false
     }
 
     $currentUsage = 0
@@ -136,14 +144,16 @@ function Test-GpuQuota {
     Write-Host "   [$PoolName] $VmSize — $MaxNodes node(s) x $CoresPerVm cores = $coresNeeded cores needed"
 
     if ($quotaLimit -eq 0) {
-        Write-Host "   [$PoolName] WARNING: Could not determine quota (family: $Family)." -ForegroundColor Yellow
-        Write-Host "   This may indicate zero quota in this subscription/region."
+        Write-Host "   [$PoolName] ERROR: No GPU quota found for family '$Family' in region '$($env:AZURE_LOCATION)'." -ForegroundColor Red
+        Write-Host "   This typically means zero quota is allocated for this subscription/region."
         Write-Host "   Request GPU quota at: $QUOTA_URL"
-        Write-Host "   Proceeding anyway - provisioning will fail if quota is insufficient."
+        Write-Host "   For step-by-step instructions, see: $GPU_QUOTA_DOC_URL"
+        return $false
     }
     elseif ($available -lt $coresNeeded) {
         Write-Host "   [$PoolName] ERROR: Insufficient quota — $available cores available, $coresNeeded required ($currentUsage/$quotaLimit used)" -ForegroundColor Red
         Write-Host "   Request quota increase at: $QUOTA_URL"
+        Write-Host "   For step-by-step instructions, see: $GPU_QUOTA_DOC_URL"
         return $false
     }
     else {
@@ -153,10 +163,10 @@ function Test-GpuQuota {
     return $true
 }
 
-if (-not (Test-GpuQuota -PoolName "Deepstream" -VmSize $DEEPSTREAM_GPU_VM_SIZE -Family $DEEPSTREAM_GPU_QUOTA_FAMILY -CoresPerVm $DEEPSTREAM_GPU_CORES_PER_VM -MaxNodes $DEEPSTREAM_GPU_MAX_NODE_COUNT)) {
+if (-not (Test-GpuQuota -PoolName "Deepstream" -VmSize $DEEPSTREAM_GPU_VM_SIZE -Family $DEEPSTREAM_GPU_QUOTA_FAMILY -MaxNodes $DEEPSTREAM_GPU_MAX_NODE_COUNT)) {
     $allPassed = $false
 }
-if (-not (Test-GpuQuota -PoolName "Inference" -VmSize $INFERENCE_GPU_VM_SIZE -Family $INFERENCE_GPU_QUOTA_FAMILY -CoresPerVm $INFERENCE_GPU_CORES_PER_VM -MaxNodes $INFERENCE_GPU_MAX_NODE_COUNT)) {
+if (-not (Test-GpuQuota -PoolName "Inference" -VmSize $INFERENCE_GPU_VM_SIZE -Family $INFERENCE_GPU_QUOTA_FAMILY -MaxNodes $INFERENCE_GPU_MAX_NODE_COUNT)) {
     $allPassed = $false
 }
 

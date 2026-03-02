@@ -6,15 +6,13 @@
 # ── GPU Compute (set via azd env vars, defaults in main.bicepparam) ──────
 # Deepstream GPU pool
 $Script:DEEPSTREAM_GPU_VM_SIZE = if ($env:DEEPSTREAM_GPU_VM_SIZE) { $env:DEEPSTREAM_GPU_VM_SIZE } else { "Standard_NV36ads_A10_v5" }
-$Script:DEEPSTREAM_GPU_QUOTA_FAMILY = "standardNVADSA10v5Family"
+$Script:DEEPSTREAM_GPU_QUOTA_FAMILY = "StandardNVADSA10v5Family"
 $Script:DEEPSTREAM_GPU_MAX_NODE_COUNT = if ($env:DEEPSTREAM_GPU_MAX_NODE_COUNT) { [int]$env:DEEPSTREAM_GPU_MAX_NODE_COUNT } else { 1 }
-$Script:DEEPSTREAM_GPU_CORES_PER_VM = 36
 
 # Inference GPU pool
 $Script:INFERENCE_GPU_VM_SIZE = if ($env:INFERENCE_GPU_VM_SIZE) { $env:INFERENCE_GPU_VM_SIZE } else { "Standard_NC24ads_A100_v4" }
 $Script:INFERENCE_GPU_QUOTA_FAMILY = "StandardNCADSA100v4Family"
 $Script:INFERENCE_GPU_MAX_NODE_COUNT = if ($env:INFERENCE_GPU_MAX_NODE_COUNT) { [int]$env:INFERENCE_GPU_MAX_NODE_COUNT } else { 2 }
-$Script:INFERENCE_GPU_CORES_PER_VM = 24
 
 # ── Kubernetes Namespaces ────────────────────────────────────────────────────
 $Script:NS_GPU_OPERATOR = "gpu-operator"
@@ -37,6 +35,7 @@ $Script:NVIDIA_HELM_REPO_URL = "https://helm.ngc.nvidia.com/nvidia"
 
 # ── Azure URLs ──────────────────────────────────────────────────────────────
 $Script:QUOTA_URL = "https://portal.azure.com/#view/Microsoft_Azure_Capacity/QuotaMenuBlade/~/myQuotas"
+$Script:GPU_QUOTA_DOC_URL = "https://github.com/Azure-Samples/azure-video-indexer-samples/blob/master/VideoIndexerEnabledByArc/aks/AKS-CLUSTER-SETUP.md#how-to-request-gpu-quota"
 
 # ── Required Azure Resource Providers ───────────────────────────────────────
 $Script:REQUIRED_PROVIDERS = @(
