@@ -134,7 +134,7 @@ resource aksCluster 'Microsoft.ContainerService/managedClusters@2024-09-01' = {
         maxPods: 110
       }
       {
-        name: 'deepstreamWorkload'
+        name: 'deepstream'
         count: 0
         minCount: 0
         maxCount: deepstreamGpuMaxNodeCount
@@ -154,7 +154,7 @@ resource aksCluster 'Microsoft.ContainerService/managedClusters@2024-09-01' = {
         maxPods: 110
       }
       {
-        name: 'inferenceWorkload'
+        name: 'inference'
         count: inferenceGpuMaxNodeCount
         vmSize: inferenceGpuVmSize
         osType: 'Linux'

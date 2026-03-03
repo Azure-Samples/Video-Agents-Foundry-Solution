@@ -26,8 +26,6 @@ NS_CERT_MANAGER="cert-manager"
 ARC_CLUSTER_PREFIX="arc-"
 
 # ── Timeouts (seconds) ─────────────────────────────────────────────────────
-TIMEOUT_NS_CLEANUP=60
-TIMEOUT_NS_DELETE=120
 TIMEOUT_INGRESS_IP=120
 
 # ── Helm ────────────────────────────────────────────────────────────────────

@@ -2,7 +2,7 @@
 param arcConnectedClusterName string
 
 @description('Name of the cert-manager extension')
-param extensionName string = 'cert-manager'
+param extensionName string = 'azure-cert-manager'
 
 resource connectedCluster 'Microsoft.Kubernetes/connectedClusters@2024-01-01' existing = {
   name: arcConnectedClusterName
@@ -15,8 +15,8 @@ resource certManagerExtension 'Microsoft.KubernetesConfiguration/extensions@2022
     type: 'SystemAssigned'
   }
   properties: {
-    extensionType: 'microsoft.iotoperations.platform'
-    autoUpgradeMinorVersion: true
+    extensionType: 'Microsoft.CertManagement'
+    autoUpgradeMinorVersion: false
     scope: {
       cluster: {
         releaseNamespace: 'cert-manager'

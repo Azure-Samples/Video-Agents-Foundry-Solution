@@ -5,13 +5,19 @@
 
 # ── GPU Compute (set via azd env vars, defaults in main.bicepparam) ──────
 # Deepstream GPU pool
-$Script:DEEPSTREAM_GPU_VM_SIZE = if ($env:DEEPSTREAM_GPU_VM_SIZE) { $env:DEEPSTREAM_GPU_VM_SIZE } else { "Standard_NV36ads_A10_v5" }
-$Script:DEEPSTREAM_GPU_QUOTA_FAMILY = "StandardNVADSA10v5Family"
+
+$A10 = "Standard_NV36ads_A10_v5"
+$A10Family = "StandardNVADSA10v5Family"
+$A100 = "Standard_NC24ads_A100_v4"
+$A100Family = "StandardNCADSA100v4Family"
+
+$Script:DEEPSTREAM_GPU_VM_SIZE = if ($env:DEEPSTREAM_GPU_VM_SIZE) { $env:DEEPSTREAM_GPU_VM_SIZE } else { $A10 }
+$Script:DEEPSTREAM_GPU_QUOTA_FAMILY = $A10Family
 $Script:DEEPSTREAM_GPU_MAX_NODE_COUNT = if ($env:DEEPSTREAM_GPU_MAX_NODE_COUNT) { [int]$env:DEEPSTREAM_GPU_MAX_NODE_COUNT } else { 1 }
 
 # Inference GPU pool
-$Script:INFERENCE_GPU_VM_SIZE = if ($env:INFERENCE_GPU_VM_SIZE) { $env:INFERENCE_GPU_VM_SIZE } else { "Standard_NC24ads_A100_v4" }
-$Script:INFERENCE_GPU_QUOTA_FAMILY = "StandardNCADSA100v4Family"
+$Script:INFERENCE_GPU_VM_SIZE = if ($env:INFERENCE_GPU_VM_SIZE) { $env:INFERENCE_GPU_VM_SIZE } else { $A10 }
+$Script:INFERENCE_GPU_QUOTA_FAMILY = $A10Family
 $Script:INFERENCE_GPU_MAX_NODE_COUNT = if ($env:INFERENCE_GPU_MAX_NODE_COUNT) { [int]$env:INFERENCE_GPU_MAX_NODE_COUNT } else { 2 }
 
 # ── Kubernetes Namespaces ────────────────────────────────────────────────────
@@ -25,8 +31,6 @@ $Script:NS_CERT_MANAGER = "cert-manager"
 $Script:ARC_CLUSTER_PREFIX = "arc-"
 
 # ── Timeouts (seconds) ─────────────────────────────────────────────────────
-$Script:TIMEOUT_NS_CLEANUP = 60
-$Script:TIMEOUT_NS_DELETE = 120
 $Script:TIMEOUT_INGRESS_IP = 120
 
 # ── Helm ────────────────────────────────────────────────────────────────────
