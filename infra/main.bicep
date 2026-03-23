@@ -22,6 +22,9 @@ param principalId string = ''
 @description('Whether to create role assignments for the deploying user')
 param createRoleForUser bool = true
 
+@description('Whether to create a Foundry project and link it to the VI extension')
+param createFoundryProject bool = true
+
 @description('Kubernetes version for the AKS cluster')
 param kubernetesVersion string
 
