@@ -1,8 +1,8 @@
-# EdgeAI Video Agents Solution
+# Video-Agents-Foundry-Solution
 
-Welcome to the *EdgeAI Video Agents Solution*, designed to help businesses leverage AI agents for automating complex video analysts tasks.
+Welcome to the *Video-Agents-Foundry-Solution*, designed to help businesses leverage AI agents for automating complex video analysts tasks.
 This solution provides **end-to-end framework** for deploying AI-powered video analysis at the edge using Azure Video Indexer enabled by Azure Arc, combined with intelligent AI agents for automated decision-making and real-time video insights.  
-The EdgeAI Video Agents Solution allows users to process and analyze live and recorded video streams at the edge, extract AI insights, including speech transcription, OCR, face detection, object tracking, and action recognition and leverage **AI agents** to automate complex video analysis workflows with low latency and full data sovereignty.
+The Video-Agents-Foundry-Solution allows users to process and analyze live and recorded video streams at the edge, extract AI insights, including speech transcription, OCR, face detection, object tracking, and action recognition and leverage **AI agents** to automate complex video analysis workflows with low latency and full data sovereignty.
 
 > **_Note_:** In order to successfully deploy the VI Extension, you **must first** submit your subscription for approval and be approved. Please use this application link. [this form](https://aka.ms/vi-register).
 
