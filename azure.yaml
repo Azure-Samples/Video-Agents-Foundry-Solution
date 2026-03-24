@@ -1,0 +1,35 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+name: video-agents-foundry-solution
+metadata:
+  template: video-agents-foundry-solution@1.0.0
+workflows:
+  up:
+    steps:
+      - azd: provision
+hooks:
+  preprovision:
+    windows:
+      shell: pwsh
+      run: ./hooks/preprovision.ps1
+      interactive: true
+    posix:
+      shell: sh
+      run: ./hooks/preprovision.sh
+      interactive: true
+  postprovision:
+    windows:
+      shell: pwsh
+      run: ./hooks/postprovision.ps1
+    posix:
+      shell: sh
+      run: ./hooks/postprovision.sh
+  postup:
+    windows:
+      shell: pwsh
+      run: ./hooks/postup.ps1
+      interactive: true
+    posix:
+      shell: sh
+      run: ./hooks/postup.sh
+      interactive: true

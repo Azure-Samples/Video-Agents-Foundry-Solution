@@ -1,0 +1,53 @@
+name: Template Validation
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  pull-requests: write
+
+jobs:
+  template_validation_job:
+    runs-on: ubuntu-latest
+    name: template validation
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: microsoft/template-validation-action@v0.3.2
+        id: validation
+        env:
+          TEMPLATE_VALIDATION_MODE: true
+          AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME }}
+          AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Project-specific variables (matches azure-dev.yaml/azure.yaml/main.parameters.json)
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          AZURE_AISERVICES_NAME: ${{ vars.AZURE_AISERVICES_NAME }}
+          AZURE_SEARCH_SERVICE_NAME: ${{ vars.AZURE_SEARCH_SERVICE_NAME }}
+          AZURE_APPLICATION_INSIGHTS_NAME: ${{ vars.AZURE_APPLICATION_INSIGHTS_NAME }}
+          AZURE_CONTAINER_REGISTRY_NAME: ${{ vars.AZURE_CONTAINER_REGISTRY_NAME }}
+          AZURE_STORAGE_ACCOUNT_NAME: ${{ vars.AZURE_STORAGE_ACCOUNT_NAME }}
+          AZURE_LOG_ANALYTICS_WORKSPACE_NAME: ${{ vars.AZURE_LOG_ANALYTICS_WORKSPACE_NAME }}
+          USE_APPLICATION_INSIGHTS: ${{ vars.USE_APPLICATION_INSIGHTS }}
+          USE_AZURE_AI_SEARCH_SERVICE: ${{ vars.USE_AZURE_AI_SEARCH_SERVICE }}
+          AZURE_AI_AGENT_NAME: ${{ vars.AZURE_AI_AGENT_NAME }}
+          AZURE_EXISTING_AGENT_ID: ${{ vars.AZURE_EXISTING_AGENT_ID }}
+          AZURE_AI_AGENT_DEPLOYMENT_NAME: ${{ vars.AZURE_AI_AGENT_DEPLOYMENT_NAME }}
+          AZURE_AI_AGENT_DEPLOYMENT_SKU: ${{ vars.AZURE_AI_AGENT_DEPLOYMENT_SKU }}
+          AZURE_AI_AGENT_DEPLOYMENT_CAPACITY: ${{ vars.AZURE_AI_AGENT_DEPLOYMENT_CAPACITY }}
+          AZURE_AI_AGENT_MODEL_NAME: ${{ vars.AZURE_AI_AGENT_MODEL_NAME }}
+          AZURE_AI_AGENT_MODEL_FORMAT: ${{ vars.AZURE_AI_AGENT_MODEL_FORMAT }}
+          AZURE_AI_AGENT_MODEL_VERSION: ${{ vars.AZURE_AI_AGENT_MODEL_VERSION }}
+          AZURE_AI_EMBED_DEPLOYMENT_NAME: ${{ vars.AZURE_AI_EMBED_DEPLOYMENT_NAME }}
+          AZURE_AI_EMBED_DEPLOYMENT_SKU: ${{ vars.AZURE_AI_EMBED_DEPLOYMENT_SKU }}
+          AZURE_AI_EMBED_DEPLOYMENT_CAPACITY: ${{ vars.AZURE_AI_EMBED_DEPLOYMENT_CAPACITY }}
+          AZURE_AI_EMBED_MODEL_NAME: ${{ vars.AZURE_AI_EMBED_MODEL_NAME }}
+          AZURE_AI_EMBED_MODEL_FORMAT: ${{ vars.AZURE_AI_EMBED_MODEL_FORMAT }}
+          AZURE_AI_EMBED_MODEL_VERSION: ${{ vars.AZURE_AI_EMBED_MODEL_VERSION }}
+          AZURE_EXISTING_AIPROJECT_RESOURCE_ID: ${{ vars.AZURE_EXISTING_AIPROJECT_RESOURCE_ID }}
+      - name: print result
+        run: cat ${{ steps.validation.outputs.resultFile }}

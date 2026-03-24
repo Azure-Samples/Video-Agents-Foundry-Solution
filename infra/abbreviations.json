@@ -1,0 +1,8 @@
+{
+    "resourceGroup": "rg-",
+    "storageAccount": "st",
+    "managedIdentity": "id-",
+    "aksCluster": "aks-",
+    "videoIndexer": "vi-",
+    "arcConnectedCluster": "arc-"
+}
