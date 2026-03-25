@@ -7,12 +7,12 @@
 # ── GPU Compute (set via azd env vars, defaults in main.bicepparam) ──────
 # Deepstream GPU pool
 DEEPSTREAM_GPU_VM_SIZE="${DEEPSTREAM_GPU_VM_SIZE:?Set via: azd env set DEEPSTREAM_GPU_VM_SIZE <value>}"
-DEEPSTREAM_GPU_QUOTA_FAMILY="StandardNVADSA10v5Family"
+DEEPSTREAM_GPU_QUOTA_FAMILY="Standard NCASv3_T4 Family"
 DEEPSTREAM_GPU_MAX_NODE_COUNT="${DEEPSTREAM_GPU_MAX_NODE_COUNT:?Set via: azd env set DEEPSTREAM_GPU_MAX_NODE_COUNT <value>}"
 
 # Inference GPU pool
 INFERENCE_GPU_VM_SIZE="${INFERENCE_GPU_VM_SIZE:?Set via: azd env set INFERENCE_GPU_VM_SIZE <value>}"
-INFERENCE_GPU_QUOTA_FAMILY="StandardNCADSA100v4Family"
+INFERENCE_GPU_QUOTA_FAMILY="Standard NCASv3_T4 Family"
 INFERENCE_GPU_MAX_NODE_COUNT="${INFERENCE_GPU_MAX_NODE_COUNT:?Set via: azd env set INFERENCE_GPU_MAX_NODE_COUNT <value>}"
 
 # ── Kubernetes Namespaces ────────────────────────────────────────────────────

@@ -23,7 +23,16 @@ param principalId string = ''
 param createRoleForUser bool = true
 
 @description('Whether to create a Foundry project and link it to the VI extension')
-param createFoundryProject bool = true
+param createFoundryProject bool = false
+
+@description('Model name to deploy in AI Foundry (e.g. gpt-4o-mini)')
+param aiModelName string = 'gpt-4o-mini'
+
+@description('Model version to deploy (e.g. 2024-07-18)')
+param aiModelVersion string = '2024-07-18'
+
+@description('Model deployment capacity in TPM thousands')
+param aiModelCapacity int = 1
 
 @description('Kubernetes version for the AKS cluster')
 param kubernetesVersion string
@@ -46,7 +55,7 @@ param inferenceGpuMaxNodeCount int
 
 var abbrs = loadJsonContent('abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
-var _resourceGroupName = !empty(resourceGroupName) ? resourceGroupName : '${abbrs.resourceGroup}${environmentName}'
+var _resourceGroupName = !empty(resourceGroupName) ? resourceGroupName : '${environmentName}${abbrs.resourceGroup}'
 var aksNodeResourceGroup = '${_resourceGroupName}-nodes'
 
 var tags = {
@@ -72,7 +81,7 @@ module storage 'modules/storage.bicep' = {
   name: 'storage-deployment'
   scope: rg
   params: {
-    name: '${abbrs.storageAccount}${resourceToken}'
+    name: '${resourceToken}${abbrs.storageAccount}'
     location: location
     tags: tags
   }
@@ -86,7 +95,7 @@ module managedIdentity 'modules/managed-identity.bicep' = {
   name: 'managed-identity-deployment'
   scope: rg
   params: {
-    name: '${abbrs.managedIdentity}${resourceToken}'
+    name: '${resourceToken}${abbrs.managedIdentity}'
     location: location
     tags: tags
     storageAccountId: storage.outputs.id
@@ -101,7 +110,7 @@ module aks 'modules/aks.bicep' = {
   name: 'aks-deployment'
   scope: rg
   params: {
-    name: '${abbrs.aksCluster}${resourceToken}'
+    name: '${resourceToken}${abbrs.aksCluster}'
     nodeResourceGroup: aksNodeResourceGroup
     location: location
     tags: tags
@@ -121,11 +130,30 @@ module videoIndexer 'modules/vi-account.bicep' = {
   name: 'video-indexer-deployment'
   scope: rg
   params: {
-    name: '${abbrs.videoIndexer}${resourceToken}'
+    name: '${resourceToken}${abbrs.videoIndexer}'
     location: location
     tags: tags
     storageAccountId: storage.outputs.id
     managedIdentityId: managedIdentity.outputs.id
+  }
+}
+
+// =====================================================
+// Module: AI Foundry (Hub + Project + Model Deployment)
+// =====================================================
+
+module aiFoundry 'modules/ai-foundry.bicep' = if (createFoundryProject) {
+  name: 'ai-foundry-deployment'
+  scope: rg
+  params: {
+    name: '${resourceToken}${abbrs.aiServices}'
+    location: location
+    tags: tags
+    modelName: aiModelName
+    modelVersion: aiModelVersion
+    modelCapacity: aiModelCapacity
+    principalId: createRoleForUser ? principalId : ''
+    managedIdentityPrincipalId: managedIdentity.outputs.principalId
   }
 }
 
@@ -148,3 +176,8 @@ output AZURE_PRINCIPAL_ID string = principalId
 output CREATE_ROLE_FOR_USER bool = createRoleForUser
 output AZURE_DEEPSTREAM_NODE_SELECTOR_VALUE string = aks.outputs.deepstreamWorkloadLabelValue
 output AZURE_INFERENCE_NODE_SELECTOR_VALUE string = aks.outputs.inferenceWorkloadLabelValue
+output AI_FOUNDRY_ENDPOINT string = createFoundryProject ? aiFoundry.outputs.endpoint : ''
+output AI_FOUNDRY_AI_SERVICES_ENDPOINT string = createFoundryProject ? aiFoundry.outputs.aiServicesEndpoint : ''
+output AI_FOUNDRY_MODEL_DEPLOYMENT string = createFoundryProject ? aiFoundry.outputs.modelDeploymentName : ''
+output AI_FOUNDRY_ACCOUNT_NAME string = createFoundryProject ? aiFoundry.outputs.accountName : ''
+output AI_FOUNDRY_PROJECT_NAME string = createFoundryProject ? aiFoundry.outputs.projectName : ''
