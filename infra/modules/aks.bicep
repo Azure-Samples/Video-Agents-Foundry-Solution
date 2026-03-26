@@ -11,10 +11,10 @@ param tags object = {}
 param kubernetesVersion string
 
 @description('VM size for the system node pool')
-param systemVmSize string = 'Standard_D4a_v4'
+param systemVmSize string = 'Standard_D4as_v4'
 
 @description('VM size for the workload node pool')
-param workloadVmSize string = 'Standard_D32a_v4'
+param workloadVmSize string = 'Standard_D32as_v4'
 
 @description('VM size for the GPU deepstream workload node pool')
 param deepstreamGpuVmSize string
@@ -140,7 +140,7 @@ resource aksCluster 'Microsoft.ContainerService/managedClusters@2024-09-01' = {
         maxCount: deepstreamGpuMaxNodeCount
         vmSize: deepstreamGpuVmSize
         osType: 'Linux'
-        osSKU: 'Ubuntu'
+        osSKU: 'AzureLinux'
         osDiskSizeGB: 200
         mode: 'User'
         enableAutoScaling: true
@@ -158,7 +158,7 @@ resource aksCluster 'Microsoft.ContainerService/managedClusters@2024-09-01' = {
         count: inferenceGpuMaxNodeCount
         vmSize: inferenceGpuVmSize
         osType: 'Linux'
-        osSKU: 'Ubuntu'
+        osSKU: 'AzureLinux'
         osDiskSizeGB: 200
         mode: 'User'
         enableAutoScaling: false

@@ -328,6 +328,11 @@ Write-Host "  - AKS Cluster:      $env:AZURE_AKS_CLUSTER_NAME"
 Write-Host "  - Arc Cluster:      $ARC_CLUSTER_NAME"
 Write-Host "  - VI Account:       $env:AZURE_VIDEO_INDEXER_ACCOUNT_NAME"
 Write-Host "  - Storage Account:  $env:AZURE_STORAGE_ACCOUNT_NAME"
+if ($env:AI_FOUNDRY_ACCOUNT_NAME) {
+    Write-Host "  - AI Foundry Hub:   $env:AI_FOUNDRY_ACCOUNT_NAME"
+    Write-Host "  - AI Foundry Model: $env:AI_FOUNDRY_MODEL_DEPLOYMENT"
+    Write-Host "  - AI Endpoint:      $env:AI_FOUNDRY_AI_SERVICES_ENDPOINT"
+}
 Write-Host ""
 
 Write-Host "You can access the Video Indexer portal at: $VIDEO_INDEXER_ENDPOINT_URI"
