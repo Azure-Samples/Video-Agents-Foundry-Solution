@@ -66,116 +66,39 @@ foreach ($var in $preProvisionVars) {
 Assert-EnvVars $preProvisionVars
 
 # =====================================================
-# Step 4: Register required Azure resource providers
+# Step 4: Select VM sizes for AKS node pools
+#         (includes region availability + GPU quota checks)
 # =====================================================
-Write-Step "4" "Checking Azure resource provider registrations..."
+Write-Step "4" "Selecting VM sizes for AKS node pools..."
+
+Write-Host "   Choose a VM SKU for each AKS node pool."
+Write-Host "   The default is highlighted — press Enter to accept it."
+Write-Host ""
+
+# Determine current/default values (env var overrides config default)
+$currentSystemVm     = if ($env:SYSTEM_VM_SIZE)          { $env:SYSTEM_VM_SIZE }          else { $SystemVmSize }
+$currentWorkloadVm   = if ($env:WORKLOAD_VM_SIZE)        { $env:WORKLOAD_VM_SIZE }        else { $WorkloadVmSize }
+$currentDeepstreamVm = if ($env:DEEPSTREAM_GPU_VM_SIZE)  { $env:DEEPSTREAM_GPU_VM_SIZE }  else { $DeepstreamVmSize }
+$currentInferenceVm  = if ($env:INFERENCE_GPU_VM_SIZE)   { $env:INFERENCE_GPU_VM_SIZE }   else { $InferenceVmSize }
+
+# CPU pools
+$selectedSystem   = Show-VmSelectionMenu -PoolName "System (CPU)"   -EnvVarName "SYSTEM_VM_SIZE"   -Catalog $CPU_VM_CATALOG -DefaultSku $currentSystemVm   -Location $env:AZURE_LOCATION
+$selectedWorkload = Show-VmSelectionMenu -PoolName "Workload (CPU)" -EnvVarName "WORKLOAD_VM_SIZE" -Catalog $CPU_VM_CATALOG -DefaultSku $currentWorkloadVm -Location $env:AZURE_LOCATION
+
+# GPU pools (availability + quota validated inline)
+$selectedDeepstream = Show-VmSelectionMenu -PoolName "Deepstream (GPU)" -EnvVarName "DEEPSTREAM_GPU_VM_SIZE" -Catalog $GPU_VM_CATALOG -DefaultSku $currentDeepstreamVm -Location $env:AZURE_LOCATION -IsGpu
+$selectedInference  = Show-VmSelectionMenu -PoolName "Inference (GPU)"  -EnvVarName "INFERENCE_GPU_VM_SIZE"  -Catalog $GPU_VM_CATALOG -DefaultSku $currentInferenceVm  -Location $env:AZURE_LOCATION -IsGpu
+
+# Update script-scope variables for downstream consumers
+$DEEPSTREAM_GPU_VM_SIZE = $selectedDeepstream.Sku
+$INFERENCE_GPU_VM_SIZE  = $selectedInference.Sku
+
+# =====================================================
+# Step 5: Register required Azure resource providers
+# =====================================================
+Write-Step "5" "Checking Azure resource provider registrations..."
 
 $null = Register-RequiredProviders
-
-# =====================================================
-# Step 5: Validate region supports required VM sizes
-# =====================================================
-Write-Step "5" "Checking region capability for GPU VMs..."
-
-$gpuVmCores = @{}
-
-foreach ($gpuVm in @($DEEPSTREAM_GPU_VM_SIZE, $INFERENCE_GPU_VM_SIZE)) {
-    $vmInfo = $null
-    try {
-        $vmInfo = (az vm list-sizes --location $env:AZURE_LOCATION `
-                --query "[?name=='$gpuVm'] | [0]" -o json 2>$null) | ConvertFrom-Json
-    }
-    catch {
-        $vmInfo = $null
-    }
-
-    if (-not $vmInfo) {
-        Write-Error "VM size '$gpuVm' is not available in region '$($env:AZURE_LOCATION)'.`nThis VM is required for a GPU node pool.`n`nChange region with: azd env set AZURE_LOCATION <region>"
-        exit 1
-    }
-
-    $gpuVmCores[$gpuVm] = $vmInfo.numberOfCores
-    Write-Host "   ${gpuVm}: available in $($env:AZURE_LOCATION) ($($vmInfo.numberOfCores) cores)"
-}
-
-# =====================================================
-# Step 6: Check GPU VM quota
-# =====================================================
-Write-Step "6" "Checking GPU VM quota..."
-
-$allPassed = $true
-
-function Test-GpuQuota {
-    param (
-        [string]$PoolName,
-        [string]$VmSize,
-        [string]$Family,
-        [int]$MaxNodes
-    )
-
-    $CoresPerVm = $gpuVmCores[$VmSize]
-    $coresNeeded = $CoresPerVm * $MaxNodes
-
-    $quotaJson = @()
-    try {
-        $raw = (az vm list-usage --location $env:AZURE_LOCATION `
-                --query "[?contains(name.value, '$Family')]" `
-                -o json 2>&1)
-        if ($LASTEXITCODE -ne 0) {
-            throw "az vm list-usage failed: $raw"
-        }
-        $quotaJson = $raw | ConvertFrom-Json
-    }
-    catch {
-        Write-Host "   [$PoolName] ERROR: Failed to query GPU quota — $_" -ForegroundColor Red
-        return $false
-    }
-
-    $currentUsage = 0
-    $quotaLimit = 0
-
-    if ($quotaJson -and $quotaJson.Count -gt 0) {
-        $currentUsage = $quotaJson[0].currentValue
-        $quotaLimit = $quotaJson[0].limit
-    }
-
-    $available = $quotaLimit - $currentUsage
-
-    Write-Host "   [$PoolName] $VmSize — $MaxNodes node(s) x $CoresPerVm cores = $coresNeeded cores needed"
-
-    if ($quotaLimit -eq 0) {
-        Write-Host "   [$PoolName] ERROR: No GPU quota found for family '$Family' in region '$($env:AZURE_LOCATION)'." -ForegroundColor Red
-        Write-Host "   This typically means zero quota is allocated for this subscription/region."
-        Write-Host "   Request GPU quota at: $QUOTA_URL"
-        Write-Host "   For step-by-step instructions, see: $GPU_QUOTA_DOC_URL"
-        return $false
-    }
-    elseif ($available -lt $coresNeeded) {
-        Write-Host "   [$PoolName] ERROR: Insufficient quota — $available cores available, $coresNeeded required ($currentUsage/$quotaLimit used)" -ForegroundColor Red
-        Write-Host "   Request quota increase at: $QUOTA_URL"
-        Write-Host "   For step-by-step instructions, see: $GPU_QUOTA_DOC_URL"
-        return $false
-    }
-    else {
-        Write-Host "   [$PoolName] OK — $available cores available ($currentUsage/$quotaLimit used)"
-    }
-
-    return $true
-}
-
-# TODO:
-# Check availability of CPU VM sizes in the selected region
-
-if (-not (Test-GpuQuota -PoolName "Deepstream" -VmSize $DEEPSTREAM_GPU_VM_SIZE -Family $DEEPSTREAM_GPU_QUOTA_FAMILY -MaxNodes $DEEPSTREAM_GPU_MAX_NODE_COUNT)) {
-    $allPassed = $false
-}
-if (-not (Test-GpuQuota -PoolName "Inference" -VmSize $INFERENCE_GPU_VM_SIZE -Family $INFERENCE_GPU_QUOTA_FAMILY -MaxNodes $INFERENCE_GPU_MAX_NODE_COUNT)) {
-    $allPassed = $false
-}
-
-if (-not $allPassed) {
-    exit 1
-}
 
 # =====================================================
 # Summary
@@ -186,6 +109,8 @@ Write-Host ""
 Write-Host "  Subscription:    $(if ($subName) { $subName } else { $env:AZURE_SUBSCRIPTION_ID })"
 Write-Host "  Location:        $($env:AZURE_LOCATION)"
 Write-Host "  Environment:     $($env:AZURE_ENV_NAME)"
+Write-Host "  System CPU:      $($selectedSystem.Sku)"
+Write-Host "  Workload CPU:    $($selectedWorkload.Sku)"
 Write-Host "  Deepstream GPU:  $DEEPSTREAM_GPU_VM_SIZE ($DEEPSTREAM_GPU_MAX_NODE_COUNT node(s))"
 Write-Host "  Inference GPU:   $INFERENCE_GPU_VM_SIZE ($INFERENCE_GPU_MAX_NODE_COUNT node(s))"
 Write-Host "  Providers:       all registered"

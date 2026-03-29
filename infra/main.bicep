@@ -37,6 +37,12 @@ param aiModelCapacity int = 1
 @description('Kubernetes version for the AKS cluster')
 param kubernetesVersion string
 
+@description('VM size for system node pool')
+param systemVmSize string
+
+@description('VM size for workload node pool')
+param workloadVmSize string
+
 @description('VM size for the GPU deepstream workload node pool')
 param deepstreamGpuVmSize string
 
@@ -115,6 +121,8 @@ module aks 'modules/aks.bicep' = {
     location: location
     tags: tags
     kubernetesVersion: kubernetesVersion
+    systemVmSize: systemVmSize
+    workloadVmSize: workloadVmSize
     deepstreamGpuVmSize: deepstreamGpuVmSize
     inferenceGpuVmSize: inferenceGpuVmSize
     deepstreamGpuMaxNodeCount: deepstreamGpuMaxNodeCount
