@@ -52,12 +52,12 @@ param inferenceGpuVmSize string
 @description('Maximum number of deepstream GPU nodes')
 param deepstreamGpuMaxNodeCount int
 
-@description('Maximum number of inference GPU nodes')
-param inferenceGpuMaxNodeCount int
-
 // =====================================================
 // Variables
 // =====================================================
+
+// Inference GPU node count: 1 node when Foundry handles model serving, 2 otherwise
+var inferenceGpuMaxNodeCount = createFoundryProject ? 1 : 2
 
 var abbrs = loadJsonContent('abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))

@@ -17,7 +17,14 @@ DEEPSTREAM_GPU_MAX_NODE_COUNT="${DEEPSTREAM_GPU_MAX_NODE_COUNT:-1}"
 
 # Inference GPU pool
 INFERENCE_GPU_VM_SIZE="${INFERENCE_GPU_VM_SIZE:-$DEFAULT_INFERENCE_GPU_VM_SIZE}"
-INFERENCE_GPU_MAX_NODE_COUNT="${INFERENCE_GPU_MAX_NODE_COUNT:-2}"
+# Inference node count: 1 when Foundry handles model serving, 2 otherwise (mirrors main.bicep)
+CREATE_FOUNDRY_PROJECT="${CREATE_FOUNDRY_PROJECT:-false}"
+if [ "$CREATE_FOUNDRY_PROJECT" = "true" ]; then
+    _INFERENCE_DEFAULT=1
+else
+    _INFERENCE_DEFAULT=2
+fi
+INFERENCE_GPU_MAX_NODE_COUNT="${INFERENCE_GPU_MAX_NODE_COUNT:-$_INFERENCE_DEFAULT}"
 
 # ── CPU VM Catalog (for system/workload pools) ───────────────────────────
 # Format: "SKU|Cores|RAM|Description"

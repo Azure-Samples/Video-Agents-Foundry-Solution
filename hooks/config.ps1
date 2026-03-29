@@ -17,7 +17,10 @@ $Script:DEEPSTREAM_GPU_MAX_NODE_COUNT = if ($env:DEEPSTREAM_GPU_MAX_NODE_COUNT) 
 
 # Inference GPU pool
 $Script:INFERENCE_GPU_VM_SIZE = if ($env:INFERENCE_GPU_VM_SIZE) { $env:INFERENCE_GPU_VM_SIZE } else { $InferenceVmSize }
-$Script:INFERENCE_GPU_MAX_NODE_COUNT = if ($env:INFERENCE_GPU_MAX_NODE_COUNT) { [int]$env:INFERENCE_GPU_MAX_NODE_COUNT } else { 2 }
+# Inference node count: 1 when Foundry handles model serving, 2 otherwise (mirrors main.bicep)
+$Script:CREATE_FOUNDRY_PROJECT = if ($env:CREATE_FOUNDRY_PROJECT -eq 'true') { $true } else { $false }
+$inferenceDefault = if ($CREATE_FOUNDRY_PROJECT) { 1 } else { 2 }
+$Script:INFERENCE_GPU_MAX_NODE_COUNT = if ($env:INFERENCE_GPU_MAX_NODE_COUNT) { [int]$env:INFERENCE_GPU_MAX_NODE_COUNT } else { $inferenceDefault }
 
 # ── CPU VM Catalog (for system/workload pools) ───────────────────────────
 $Script:CPU_VM_CATALOG = @(

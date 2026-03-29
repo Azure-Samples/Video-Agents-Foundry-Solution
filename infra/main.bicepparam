@@ -14,7 +14,6 @@ param deepstreamGpuVmSize = readEnvironmentVariable('DEEPSTREAM_GPU_VM_SIZE', ''
 param inferenceGpuVmSize = readEnvironmentVariable('INFERENCE_GPU_VM_SIZE', '')
 
 param deepstreamGpuMaxNodeCount = int(readEnvironmentVariable('DEEPSTREAM_GPU_MAX_NODE_COUNT', '1'))
-param inferenceGpuMaxNodeCount = int(readEnvironmentVariable('INFERENCE_GPU_MAX_NODE_COUNT', '2')) // TODO: make this dynamic based on foundry or not
 param createFoundryProject = bool(readEnvironmentVariable('CREATE_FOUNDRY_PROJECT', 'false'))
 param aiModelName = readEnvironmentVariable('AI_MODEL_NAME', 'gpt-4o-mini')
 param aiModelVersion = readEnvironmentVariable('AI_MODEL_VERSION', '2024-07-18')
