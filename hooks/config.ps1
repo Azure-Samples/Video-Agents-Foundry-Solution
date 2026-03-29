@@ -13,13 +13,18 @@ $A100Family = "StandardNCADSA100v4Family"
 $T4 = "Standard_NC16as_T4_v3"
 $T4Family = "Standard NCASv3_T4 Family"
 
-$Script:DEEPSTREAM_GPU_VM_SIZE = if ($env:DEEPSTREAM_GPU_VM_SIZE) { $env:DEEPSTREAM_GPU_VM_SIZE } else { $T4 }
-$Script:DEEPSTREAM_GPU_QUOTA_FAMILY = $T4Family
+$SystemVmSize = "Standard_D4a_v4"
+$WorkloadVmSize = "Standard_D32a_v4"
+$DeepstreamVmSize = $A100
+$InferenceVmSize = $A100
+
+$Script:DEEPSTREAM_GPU_VM_SIZE = if ($env:DEEPSTREAM_GPU_VM_SIZE) { $env:DEEPSTREAM_GPU_VM_SIZE } else {$DeepstreamVmSize }
+$Script:DEEPSTREAM_GPU_QUOTA_FAMILY = $A100Family
 $Script:DEEPSTREAM_GPU_MAX_NODE_COUNT = if ($env:DEEPSTREAM_GPU_MAX_NODE_COUNT) { [int]$env:DEEPSTREAM_GPU_MAX_NODE_COUNT } else { 1 }
 
 # Inference GPU pool
-$Script:INFERENCE_GPU_VM_SIZE = if ($env:INFERENCE_GPU_VM_SIZE) { $env:INFERENCE_GPU_VM_SIZE } else { $T4 }
-$Script:INFERENCE_GPU_QUOTA_FAMILY = $T4Family
+$Script:INFERENCE_GPU_VM_SIZE = if ($env:INFERENCE_GPU_VM_SIZE) { $env:INFERENCE_GPU_VM_SIZE } else { $InferenceVmSize }
+$Script:INFERENCE_GPU_QUOTA_FAMILY = $A100Family
 $Script:INFERENCE_GPU_MAX_NODE_COUNT = if ($env:INFERENCE_GPU_MAX_NODE_COUNT) { [int]$env:INFERENCE_GPU_MAX_NODE_COUNT } else { 2 }
 
 # ── Kubernetes Namespaces ────────────────────────────────────────────────────

@@ -163,6 +163,9 @@ function Test-GpuQuota {
     return $true
 }
 
+# TODO:
+# Check availability of CPU VM sizes in the selected region
+
 if (-not (Test-GpuQuota -PoolName "Deepstream" -VmSize $DEEPSTREAM_GPU_VM_SIZE -Family $DEEPSTREAM_GPU_QUOTA_FAMILY -MaxNodes $DEEPSTREAM_GPU_MAX_NODE_COUNT)) {
     $allPassed = $false
 }
