@@ -4,27 +4,30 @@
 # =============================================================================
 # Source this file via: source "$(dirname "$0")/config.sh"
 
-# ── GPU Compute (set via azd env vars, defaults in main.bicepparam) ──────
-# Defaults
+# ── VM Size Defaults ─────────────────────────────────────────────────────
+# These are the fallback values when no env var is set.
+# The interactive menu (Step 4) lets the user override them.
+
 DEFAULT_SYSTEM_VM_SIZE="Standard_D4a_v4"
 DEFAULT_WORKLOAD_VM_SIZE="Standard_D32a_v4"
-DEFAULT_DEEPSTREAM_GPU_VM_SIZE="Standard_NC24ads_A100_v4"
-DEFAULT_INFERENCE_GPU_VM_SIZE="Standard_NC24ads_A100_v4"
+DEFAULT_DEEPSTREAM_GPU_SIZE="Standard_NC24ads_A100_v4"
+DEFAULT_INFERENCE_GPU_SIZE="Standard_NC24ads_A100_v4"
 
-# Deepstream GPU pool
-DEEPSTREAM_GPU_VM_SIZE="${DEEPSTREAM_GPU_VM_SIZE:-$DEFAULT_DEEPSTREAM_GPU_VM_SIZE}"
-DEEPSTREAM_GPU_MAX_NODE_COUNT="${DEEPSTREAM_GPU_MAX_NODE_COUNT:-1}"
-
-# Inference GPU pool
-INFERENCE_GPU_VM_SIZE="${INFERENCE_GPU_VM_SIZE:-$DEFAULT_INFERENCE_GPU_VM_SIZE}"
-# Inference node count: 1 when Foundry handles model serving, 2 otherwise (mirrors main.bicep)
+# ── Foundry flag & inference node count ──────────────────────────────────
+# createFoundryProject=true  → Foundry handles model serving → 1 inference GPU node
+# createFoundryProject=false → self-hosted inference          → 2 inference GPU nodes
 CREATE_FOUNDRY_PROJECT="${CREATE_FOUNDRY_PROJECT:-false}"
 if [ "$CREATE_FOUNDRY_PROJECT" = "true" ]; then
-    _INFERENCE_DEFAULT=1
+    _INFERENCE_NODE_DEFAULT=1
 else
-    _INFERENCE_DEFAULT=2
+    _INFERENCE_NODE_DEFAULT=2
 fi
-INFERENCE_GPU_MAX_NODE_COUNT="${INFERENCE_GPU_MAX_NODE_COUNT:-$_INFERENCE_DEFAULT}"
+
+# ── Resolved runtime values (env var wins, then default) ────────────────
+DEEPSTREAM_GPU_VM_SIZE="${DEEPSTREAM_GPU_VM_SIZE:-$DEFAULT_DEEPSTREAM_GPU_SIZE}"
+INFERENCE_GPU_VM_SIZE="${INFERENCE_GPU_VM_SIZE:-$DEFAULT_INFERENCE_GPU_SIZE}"
+DEEPSTREAM_GPU_MAX_NODE_COUNT="${DEEPSTREAM_GPU_MAX_NODE_COUNT:-1}"
+INFERENCE_GPU_MAX_NODE_COUNT="${INFERENCE_GPU_MAX_NODE_COUNT:-$_INFERENCE_NODE_DEFAULT}"
 
 # ── CPU VM Catalog (for system/workload pools) ───────────────────────────
 # Format: "SKU|Cores|RAM|Description"
@@ -51,9 +54,9 @@ GPU_VM_CATALOG=(
     "Standard_NV72ads_A10_v5|72|880 GB|2x A10 24GB|StandardNVADSA10v5Family|A10 dual"
     "Standard_NC40ads_H100_v5|40|320 GB|1x H100 80GB|StandardNCadsH100v5Family|H100"
     "Standard_NC80adis_H100_v5|80|640 GB|2x H100 80GB|StandardNCadsH100v5Family|H100 dual"
-    "Standard_NC6s_v3|6|112 GB|1x V100 16GB|StandardNCSv3Family|V100"
-    "Standard_NC12s_v3|12|224 GB|2x V100 16GB|StandardNCSv3Family|V100 dual"
-    "Standard_NC24s_v3|24|448 GB|4x V100 16GB|StandardNCSv3Family|V100 quad"
+    "Standard_NC6s_v3|6|112 GB|1x V100 16GB|standardNCSv3Family|V100"
+    "Standard_NC12s_v3|12|224 GB|2x V100 16GB|standardNCSv3Family|V100 dual"
+    "Standard_NC24s_v3|24|448 GB|4x V100 16GB|standardNCSv3Family|V100 quad"
 )
 
 # ── GPU Family Lookup Map ────────────────────────────────────────────────

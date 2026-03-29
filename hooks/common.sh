@@ -192,8 +192,10 @@ test_vm_quota() {
     VM_QUOTA_LIMIT=0; VM_QUOTA_USED=0; VM_QUOTA_AVAILABLE=0
     [ -z "$family" ] && return 1
     local raw
+    local lower_family
+    lower_family=$(echo "$family" | tr '[:upper:]' '[:lower:]')
     raw=$(az vm list-usage --location "$location" \
-        --query "[?name.value=='${family}'] | [0]" -o json 2>/dev/null || true)
+        --query "[?to_lower(name.value)=='${lower_family}'] | [0]" -o json 2>/dev/null || true)
     if [ -z "$raw" ] || [ "$raw" = "null" ]; then
         return 1
     fi
@@ -428,11 +430,13 @@ show_vm_selection_menu() {
         printf "\033[%d;1H" "$((cursor_row + item_count))"
 
         if [ "$escaped" = true ]; then
-            echo "   Selection cancelled. Re-showing menu..."
-            continue
+            echo ""
+            echo "   Selection cancelled by user." >&2
+            echo "ERROR: Provisioning aborted." >&2
+            exit 1
         fi
 
-        # Determine selected SKU
+        # ── Resolve selection from menu ────────────────────────────
         local selected_sku="" selected_family=""
 
         if [ "$current_index" -eq "$catalog_count" ]; then

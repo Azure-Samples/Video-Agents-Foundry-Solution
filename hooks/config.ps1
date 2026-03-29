@@ -3,24 +3,26 @@
 # =============================================================================
 # Source this file via: . "$PSScriptRoot/config.ps1"
 
-# ── GPU Compute (set via azd env vars, defaults in main.bicepparam) ──────
-# Deepstream GPU pool
+# ── VM Size Defaults ─────────────────────────────────────────────────────
+# These are the fallback values when no env var is set.
+# The interactive menu (Step 4) lets the user override them.
 
+$Script:DEFAULT_SYSTEM_VM_SIZE      = "Standard_D4a_v4"
+$Script:DEFAULT_WORKLOAD_VM_SIZE    = "Standard_D32a_v4"
+$Script:DEFAULT_DEEPSTREAM_GPU_SIZE = "Standard_NC24ads_A100_v4"
+$Script:DEFAULT_INFERENCE_GPU_SIZE  = "Standard_NC24ads_A100_v4"
 
-$A100 = "Standard_NC24ads_A100_v4" # A10/A100/H100
+# ── Foundry flag & inference node count ──────────────────────────────────
+# createFoundryProject=true  → Foundry handles model serving → 1 inference GPU node
+# createFoundryProject=false → self-hosted inference          → 2 inference GPU nodes
+$Script:CREATE_FOUNDRY_PROJECT = ($env:CREATE_FOUNDRY_PROJECT -eq 'true')
+$inferenceNodeDefault = if ($CREATE_FOUNDRY_PROJECT) { 1 } else { 2 }
 
-$DeepstreamVmSize = $A100
-$InferenceVmSize = $A100
-
-$Script:DEEPSTREAM_GPU_VM_SIZE = if ($env:DEEPSTREAM_GPU_VM_SIZE) { $env:DEEPSTREAM_GPU_VM_SIZE } else {$DeepstreamVmSize }
+# ── Resolved runtime values (env var wins, then default) ────────────────
+$Script:DEEPSTREAM_GPU_VM_SIZE      = if ($env:DEEPSTREAM_GPU_VM_SIZE)      { $env:DEEPSTREAM_GPU_VM_SIZE }      else { $DEFAULT_DEEPSTREAM_GPU_SIZE }
+$Script:INFERENCE_GPU_VM_SIZE       = if ($env:INFERENCE_GPU_VM_SIZE)       { $env:INFERENCE_GPU_VM_SIZE }       else { $DEFAULT_INFERENCE_GPU_SIZE }
 $Script:DEEPSTREAM_GPU_MAX_NODE_COUNT = if ($env:DEEPSTREAM_GPU_MAX_NODE_COUNT) { [int]$env:DEEPSTREAM_GPU_MAX_NODE_COUNT } else { 1 }
-
-# Inference GPU pool
-$Script:INFERENCE_GPU_VM_SIZE = if ($env:INFERENCE_GPU_VM_SIZE) { $env:INFERENCE_GPU_VM_SIZE } else { $InferenceVmSize }
-# Inference node count: 1 when Foundry handles model serving, 2 otherwise (mirrors main.bicep)
-$Script:CREATE_FOUNDRY_PROJECT = if ($env:CREATE_FOUNDRY_PROJECT -eq 'true') { $true } else { $false }
-$inferenceDefault = if ($CREATE_FOUNDRY_PROJECT) { 1 } else { 2 }
-$Script:INFERENCE_GPU_MAX_NODE_COUNT = if ($env:INFERENCE_GPU_MAX_NODE_COUNT) { [int]$env:INFERENCE_GPU_MAX_NODE_COUNT } else { $inferenceDefault }
+$Script:INFERENCE_GPU_MAX_NODE_COUNT  = if ($env:INFERENCE_GPU_MAX_NODE_COUNT)  { [int]$env:INFERENCE_GPU_MAX_NODE_COUNT }  else { $inferenceNodeDefault }
 
 # ── CPU VM Catalog (for system/workload pools) ───────────────────────────
 $Script:CPU_VM_CATALOG = @(
@@ -45,9 +47,9 @@ $Script:GPU_VM_CATALOG = @(
     @{ Sku = "Standard_NV72ads_A10_v5";   Cores = 72; RAM = "880 GB"; GPU = "2x A10 24GB";  Family = "StandardNVADSA10v5Family";  Desc = "A10 dual" }
     @{ Sku = "Standard_NC40ads_H100_v5";  Cores = 40; RAM = "320 GB"; GPU = "1x H100 80GB"; Family = "StandardNCadsH100v5Family"; Desc = "H100" }
     @{ Sku = "Standard_NC80adis_H100_v5"; Cores = 80; RAM = "640 GB"; GPU = "2x H100 80GB"; Family = "StandardNCadsH100v5Family"; Desc = "H100 dual" }
-    @{ Sku = "Standard_NC6s_v3";          Cores = 6;  RAM = "112 GB"; GPU = "1x V100 16GB"; Family = "StandardNCSv3Family";       Desc = "V100" }
-    @{ Sku = "Standard_NC12s_v3";         Cores = 12; RAM = "224 GB"; GPU = "2x V100 16GB"; Family = "StandardNCSv3Family";       Desc = "V100 dual" }
-    @{ Sku = "Standard_NC24s_v3";         Cores = 24; RAM = "448 GB"; GPU = "4x V100 16GB"; Family = "StandardNCSv3Family";       Desc = "V100 quad" }
+    @{ Sku = "Standard_NC6s_v3";          Cores = 6;  RAM = "112 GB"; GPU = "1x V100 16GB"; Family = "standardNCSv3Family";       Desc = "V100" }
+    @{ Sku = "Standard_NC12s_v3";         Cores = 12; RAM = "224 GB"; GPU = "2x V100 16GB"; Family = "standardNCSv3Family";       Desc = "V100 dual" }
+    @{ Sku = "Standard_NC24s_v3";         Cores = 24; RAM = "448 GB"; GPU = "4x V100 16GB"; Family = "standardNCSv3Family";       Desc = "V100 quad" }
 )
 
 # ── GPU Family Lookup Map ────────────────────────────────────────────────

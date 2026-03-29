@@ -223,8 +223,9 @@ function Test-VmQuota {
     )
     if (-not $Family) { return $null }
     try {
+        $lowerFamily = $Family.ToLower()
         $raw = (az vm list-usage --location $Location `
-                --query "[?name.value=='$Family'] | [0]" `
+                --query "[?to_lower(name.value)=='$lowerFamily'] | [0]" `
                 -o json 2>$null)
         if ($raw -and $raw -ne "null") {
             $q = $raw | ConvertFrom-Json
@@ -442,63 +443,65 @@ function Show-VmSelectionMenu {
         [Console]::SetCursorPosition(0, $menuTopLine + $itemCount)
 
         if ($escaped) {
-            Write-Host "   Cancelled. Re-showing menu..." -ForegroundColor Yellow
-            continue
-        }
-
-        # ── Resolve selection ──────────────────────────────────────
-        $selectedSku    = $null
-        $selectedFamily = $null
-
-        if ($currentIndex -eq $Catalog.Count) {
-            $customSku = Read-Host "   Enter VM SKU (e.g. Standard_NC24ads_A100_v4)"
-            if ([string]::IsNullOrWhiteSpace($customSku)) {
-                Write-Host "   No value entered. Re-showing menu..." -ForegroundColor Yellow
-                continue
-            }
-            $selectedSku = $customSku.Trim()
+            Write-Host ""
+            Write-Host "   Selection cancelled by user. Provisioning aborted." -ForegroundColor Red
+            exit 1
         }
         else {
-            $selectedSku = $Catalog[$currentIndex].Sku
-        }
+            # ── Resolve selection from menu ────────────────────────────
+            $selectedSku    = $null
+            $selectedFamily = $null
 
-        # ── Check region availability ──────────────────────────────
-        Write-Host "   Checking availability of $selectedSku in $Location..." -NoNewline
-        $availability = Test-VmAvailability -VmSize $selectedSku -Location $Location
-
-        if (-not $availability.Available) {
-            Write-Host " NOT AVAILABLE" -ForegroundColor Red
-            Write-Host "   '$selectedSku' is not available in region '$Location'. Try another." -ForegroundColor Yellow
-            continue
-        }
-        Write-Host " OK ($($availability.Cores) cores)" -ForegroundColor Green
-
-        # ── Resolve GPU quota family & check quota inline ─────────
-        if ($IsGpu) {
-            $catalogEntry = $Catalog | Where-Object { $_.Sku -eq $selectedSku } | Select-Object -First 1
-            if ($catalogEntry) {
-                $selectedFamily = $catalogEntry.Family
-            }
-            elseif ($GPU_FAMILY_MAP.ContainsKey($selectedSku)) {
-                $selectedFamily = $GPU_FAMILY_MAP[$selectedSku]
+            if ($currentIndex -eq $Catalog.Count) {
+                $customSku = Read-Host "   Enter VM SKU (e.g. Standard_NC24ads_A100_v4)"
+                if ([string]::IsNullOrWhiteSpace($customSku)) {
+                    Write-Host "   No value entered. Re-showing menu..." -ForegroundColor Yellow
+                    continue
+                }
+                $selectedSku = $customSku.Trim()
             }
             else {
-                Write-Host "   Custom GPU SKU — quota family needed for validation."
-                $selectedFamily = Read-Host "   Quota family (e.g. StandardNCADSA100v4Family, Enter to skip)"
-                if ([string]::IsNullOrWhiteSpace($selectedFamily)) {
-                    $selectedFamily = $null
-                    Write-Host "   Skipping GPU quota check for this pool." -ForegroundColor Yellow
-                }
+                $selectedSku = $Catalog[$currentIndex].Sku
             }
 
-            # Early quota check — warn but let the user decide
-            if ($selectedFamily) {
-                $quotaResult = Assert-VmQuota -Label $PoolName -Family $selectedFamily -Location $Location -CoresNeeded $availability.Cores
-                if ($quotaResult -in @("zero", "low")) {
-                    $proceed = Read-Host "   Continue with this VM anyway? (y = keep, n = re-select) [n]"
-                    if ($proceed -ne 'y' -and $proceed -ne 'Y') {
-                        Write-Host "   Re-showing menu..." -ForegroundColor Yellow
-                        continue
+            # ── Check region availability ──────────────────────────────
+            Write-Host "   Checking availability of $selectedSku in $Location..." -NoNewline
+            $availability = Test-VmAvailability -VmSize $selectedSku -Location $Location
+
+            if (-not $availability.Available) {
+                Write-Host " NOT AVAILABLE" -ForegroundColor Red
+                Write-Host "   '$selectedSku' is not available in region '$Location'. Try another." -ForegroundColor Yellow
+                continue
+            }
+            Write-Host " OK ($($availability.Cores) cores)" -ForegroundColor Green
+
+            # ── Resolve GPU quota family & check quota inline ──────────
+            if ($IsGpu) {
+                $catalogEntry = $Catalog | Where-Object { $_.Sku -eq $selectedSku } | Select-Object -First 1
+                if ($catalogEntry) {
+                    $selectedFamily = $catalogEntry.Family
+                }
+                elseif ($GPU_FAMILY_MAP.ContainsKey($selectedSku)) {
+                    $selectedFamily = $GPU_FAMILY_MAP[$selectedSku]
+                }
+                else {
+                    Write-Host "   Custom GPU SKU — quota family needed for validation."
+                    $selectedFamily = Read-Host "   Quota family (e.g. StandardNCADSA100v4Family, Enter to skip)"
+                    if ([string]::IsNullOrWhiteSpace($selectedFamily)) {
+                        $selectedFamily = $null
+                        Write-Host "   Skipping GPU quota check for this pool." -ForegroundColor Yellow
+                    }
+                }
+
+                # Early quota check — warn but let the user decide
+                if ($selectedFamily) {
+                    $quotaResult = Assert-VmQuota -Label $PoolName -Family $selectedFamily -Location $Location -CoresNeeded $availability.Cores
+                    if ($quotaResult -in @("zero", "low")) {
+                        $proceed = Read-Host "   Continue with this VM anyway? (y = keep, n = re-select) [n]"
+                        if ($proceed -ne 'y' -and $proceed -ne 'Y') {
+                            Write-Host "   Re-showing menu..." -ForegroundColor Yellow
+                            continue
+                        }
                     }
                 }
             }
