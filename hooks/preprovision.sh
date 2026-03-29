@@ -82,11 +82,11 @@ SYSTEM_SKU="$SELECTED_VM_SKU"
 show_vm_selection_menu "Workload (CPU)" "WORKLOAD_VM_SIZE" "cpu" "$CURRENT_WORKLOAD_VM" "$AZURE_LOCATION"
 WORKLOAD_SKU="$SELECTED_VM_SKU"
 
-# GPU pools (availability + quota validated inline)
-show_vm_selection_menu "Deepstream (GPU)" "DEEPSTREAM_GPU_VM_SIZE" "gpu" "$CURRENT_DEEPSTREAM_VM" "$AZURE_LOCATION"
+# GPU pools (availability + quota validated inline, node count determines total cores checked)
+show_vm_selection_menu "Deepstream (GPU)" "DEEPSTREAM_GPU_VM_SIZE" "gpu" "$CURRENT_DEEPSTREAM_VM" "$AZURE_LOCATION" "$DEEPSTREAM_GPU_MAX_NODE_COUNT"
 DEEPSTREAM_GPU_VM_SIZE="$SELECTED_VM_SKU"
 
-show_vm_selection_menu "Inference (GPU)" "INFERENCE_GPU_VM_SIZE" "gpu" "$CURRENT_INFERENCE_VM" "$AZURE_LOCATION"
+show_vm_selection_menu "Inference (GPU)" "INFERENCE_GPU_VM_SIZE" "gpu" "$CURRENT_INFERENCE_VM" "$AZURE_LOCATION" "$INFERENCE_GPU_MAX_NODE_COUNT"
 INFERENCE_GPU_VM_SIZE="$SELECTED_VM_SKU"
 
 # =====================================================

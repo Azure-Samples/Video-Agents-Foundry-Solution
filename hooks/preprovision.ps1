@@ -85,9 +85,9 @@ $currentInferenceVm  = if ($env:INFERENCE_GPU_VM_SIZE)   { $env:INFERENCE_GPU_VM
 $selectedSystem   = Show-VmSelectionMenu -PoolName "System (CPU)"   -EnvVarName "SYSTEM_VM_SIZE"   -Catalog $CPU_VM_CATALOG -DefaultSku $currentSystemVm   -Location $env:AZURE_LOCATION
 $selectedWorkload = Show-VmSelectionMenu -PoolName "Workload (CPU)" -EnvVarName "WORKLOAD_VM_SIZE" -Catalog $CPU_VM_CATALOG -DefaultSku $currentWorkloadVm -Location $env:AZURE_LOCATION
 
-# GPU pools (availability + quota validated inline)
-$selectedDeepstream = Show-VmSelectionMenu -PoolName "Deepstream (GPU)" -EnvVarName "DEEPSTREAM_GPU_VM_SIZE" -Catalog $GPU_VM_CATALOG -DefaultSku $currentDeepstreamVm -Location $env:AZURE_LOCATION -IsGpu
-$selectedInference  = Show-VmSelectionMenu -PoolName "Inference (GPU)"  -EnvVarName "INFERENCE_GPU_VM_SIZE"  -Catalog $GPU_VM_CATALOG -DefaultSku $currentInferenceVm  -Location $env:AZURE_LOCATION -IsGpu
+# GPU pools (availability + quota validated inline, node count determines total cores checked)
+$selectedDeepstream = Show-VmSelectionMenu -PoolName "Deepstream (GPU)" -EnvVarName "DEEPSTREAM_GPU_VM_SIZE" -Catalog $GPU_VM_CATALOG -DefaultSku $currentDeepstreamVm -Location $env:AZURE_LOCATION -IsGpu -MaxNodes $DEEPSTREAM_GPU_MAX_NODE_COUNT
+$selectedInference  = Show-VmSelectionMenu -PoolName "Inference (GPU)"  -EnvVarName "INFERENCE_GPU_VM_SIZE"  -Catalog $GPU_VM_CATALOG -DefaultSku $currentInferenceVm  -Location $env:AZURE_LOCATION -IsGpu -MaxNodes $INFERENCE_GPU_MAX_NODE_COUNT
 
 # Update script-scope variables for downstream consumers
 $DEEPSTREAM_GPU_VM_SIZE = $selectedDeepstream.Sku

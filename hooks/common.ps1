@@ -223,9 +223,8 @@ function Test-VmQuota {
     )
     if (-not $Family) { return $null }
     try {
-        $lowerFamily = $Family.ToLower()
         $raw = (az vm list-usage --location $Location `
-                --query "[?to_lower(name.value)=='$lowerFamily'] | [0]" `
+                --query "[?name.value=='$Family'] | [0]" `
                 -o json 2>$null)
         if ($raw -and $raw -ne "null") {
             $q = $raw | ConvertFrom-Json
@@ -314,7 +313,8 @@ function Show-VmSelectionMenu {
         [array]$Catalog,
         [string]$DefaultSku,
         [string]$Location,
-        [switch]$IsGpu
+        [switch]$IsGpu,
+        [int]$MaxNodes = 1
     )
 
     $itemCount = $Catalog.Count + 1  # catalog entries + "Custom" row
@@ -495,7 +495,8 @@ function Show-VmSelectionMenu {
 
                 # Early quota check — warn but let the user decide
                 if ($selectedFamily) {
-                    $quotaResult = Assert-VmQuota -Label $PoolName -Family $selectedFamily -Location $Location -CoresNeeded $availability.Cores
+                    $totalCoresNeeded = $availability.Cores * $MaxNodes
+                    $quotaResult = Assert-VmQuota -Label $PoolName -Family $selectedFamily -Location $Location -CoresNeeded $totalCoresNeeded
                     if ($quotaResult -in @("zero", "low")) {
                         $proceed = Read-Host "   Continue with this VM anyway? (y = keep, n = re-select) [n]"
                         if ($proceed -ne 'y' -and $proceed -ne 'Y') {
