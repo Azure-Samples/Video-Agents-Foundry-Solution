@@ -65,28 +65,35 @@ assert_env_vars AZURE_SUBSCRIPTION_ID AZURE_LOCATION AZURE_ENV_NAME
 # =====================================================
 write_step "4" "Selecting VM sizes for AKS node pools..."
 
+echo "   Querying available VM sizes in ${AZURE_LOCATION}..."
+
+# Fetch CPU and GPU VM lists (pure az CLI, no temp files)
+mapfile -t CPU_VMS < <(get_filtered_vm_sizes "$AZURE_LOCATION" "${CPU_VM_PREFIXES[@]}")
+mapfile -t GPU_VMS < <(get_filtered_vm_sizes "$AZURE_LOCATION" "${GPU_VM_PREFIXES[@]}")
+
+echo "   CPU sizes: ${#CPU_VMS[@]}  |  GPU sizes: ${#GPU_VMS[@]}"
+echo ""
 echo "   Choose a VM SKU for each AKS node pool."
 echo "   The default is highlighted - press Enter to accept it."
-echo ""
 
-# Determine current/default values (env var overrides config default)
+# Determine current/default values
 CURRENT_SYSTEM_VM="${SYSTEM_VM_SIZE:-$DEFAULT_SYSTEM_VM_SIZE}"
 CURRENT_WORKLOAD_VM="${WORKLOAD_VM_SIZE:-$DEFAULT_WORKLOAD_VM_SIZE}"
 CURRENT_DEEPSTREAM_VM="${DEEPSTREAM_GPU_VM_SIZE:-$DEFAULT_DEEPSTREAM_GPU_SIZE}"
 CURRENT_INFERENCE_VM="${INFERENCE_GPU_VM_SIZE:-$DEFAULT_INFERENCE_GPU_SIZE}"
 
 # CPU pools
-show_vm_selection_menu "System (CPU)"   "SYSTEM_VM_SIZE"   "cpu" "$CURRENT_SYSTEM_VM"   "$AZURE_LOCATION"
+show_vm_selection_menu "System (CPU)"   "SYSTEM_VM_SIZE"   CPU_VMS "$CURRENT_SYSTEM_VM"   "$AZURE_LOCATION"
 SYSTEM_SKU="$SELECTED_VM_SKU"
 
-show_vm_selection_menu "Workload (CPU)" "WORKLOAD_VM_SIZE" "cpu" "$CURRENT_WORKLOAD_VM" "$AZURE_LOCATION"
+show_vm_selection_menu "Workload (CPU)" "WORKLOAD_VM_SIZE" CPU_VMS "$CURRENT_WORKLOAD_VM" "$AZURE_LOCATION"
 WORKLOAD_SKU="$SELECTED_VM_SKU"
 
-# GPU pools (availability + quota validated inline, node count determines total cores checked)
-show_vm_selection_menu "Deepstream (GPU)" "DEEPSTREAM_GPU_VM_SIZE" "gpu" "$CURRENT_DEEPSTREAM_VM" "$AZURE_LOCATION" "$DEEPSTREAM_GPU_MAX_NODE_COUNT"
+# GPU pools (quota validated inline, node count determines total cores checked)
+show_vm_selection_menu "Deepstream (GPU)" "DEEPSTREAM_GPU_VM_SIZE" GPU_VMS "$CURRENT_DEEPSTREAM_VM" "$AZURE_LOCATION" "$DEEPSTREAM_GPU_MAX_NODE_COUNT" "gpu"
 DEEPSTREAM_GPU_VM_SIZE="$SELECTED_VM_SKU"
 
-show_vm_selection_menu "Inference (GPU)" "INFERENCE_GPU_VM_SIZE" "gpu" "$CURRENT_INFERENCE_VM" "$AZURE_LOCATION" "$INFERENCE_GPU_MAX_NODE_COUNT"
+show_vm_selection_menu "Inference (GPU)" "INFERENCE_GPU_VM_SIZE" GPU_VMS "$CURRENT_INFERENCE_VM" "$AZURE_LOCATION" "$INFERENCE_GPU_MAX_NODE_COUNT" "gpu"
 INFERENCE_GPU_VM_SIZE="$SELECTED_VM_SKU"
 
 # =====================================================

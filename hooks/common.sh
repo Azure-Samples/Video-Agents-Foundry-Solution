@@ -160,52 +160,59 @@ test_namespace_exists() {
     kubectl --context "$kube_context" get namespace "$namespace" --no-headers 2>/dev/null | grep -q .
 }
 
-# ── VM Size Availability ──────────────────────────────────────────────────
+# ── Azure VM Data (pure az CLI + bash, no python) ────────────────────────
 
-# Usage: if test_vm_availability "Standard_D4a_v4" "eastus2"; then ...
-# Sets global VM_AVAIL_CORES on success
-VM_AVAIL_CORES=0
-test_vm_availability() {
-    local vm_size="$1"
-    local location="$2"
-    local vm_info
-    vm_info=$(az vm list-sizes --location "$location" \
-        --query "[?name=='${vm_size}'] | [0]" -o json 2>/dev/null || true)
-
-    if [ -z "$vm_info" ] || [ "$vm_info" = "null" ]; then
-        VM_AVAIL_CORES=0
-        return 1
-    fi
-
-    VM_AVAIL_CORES=$(echo "$vm_info" | grep -o '"numberOfCores":[0-9]*' | grep -o '[0-9]*')
-    return 0
+# Fetches VM sizes for a region, filtered by name prefixes, sorted by cores.
+# Output: pipe-delimited lines "name|cores|memGB" to stdout.
+# Usage: mapfile -t CPU_VMS < <(get_filtered_vm_sizes "eastus" "Standard_D")
+#        mapfile -t GPU_VMS < <(get_filtered_vm_sizes "eastus" "Standard_NC" "Standard_NV" "Standard_ND")
+get_filtered_vm_sizes() {
+    local location="$1"; shift
+    local -a prefixes=("$@")
+    # Build JMESPath filter: [?starts_with(name,'P1') || starts_with(name,'P2')]
+    local filter=""
+    for p in "${prefixes[@]}"; do
+        [ -n "$filter" ] && filter="${filter} || "
+        filter="${filter}starts_with(name, '${p}')"
+    done
+    az vm list-sizes --location "$location" \
+        --query "sort_by([?${filter}], &numberOfCores)[].{n:name, c:numberOfCores, m:memoryInMB}" \
+        -o tsv 2>/dev/null | while IFS=$'\t' read -r name cores memMB; do
+        echo "${name}|${cores}|$((memMB / 1024))"
+    done
 }
 
-# Usage: if test_vm_quota "StandardNCADSA100v4Family" "eastus"; then ...
+# Looks up quota for a family directly via az CLI (single call).
 # Sets globals: VM_QUOTA_LIMIT, VM_QUOTA_USED, VM_QUOTA_AVAILABLE
 VM_QUOTA_LIMIT=0
 VM_QUOTA_USED=0
 VM_QUOTA_AVAILABLE=0
-test_vm_quota() {
-    local family="$1"
-    local location="$2"
+lookup_vm_quota() {
+    local family="$1" location="$2"
     VM_QUOTA_LIMIT=0; VM_QUOTA_USED=0; VM_QUOTA_AVAILABLE=0
     [ -z "$family" ] && return 1
     local raw
     raw=$(az vm list-usage --location "$location" \
-        --query "[?name.value=='${family}'] | [0]" -o json 2>/dev/null || true)
-    if [ -z "$raw" ] || [ "$raw" = "null" ]; then
-        return 1
-    fi
-    VM_QUOTA_LIMIT=$(echo "$raw" | grep -o '"limit":[0-9]*' | grep -o '[0-9]*' || echo "0")
-    VM_QUOTA_USED=$(echo "$raw" | grep -o '"currentValue":[0-9]*' | grep -o '[0-9]*' || echo "0")
+        --query "[?name.value=='${family}'] | [0].{l:limit, u:currentValue}" \
+        -o tsv 2>/dev/null || true)
+    [ -z "$raw" ] && return 1
+    VM_QUOTA_LIMIT=$(echo "$raw" | cut -f1)
+    VM_QUOTA_USED=$(echo "$raw" | cut -f2)
     VM_QUOTA_AVAILABLE=$((VM_QUOTA_LIMIT - VM_QUOTA_USED))
     return 0
 }
 
-# Checks GPU quota for a pool, prints formatted status, sets ASSERT_QUOTA_RESULT.
+# Looks up quota family for a VM via az vm list-skus.
+# Sets global GET_QUOTA_FAMILY_RESULT
+GET_QUOTA_FAMILY_RESULT=""
+get_quota_family_for_vm() {
+    local vm_size="$1" location="$2"
+    GET_QUOTA_FAMILY_RESULT=$(az vm list-skus --location "$location" --size "$vm_size" \
+        --query "[0].family" -o tsv 2>/dev/null || true)
+}
+
+# Checks GPU quota, prints formatted status, sets ASSERT_QUOTA_RESULT.
 # Values: "ok", "skip", "zero", "low", "error"
-# Args: label family location cores_needed
 ASSERT_QUOTA_RESULT=""
 assert_vm_quota() {
     local label="$1" family="$2" location="$3" cores_needed="$4"
@@ -213,306 +220,216 @@ assert_vm_quota() {
 
     if [ -z "$family" ]; then
         echo "   [${label}] Skipping quota check (no quota family)"
-        ASSERT_QUOTA_RESULT="skip"
-        return 0
+        ASSERT_QUOTA_RESULT="skip"; return 0
     fi
 
     printf "   [%s] Checking quota for '%s'..." "$label" "$family"
 
-    if ! test_vm_quota "$family" "$location"; then
-        printf " \033[33mUNKNOWN (query failed)\033[0m\n"
-        ASSERT_QUOTA_RESULT="error"
-        return 1
+    if ! lookup_vm_quota "$family" "$location"; then
+        printf " \033[33mUNKNOWN (family not found)\033[0m\n"
+        ASSERT_QUOTA_RESULT="error"; return 1
     fi
 
     if [ "$VM_QUOTA_LIMIT" -eq 0 ]; then
         printf " \033[31mZERO QUOTA\033[0m\n"
-        echo "   [${label}] No quota allocated for '${family}' in '${location}'."
+        echo "   [${label}] No quota allocated for '${family}'."
         echo "   Request GPU quota at: ${QUOTA_URL}"
         echo "   For step-by-step instructions, see: ${GPU_QUOTA_DOC_URL}"
-        ASSERT_QUOTA_RESULT="zero"
-        return 1
+        ASSERT_QUOTA_RESULT="zero"; return 1
     fi
 
     if [ -n "$cores_needed" ] && [ "$cores_needed" -gt 0 ] && [ "$VM_QUOTA_AVAILABLE" -lt "$cores_needed" ]; then
         printf " \033[33mLOW (%s cores free, need %s)\033[0m\n" "$VM_QUOTA_AVAILABLE" "$cores_needed"
-        echo "   [${label}] Insufficient quota — ${VM_QUOTA_AVAILABLE}/${VM_QUOTA_LIMIT} available (${VM_QUOTA_USED} used)"
+        echo "   [${label}] Insufficient — ${VM_QUOTA_AVAILABLE}/${VM_QUOTA_LIMIT} available (${VM_QUOTA_USED} used)"
         echo "   Request quota increase at: ${QUOTA_URL}"
-        echo "   For step-by-step instructions, see: ${GPU_QUOTA_DOC_URL}"
-        ASSERT_QUOTA_RESULT="low"
-        return 1
+        ASSERT_QUOTA_RESULT="low"; return 1
     fi
 
     printf " \033[32mOK (%s cores free)\033[0m\n" "$VM_QUOTA_AVAILABLE"
-    ASSERT_QUOTA_RESULT="ok"
-    return 0
+    ASSERT_QUOTA_RESULT="ok"; return 0
 }
 
 # ── Interactive VM Selection Menu ─────────────────────────────────────────
 
-# Arrow-key driven interactive menu for selecting a VM size.
-# Up/Down to move, Enter to select, C for custom, Esc to re-draw.
-#
-# Usage: show_vm_selection_menu "PoolName" "ENV_VAR_NAME" "cpu|gpu" "DefaultSku" "Location"
+# Arrow-key menu. Data is a bash array of "name|cores|memGB" lines (from get_filtered_vm_sizes).
+# Usage: show_vm_selection_menu "PoolName" "ENV_VAR" vm_array_name "DefaultSku" "Location" max_nodes "gpu"
 # Sets globals: SELECTED_VM_SKU, SELECTED_VM_CORES, SELECTED_VM_FAMILY
 SELECTED_VM_SKU=""
 SELECTED_VM_CORES=0
 SELECTED_VM_FAMILY=""
 
-# Format a single catalog line for display
-# Args: catalog_type sku cores ram desc [gpu]
-_format_vm_line() {
-    local ctype="$1" sku="$2" cores="$3" ram="$4" desc="$5" gpu="$6" is_default="$7"
-    local tag=""
-    [ "$is_default" = "1" ] && tag=" (default)"
-    if [ "$ctype" = "gpu" ]; then
-        printf "%-30s %-10s %-8s %-16s %s%s" "$sku" "${cores} cores" "$ram" "$gpu" "$desc" "$tag"
-    else
-        printf "%-30s %-10s %-8s %s%s" "$sku" "${cores} cores" "$ram" "$desc" "$tag"
-    fi
-}
-
 show_vm_selection_menu() {
     local pool_name="$1"
     local env_var_name="$2"
-    local catalog_type="$3"    # "cpu" or "gpu"
+    local -n _vm_array=$3       # nameref to caller's array
     local default_sku="$4"
     local location="$5"
     local max_nodes="${6:-1}"
+    local is_gpu="${7:-}"
 
-    # Select the right catalog
-    local -a catalog
-    if [ "$catalog_type" = "gpu" ]; then
-        catalog=("${GPU_VM_CATALOG[@]}")
-    else
-        catalog=("${CPU_VM_CATALOG[@]}")
+    local vm_count=${#_vm_array[@]}
+    local item_count=$((vm_count + 1))
+    local max_visible=20
+    [ "$item_count" -lt "$max_visible" ] && max_visible=$item_count
+
+    if [ "$vm_count" -eq 0 ]; then
+        echo "   No VM sizes available for this pool." >&2
+        echo "   Provisioning aborted." >&2
+        exit 1
     fi
 
-    local catalog_count=${#catalog[@]}
-    local item_count=$((catalog_count + 1))  # +1 for custom entry
-
-    # Find default index
-    local current_index=0
-    local i=0
-    for entry in "${catalog[@]}"; do
-        local entry_sku
-        entry_sku=$(echo "$entry" | cut -d'|' -f1)
-        if [ "$entry_sku" = "$default_sku" ]; then
-            current_index=$i
-            break
-        fi
-        i=$((i + 1))
+    # Parse into parallel arrays for fast indexed access
+    local -a vm_names vm_cores vm_mem
+    for entry in "${_vm_array[@]}"; do
+        vm_names+=("${entry%%|*}")
+        local rest="${entry#*|}"
+        vm_cores+=("${rest%%|*}")
+        vm_mem+=("${rest#*|}")
     done
 
-    # Render the menu in-place using ANSI cursor movement
+    # Find default index, set initial scroll
+    local current_index=0 scroll_offset=0
+    for ((i=0; i<vm_count; i++)); do
+        [ "${vm_names[$i]}" = "$default_sku" ] && { current_index=$i; break; }
+    done
+    scroll_offset=$((current_index - max_visible / 2))
+    [ "$scroll_offset" -lt 0 ] && scroll_offset=0
+    local max_scroll=$((item_count - max_visible))
+    [ "$max_scroll" -lt 0 ] && max_scroll=0
+    [ "$scroll_offset" -gt "$max_scroll" ] && scroll_offset=$max_scroll
+
+    _update_scroll() {
+        [ "$current_index" -lt "$scroll_offset" ] && scroll_offset=$current_index
+        [ "$current_index" -ge $((scroll_offset + max_visible)) ] && scroll_offset=$((current_index - max_visible + 1))
+        [ "$scroll_offset" -lt 0 ] && scroll_offset=0
+        [ "$scroll_offset" -gt "$max_scroll" ] && scroll_offset=$max_scroll
+    }
+
     _render_menu() {
-        local selected=$1 top_offset=$2
-        # Move cursor to the start of the menu area
-        printf "\033[%d;1H" "$top_offset"
-
-        local idx=0
-        for entry in "${catalog[@]}"; do
-            local sku cores ram desc gpu family is_def="0"
-
-            if [ "$catalog_type" = "gpu" ]; then
-                sku=$(echo "$entry" | cut -d'|' -f1)
-                cores=$(echo "$entry" | cut -d'|' -f2)
-                ram=$(echo "$entry" | cut -d'|' -f3)
-                gpu=$(echo "$entry" | cut -d'|' -f4)
-                desc=$(echo "$entry" | cut -d'|' -f6)
+        local selected=$1 top=$2 offset=$3
+        printf "\033[%d;1H" "$top"
+        for ((row=0; row<max_visible; row++)); do
+            local idx=$((offset + row))
+            if [ "$idx" -eq "$vm_count" ]; then
+                [ "$idx" -eq "$selected" ] \
+                    && printf "\033[K \033[30;46m > Enter custom VM size... \033[0m\n" \
+                    || printf "\033[K    Enter custom VM size...\n"
+            elif [ "$idx" -lt "$vm_count" ]; then
+                local is_def="0"
+                [ "${vm_names[$idx]}" = "$default_sku" ] && is_def="1"
+                local text tag=""
+                [ "$is_def" = "1" ] && tag=" (default)"
+                text=$(printf "%-35s %-10s %-8s%s" "${vm_names[$idx]}" "${vm_cores[$idx]} vCPUs" "${vm_mem[$idx]} GB" "$tag")
+                if [ "$idx" -eq "$selected" ]; then
+                    printf "\033[K \033[30;46m > %s \033[0m\n" "$text"
+                elif [ "$is_def" = "1" ]; then
+                    printf "\033[K \033[36m   %s \033[0m\n" "$text"
+                else
+                    printf "\033[K    %s\n" "$text"
+                fi
             else
-                sku=$(echo "$entry" | cut -d'|' -f1)
-                cores=$(echo "$entry" | cut -d'|' -f2)
-                ram=$(echo "$entry" | cut -d'|' -f3)
-                desc=$(echo "$entry" | cut -d'|' -f4)
-                gpu=""
+                printf "\033[K\n"
             fi
-
-            [ "$sku" = "$default_sku" ] && is_def="1"
-
-            local text
-            text=$(_format_vm_line "$catalog_type" "$sku" "$cores" "$ram" "$desc" "$gpu" "$is_def")
-
-            if [ "$idx" -eq "$selected" ]; then
-                # Highlighted: black on cyan
-                printf "\033[K \033[30;46m > %s \033[0m\n" "$text"
-            elif [ "$is_def" = "1" ]; then
-                # Default: cyan text
-                printf "\033[K \033[36m   %s \033[0m\n" "$text"
-            else
-                printf "\033[K    %s\n" "$text"
-            fi
-            idx=$((idx + 1))
         done
-
-        # Custom entry row
-        if [ "$selected" -eq "$catalog_count" ]; then
-            printf "\033[K \033[30;46m > Enter custom VM size... \033[0m\n"
-        else
-            printf "\033[K    Enter custom VM size...\n"
-        fi
     }
 
     while true; do
-        # Print the header
         echo ""
-        echo "   Select VM size for ${pool_name} node pool:"
-        printf "   Use \xe2\x86\x91/\xe2\x86\x93 arrows to move, Enter to select, Esc to cancel\n"
+        echo "   Select VM size for ${pool_name} node pool (${vm_count} sizes available):"
+        printf "   Use \xe2\x86\x91/\xe2\x86\x93 to move, Enter to select, C custom, Esc cancel\n"
         echo ""
 
-        # Get the current cursor row (1-based) for menu rendering
-        # Use ANSI DSR (Device Status Report) to query cursor position
+        # Get cursor row via ANSI DSR
         local cursor_row
         if [ -t 0 ]; then
-            # Save terminal settings, set raw mode to read the response
-            local old_stty
-            old_stty=$(stty -g)
+            local old_stty; old_stty=$(stty -g)
             stty raw -echo min 0
             printf "\033[6n" > /dev/tty
             local response=""
             while true; do
-                local char
-                char=$(dd bs=1 count=1 2>/dev/null)
-                response="${response}${char}"
+                local ch; ch=$(dd bs=1 count=1 2>/dev/null)
+                response="${response}${ch}"
                 case "$response" in *R) break ;; esac
             done
             stty "$old_stty"
-            # Parse "\033[row;colR"
             cursor_row=$(echo "$response" | sed 's/.*\[//;s/;.*//')
         else
-            cursor_row=10  # fallback
+            cursor_row=10
         fi
 
-        # Render the initial menu
-        _render_menu "$current_index" "$cursor_row"
+        # Reserve viewport lines
+        for ((r=0; r<max_visible; r++)); do echo ""; done
+        local menu_top=$cursor_row
 
-        # Read keys in raw mode
+        _update_scroll
+        _render_menu "$current_index" "$menu_top" "$scroll_offset"
+
         local confirmed=false escaped=false
-
         while [ "$confirmed" = false ] && [ "$escaped" = false ]; do
-            # Read a single byte
-            local key
-            IFS= read -rsn1 key
-
+            local key; IFS= read -rsn1 key
             if [ "$key" = $'\x1b' ]; then
-                # Escape sequence or standalone Esc
-                local seq=""
-                IFS= read -rsn1 -t 0.1 seq
-                if [ -z "$seq" ]; then
-                    # Standalone Esc
-                    escaped=true
+                local seq=""; IFS= read -rsn1 -t 0.1 seq
+                if [ -z "$seq" ]; then escaped=true
                 elif [ "$seq" = "[" ]; then
-                    local arrow
-                    IFS= read -rsn1 arrow
+                    local arrow; IFS= read -rsn1 arrow
                     case "$arrow" in
-                        A)  # Up arrow
-                            [ "$current_index" -gt 0 ] && current_index=$((current_index - 1))
-                            _render_menu "$current_index" "$cursor_row"
-                            ;;
-                        B)  # Down arrow
-                            [ "$current_index" -lt $((item_count - 1)) ] && current_index=$((current_index + 1))
-                            _render_menu "$current_index" "$cursor_row"
-                            ;;
+                        A) [ "$current_index" -gt 0 ] && current_index=$((current_index - 1)); _update_scroll; _render_menu "$current_index" "$menu_top" "$scroll_offset" ;;
+                        B) [ "$current_index" -lt $((item_count - 1)) ] && current_index=$((current_index + 1)); _update_scroll; _render_menu "$current_index" "$menu_top" "$scroll_offset" ;;
                     esac
                 fi
-            elif [ "$key" = "" ]; then
-                # Enter key
-                confirmed=true
+            elif [ "$key" = "" ]; then confirmed=true
             elif [ "$key" = "c" ] || [ "$key" = "C" ]; then
-                # Jump to custom entry
-                current_index=$catalog_count
-                _render_menu "$current_index" "$cursor_row"
+                current_index=$vm_count; _update_scroll; _render_menu "$current_index" "$menu_top" "$scroll_offset"
             fi
         done
 
-        # Move cursor past the menu
-        printf "\033[%d;1H" "$((cursor_row + item_count))"
+        printf "\033[%d;1H" "$((menu_top + max_visible))"
 
         if [ "$escaped" = true ]; then
-            echo ""
-            echo "   Selection cancelled by user." >&2
-            echo "ERROR: Provisioning aborted." >&2
-            exit 1
+            echo ""; echo "   Selection cancelled by user. Provisioning aborted." >&2; exit 1
         fi
 
-        # ── Resolve selection from menu ────────────────────────────
-        local selected_sku="" selected_family=""
-
-        if [ "$current_index" -eq "$catalog_count" ]; then
-            # Custom entry
-            echo ""
-            printf "   Enter custom VM SKU name (e.g. Standard_NC24ads_A100_v4): "
-            read -r custom_sku
-            if [ -z "$custom_sku" ]; then
-                echo "   No value entered. Re-showing menu..."
-                continue
-            fi
+        # Resolve selection
+        local selected_sku="" selected_cores=0 selected_family=""
+        if [ "$current_index" -eq "$vm_count" ]; then
+            echo ""; printf "   Enter VM SKU (e.g. Standard_NC24ads_A100_v4): "; read -r custom_sku
+            [ -z "$custom_sku" ] && { echo "   No value entered. Re-showing menu..."; continue; }
             selected_sku="$(echo "$custom_sku" | xargs)"
-        else
-            selected_sku=$(echo "${catalog[$current_index]}" | cut -d'|' -f1)
-        fi
-
-        # Check availability in the target region
-        echo ""
-        printf "   Checking availability of %s in %s..." "$selected_sku" "$location"
-
-        if ! test_vm_availability "$selected_sku" "$location"; then
-            printf " \033[31mNOT AVAILABLE\033[0m\n"
-            echo "   VM size '${selected_sku}' is not available in region '${location}'."
-            echo "   Please select a different VM size."
-            continue
-        fi
-
-        printf " \033[32mOK (%s cores)\033[0m\n" "$VM_AVAIL_CORES"
-
-        # Resolve GPU family & check quota inline
-        if [ "$catalog_type" = "gpu" ]; then
-            for entry in "${catalog[@]}"; do
-                local entry_sku
-                entry_sku=$(echo "$entry" | cut -d'|' -f1)
-                if [ "$entry_sku" = "$selected_sku" ]; then
-                    selected_family=$(echo "$entry" | cut -d'|' -f5)
-                    break
-                fi
+            for ((i=0; i<vm_count; i++)); do
+                [ "${vm_names[$i]}" = "$selected_sku" ] && { selected_cores="${vm_cores[$i]}"; break; }
             done
+            [ "$selected_cores" -eq 0 ] && { printf "   \033[31m'%s' not found in region.\033[0m\n" "$selected_sku"; continue; }
+        else
+            selected_sku="${vm_names[$current_index]}"
+            selected_cores="${vm_cores[$current_index]}"
+        fi
 
-            if [ -z "$selected_family" ] && [ -n "${GPU_FAMILY_MAP[$selected_sku]+x}" ]; then
-                selected_family="${GPU_FAMILY_MAP[$selected_sku]}"
-            fi
+        printf "   \033[32m%s — %s vCPUs\033[0m\n" "$selected_sku" "$selected_cores"
 
-            if [ -z "$selected_family" ]; then
-                echo "   Custom GPU SKU detected. The quota family is needed for quota validation."
-                printf "   Enter quota family name (e.g. StandardNCADSA100v4Family, or press Enter to skip quota check): "
-                read -r selected_family
-                if [ -z "$selected_family" ]; then
-                    echo "   Quota family not provided. GPU quota check will be skipped for this pool."
-                fi
-            fi
-
-            # Early quota check — warn but let the user decide
+        # GPU quota check
+        if [ "$is_gpu" = "gpu" ]; then
+            printf "   Resolving quota family..."
+            get_quota_family_for_vm "$selected_sku" "$location"
+            selected_family="$GET_QUOTA_FAMILY_RESULT"
             if [ -n "$selected_family" ]; then
-                local total_cores_needed=$((VM_AVAIL_CORES * max_nodes))
-                assert_vm_quota "$pool_name" "$selected_family" "$location" "$total_cores_needed"
+                printf " %s\n" "$selected_family"
+                local total_cores=$((selected_cores * max_nodes))
+                assert_vm_quota "$pool_name" "$selected_family" "$location" "$total_cores"
                 if [ "$ASSERT_QUOTA_RESULT" = "zero" ] || [ "$ASSERT_QUOTA_RESULT" = "low" ]; then
-                    echo ""
-                    printf "   Continue with this VM anyway? (y = keep, n = re-select) [n]: "
-                    read -r proceed
-                    if [ "$proceed" != "y" ] && [ "$proceed" != "Y" ]; then
-                        echo "   Re-showing menu..."
-                        continue
-                    fi
+                    echo ""; printf "   Continue anyway? (y/n) [n]: "; read -r proceed
+                    [ "$proceed" != "y" ] && [ "$proceed" != "Y" ] && { echo "   Re-showing menu..."; continue; }
                 fi
+            else
+                printf " not found (quota check skipped)\n"
             fi
         fi
 
-        # Persist to azd environment
         azd env set "$env_var_name" "$selected_sku" 2>/dev/null || \
             echo "   Warning: Could not persist ${env_var_name} via 'azd env set'."
 
         printf "   \033[32mSelected: %s\033[0m\n\n" "$selected_sku"
-
         SELECTED_VM_SKU="$selected_sku"
-        SELECTED_VM_CORES="$VM_AVAIL_CORES"
+        SELECTED_VM_CORES="$selected_cores"
         SELECTED_VM_FAMILY="$selected_family"
         return 0
     done

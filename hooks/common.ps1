@@ -185,57 +185,56 @@ function Test-NamespaceExists {
     }
 }
 
-# ── VM Size Availability ──────────────────────────────────────────────────
+# ── Azure VM Data (queried once, shared across menus) ────────────────────
 
-function Test-VmAvailability {
+function Get-AzVmSizesForRegion {
     <#
     .SYNOPSIS
-        Checks if a VM size is available in the given Azure region.
-    .OUTPUTS
-        Hashtable with keys: Available (bool), Cores (int or $null)
+        Queries az vm list-sizes for a region and returns an array of hashtables.
+        Each entry: @{ Name; Cores; MemoryGB }
+    #>
+    param([string]$Location)
+    $raw = (az vm list-sizes --location $Location -o json 2>$null) | ConvertFrom-Json
+    if (-not $raw) { return @() }
+    return $raw | ForEach-Object {
+        @{ Name = $_.name; Cores = [int]$_.numberOfCores; MemoryGB = [math]::Round($_.memoryInMB / 1024) }
+    }
+}
+
+function Get-AzVmQuotaForRegion {
+    <#
+    .SYNOPSIS
+        Queries az vm list-usage for a region and returns a hashtable keyed by family name.
+        Each value: @{ Limit; Used; Available }
+    #>
+    param([string]$Location)
+    $result = @{}
+    $raw = (az vm list-usage --location $Location -o json 2>$null) | ConvertFrom-Json
+    if (-not $raw) { return $result }
+    foreach ($q in $raw) {
+        $result[$q.name.value] = @{
+            Limit     = [int]$q.limit
+            Used      = [int]$q.currentValue
+            Available = [int]$q.limit - [int]$q.currentValue
+        }
+    }
+    return $result
+}
+
+function Get-QuotaFamilyForVm {
+    <#
+    .SYNOPSIS
+        Derives the quota family name for a VM size by looking it up in az vm list-skus.
+        Returns the family string, or $null if not found.
     #>
     param(
         [string]$VmSize,
         [string]$Location
     )
     try {
-        $vmInfo = (az vm list-sizes --location $Location `
-                --query "[?name=='$VmSize'] | [0]" -o json 2>$null) | ConvertFrom-Json
-        if ($vmInfo) {
-            return @{ Available = $true; Cores = [int]$vmInfo.numberOfCores }
-        }
-    }
-    catch { }
-    return @{ Available = $false; Cores = $null }
-}
-
-function Test-VmQuota {
-    <#
-    .SYNOPSIS
-        Checks GPU quota for a given family in a region.
-    .OUTPUTS
-        Hashtable with keys: Limit (int), CurrentUsage (int), Available (int)
-        Returns $null on error.
-    #>
-    param(
-        [string]$Family,
-        [string]$Location
-    )
-    if (-not $Family) { return $null }
-    try {
-        $raw = (az vm list-usage --location $Location `
-                --query "[?name.value=='$Family'] | [0]" `
-                -o json 2>$null)
-        if ($raw -and $raw -ne "null") {
-            $q = $raw | ConvertFrom-Json
-            if ($q) {
-                return @{
-                    Limit        = [int]$q.limit
-                    CurrentUsage = [int]$q.currentValue
-                    Available    = [int]$q.limit - [int]$q.currentValue
-                }
-            }
-        }
+        $family = (az vm list-skus --location $Location --size $VmSize `
+                --query "[0].family" -o tsv 2>$null)
+        if ($family) { return $family }
     }
     catch { }
     return $null
@@ -244,22 +243,13 @@ function Test-VmQuota {
 function Assert-VmQuota {
     <#
     .SYNOPSIS
-        Checks GPU quota for a pool, prints a formatted status line, and returns
-        a result string: "ok", "zero", "low", or "error".
-        Caller decides whether to block or prompt.
-    .PARAMETER Label
-        Display label, e.g. "Deepstream" or "Deepstream (GPU)".
-    .PARAMETER Family
-        Quota family name.  If empty/null the check is skipped and "skip" is returned.
-    .PARAMETER Location
-        Azure region.
-    .PARAMETER CoresNeeded
-        Total cores the caller expects to consume (CoresPerVm * MaxNodes).
+        Checks GPU quota for a pool using the pre-fetched quota hashtable.
+        Returns: "ok", "skip", "zero", "low", or "error".
     #>
     param(
         [string]$Label,
         [string]$Family,
-        [string]$Location,
+        [hashtable]$QuotaData,
         [int]$CoresNeeded
     )
 
@@ -269,30 +259,31 @@ function Assert-VmQuota {
     }
 
     Write-Host "   [$Label] Checking quota for '$Family'..." -NoNewline
-    $quota = Test-VmQuota -Family $Family -Location $Location
 
-    if ($null -eq $quota) {
-        Write-Host " UNKNOWN (query failed)" -ForegroundColor Yellow
+    if (-not $QuotaData.ContainsKey($Family)) {
+        Write-Host " UNKNOWN (family not found)" -ForegroundColor Yellow
         return "error"
     }
 
-    if ($quota.Limit -eq 0) {
+    $q = $QuotaData[$Family]
+
+    if ($q.Limit -eq 0) {
         Write-Host " ZERO QUOTA" -ForegroundColor Red
-        Write-Host "   [$Label] No quota allocated for '$Family' in '$Location'." -ForegroundColor Red
+        Write-Host "   [$Label] No quota allocated for '$Family'." -ForegroundColor Red
         Write-Host "   Request GPU quota at: $QUOTA_URL"
         Write-Host "   For step-by-step instructions, see: $GPU_QUOTA_DOC_URL"
         return "zero"
     }
 
-    if ($CoresNeeded -gt 0 -and $quota.Available -lt $CoresNeeded) {
-        Write-Host " LOW ($($quota.Available) cores free, need $CoresNeeded)" -ForegroundColor Yellow
-        Write-Host "   [$Label] Insufficient quota — $($quota.Available)/$($quota.Limit) available ($($quota.CurrentUsage) used)" -ForegroundColor Yellow
+    if ($CoresNeeded -gt 0 -and $q.Available -lt $CoresNeeded) {
+        Write-Host " LOW ($($q.Available) cores free, need $CoresNeeded)" -ForegroundColor Yellow
+        Write-Host "   [$Label] Insufficient quota — $($q.Available)/$($q.Limit) available ($($q.Used) used)" -ForegroundColor Yellow
         Write-Host "   Request quota increase at: $QUOTA_URL"
         Write-Host "   For step-by-step instructions, see: $GPU_QUOTA_DOC_URL"
         return "low"
     }
 
-    Write-Host " OK ($($quota.Available) cores free)" -ForegroundColor Green
+    Write-Host " OK ($($q.Available) cores free)" -ForegroundColor Green
     return "ok"
 }
 
@@ -302,39 +293,54 @@ function Show-VmSelectionMenu {
     <#
     .SYNOPSIS
         Arrow-key driven interactive menu for selecting a VM size.
-        Up/Down to move, Enter to select, C for custom, Esc to cancel/re-draw.
-        Validates availability in the target region and persists via azd env set.
+        The catalog is built dynamically from az vm list-sizes data.
+        Up/Down to move, Enter to select, C for custom, Esc to abort.
+    .PARAMETER VmSizes
+        Array of hashtables from Get-AzVmSizesForRegion, pre-filtered for CPU or GPU.
+    .PARAMETER QuotaData
+        Hashtable from Get-AzVmQuotaForRegion (used for GPU quota check).
     .OUTPUTS
         Hashtable with keys: Sku, Cores, Family (Family is $null for CPU VMs)
     #>
     param(
         [string]$PoolName,
         [string]$EnvVarName,
-        [array]$Catalog,
+        [array]$VmSizes,
         [string]$DefaultSku,
         [string]$Location,
         [switch]$IsGpu,
-        [int]$MaxNodes = 1
+        [int]$MaxNodes = 1,
+        [hashtable]$QuotaData = @{}
     )
 
-    $itemCount = $Catalog.Count + 1  # catalog entries + "Custom" row
-    $bufWidth  = [Console]::BufferWidth
+    if ($VmSizes.Count -eq 0) {
+        Write-Host "   No VM sizes available in region '$Location' for this pool." -ForegroundColor Red
+        Write-Host "   Selection cancelled. Provisioning aborted." -ForegroundColor Red
+        exit 1
+    }
+
+    $totalItems = $VmSizes.Count + 1  # VM entries + "Custom" row
+    $bufWidth   = [Console]::BufferWidth
+    $maxVisible = [math]::Min(20, $totalItems)  # viewport height
 
     # Find the default index
     $currentIndex = 0
-    for ($i = 0; $i -lt $Catalog.Count; $i++) {
-        if ($Catalog[$i].Sku -eq $DefaultSku) {
+    for ($i = 0; $i -lt $VmSizes.Count; $i++) {
+        if ($VmSizes[$i].Name -eq $DefaultSku) {
             $currentIndex = $i
             break
         }
     }
 
+    # Scroll offset — first item visible in the viewport
+    $scrollOffset = [math]::Max(0, $currentIndex - [math]::Floor($maxVisible / 2))
+    $scrollOffset = [math]::Min($scrollOffset, [math]::Max(0, $totalItems - $maxVisible))
+
     # ── Write one padded, coloured line without scrolling ──────────
-    # Uses [Console] methods exclusively so the cursor stays put.
     function Write-MenuLine {
         param([int]$Row, [string]$Text, [ConsoleColor]$Fg, [ConsoleColor]$Bg)
         [Console]::SetCursorPosition(0, $Row)
-        $padded = $Text.PadRight($bufWidth - 1)    # clear stale chars
+        $padded = $Text.PadRight($bufWidth - 1)
         $oldFg = [Console]::ForegroundColor
         $oldBg = [Console]::BackgroundColor
         [Console]::ForegroundColor = $Fg
@@ -344,92 +350,121 @@ function Show-VmSelectionMenu {
         [Console]::BackgroundColor = $oldBg
     }
 
-    # ── Build the display text for one catalog row ─────────────────
+    # ── Build the display text for one row ─────────────────────────
     function Format-VmText {
-        param([hashtable]$Entry, [bool]$IsGpuPool, [bool]$IsDefault)
-        $sku   = $Entry.Sku.PadRight(30)
-        $cores = "$($Entry.Cores) cores".PadRight(10)
-        $ram   = "$($Entry.RAM)".PadRight(8)
+        param([hashtable]$Entry, [bool]$IsDefault)
+        $name  = $Entry.Name.PadRight(35)
+        $cores = "$($Entry.Cores) vCPUs".PadRight(10)
+        $mem   = "$($Entry.MemoryGB) GB".PadRight(8)
         $tag   = if ($IsDefault) { " (default)" } else { "" }
-        if ($IsGpuPool) {
-            $gpu = "$($Entry.GPU)".PadRight(16)
-            return "${sku} ${cores} ${ram} ${gpu} $($Entry.Desc)${tag}"
-        }
-        return "${sku} ${cores} ${ram} $($Entry.Desc)${tag}"
+        return "${name} ${cores} ${mem}${tag}"
     }
 
-    # ── Redraw every row in-place ──────────────────────────────────
+    # ── Redraw the visible viewport in-place ───────────────────────
     function Render-Menu {
-        param([int]$Sel, [int]$Top)
+        param([int]$Sel, [int]$Top, [int]$Offset)
         $defFg = [Console]::ForegroundColor
         $defBg = [Console]::BackgroundColor
+        $visEnd = [math]::Min($Offset + $maxVisible, $totalItems)
 
-        for ($i = 0; $i -lt $Catalog.Count; $i++) {
-            $isDef   = ($Catalog[$i].Sku -eq $DefaultSku)
-            $text    = Format-VmText -Entry $Catalog[$i] -IsGpuPool $IsGpu -IsDefault $isDef
-            $prefix  = if ($i -eq $Sel) { " > " } else { "   " }
-
-            if ($i -eq $Sel) {
-                Write-MenuLine -Row ($Top + $i) -Text "${prefix}${text}" -Fg Black -Bg Cyan
+        for ($row = 0; $row -lt $maxVisible; $row++) {
+            $itemIdx = $Offset + $row
+            if ($itemIdx -ge $totalItems) {
+                # Blank filler if viewport is larger than remaining items
+                Write-MenuLine -Row ($Top + $row) -Text "" -Fg $defFg -Bg $defBg
+                continue
             }
-            elseif ($isDef) {
-                Write-MenuLine -Row ($Top + $i) -Text "${prefix}${text}" -Fg Cyan -Bg $defBg
+
+            if ($itemIdx -eq $VmSizes.Count) {
+                # "Custom" row
+                $pfx = if ($itemIdx -eq $Sel) { " > " } else { "   " }
+                $txt = "${pfx}Enter custom VM size..."
+                if ($itemIdx -eq $Sel) {
+                    Write-MenuLine -Row ($Top + $row) -Text $txt -Fg Black -Bg Cyan
+                } else {
+                    Write-MenuLine -Row ($Top + $row) -Text $txt -Fg $defFg -Bg $defBg
+                }
             }
             else {
-                Write-MenuLine -Row ($Top + $i) -Text "${prefix}${text}" -Fg $defFg -Bg $defBg
+                $isDef  = ($VmSizes[$itemIdx].Name -eq $DefaultSku)
+                $text   = Format-VmText -Entry $VmSizes[$itemIdx] -IsDefault $isDef
+                $prefix = if ($itemIdx -eq $Sel) { " > " } else { "   " }
+
+                if ($itemIdx -eq $Sel) {
+                    Write-MenuLine -Row ($Top + $row) -Text "${prefix}${text}" -Fg Black -Bg Cyan
+                }
+                elseif ($isDef) {
+                    Write-MenuLine -Row ($Top + $row) -Text "${prefix}${text}" -Fg Cyan -Bg $defBg
+                }
+                else {
+                    Write-MenuLine -Row ($Top + $row) -Text "${prefix}${text}" -Fg $defFg -Bg $defBg
+                }
             }
         }
 
-        # "Custom" row
-        $cRow   = $Top + $Catalog.Count
-        $cPfx   = if ($Sel -eq $Catalog.Count) { " > " } else { "   " }
-        if ($Sel -eq $Catalog.Count) {
-            Write-MenuLine -Row $cRow -Text "${cPfx}Enter custom VM size..." -Fg Black -Bg Cyan
+        # Scroll indicators on the right edge of first/last row
+        if ($Offset -gt 0) {
+            [Console]::SetCursorPosition($bufWidth - 4, $Top)
+            [Console]::Write(" $([char]0x2191)  ")
         }
-        else {
-            Write-MenuLine -Row $cRow -Text "${cPfx}Enter custom VM size..." -Fg $defFg -Bg $defBg
+        if ($visEnd -lt $totalItems) {
+            [Console]::SetCursorPosition($bufWidth - 4, $Top + $maxVisible - 1)
+            [Console]::Write(" $([char]0x2193)  ")
         }
 
-        # Park cursor right after the menu so nothing blinks mid-list
-        [Console]::SetCursorPosition(0, $Top + $itemCount)
+        [Console]::SetCursorPosition(0, $Top + $maxVisible)
     }
 
-    # ── Outer loop (re-shown on Esc or unavailable VM) ─────────────
+    # ── Ensure selection is visible, adjust scrollOffset ───────────
+    function Update-Scroll {
+        if ($currentIndex -lt $scrollOffset) {
+            $script:scrollOffset = $currentIndex
+        }
+        elseif ($currentIndex -ge ($scrollOffset + $maxVisible)) {
+            $script:scrollOffset = $currentIndex - $maxVisible + 1
+        }
+        $script:scrollOffset = [math]::Max(0, [math]::Min($script:scrollOffset, $totalItems - $maxVisible))
+    }
+
+    # ── Outer loop ─────────────────────────────────────────────────
     while ($true) {
-        # Static header
         Write-Host ""
-        Write-Host "   Select VM size for $PoolName node pool:"
+        Write-Host "   Select VM size for $PoolName node pool ($($VmSizes.Count) sizes available):"
         Write-Host "   Use $([char]0x2191)/$([char]0x2193) to move, Enter to select, C custom, Esc cancel"
         Write-Host ""
 
-        # Reserve blank lines so Render-Menu never scrolls the buffer.
-        # Write them first, THEN compute where they started — this way
-        # any scrolling that occurred is already reflected in CursorTop.
-        for ($r = 0; $r -lt $itemCount; $r++) { [Console]::WriteLine("") }
-        $menuTopLine = [Console]::CursorTop - $itemCount
+        # Reserve exactly $maxVisible blank lines (viewport size, not total items)
+        for ($r = 0; $r -lt $maxVisible; $r++) { [Console]::WriteLine("") }
+        $menuTopLine = [Console]::CursorTop - $maxVisible
 
-        # Hide cursor while navigating
         [Console]::CursorVisible = $false
         try {
-            # First draw
-            Render-Menu -Sel $currentIndex -Top $menuTopLine
+            Update-Scroll
+            Render-Menu -Sel $currentIndex -Top $menuTopLine -Offset $scrollOffset
 
-            # ── Key loop ───────────────────────────────────────────
             $confirmed = $false
             $escaped   = $false
 
             while (-not $confirmed -and -not $escaped) {
                 $key = [Console]::ReadKey($true)
-
                 switch ($key.Key) {
-                    'UpArrow'   { if ($currentIndex -gt 0)                { $currentIndex-- }; Render-Menu -Sel $currentIndex -Top $menuTopLine }
-                    'DownArrow' { if ($currentIndex -lt ($itemCount - 1)) { $currentIndex++ }; Render-Menu -Sel $currentIndex -Top $menuTopLine }
-                    'Enter'     { $confirmed = $true }
-                    'Escape'    { $escaped   = $true }
+                    'UpArrow' {
+                        if ($currentIndex -gt 0) { $currentIndex-- }
+                        Update-Scroll
+                        Render-Menu -Sel $currentIndex -Top $menuTopLine -Offset $scrollOffset
+                    }
+                    'DownArrow' {
+                        if ($currentIndex -lt ($totalItems - 1)) { $currentIndex++ }
+                        Update-Scroll
+                        Render-Menu -Sel $currentIndex -Top $menuTopLine -Offset $scrollOffset
+                    }
+                    'Enter'  { $confirmed = $true }
+                    'Escape' { $escaped   = $true }
                     default {
                         if ($key.KeyChar -ceq 'c' -or $key.KeyChar -ceq 'C') {
-                            $currentIndex = $Catalog.Count
-                            Render-Menu -Sel $currentIndex -Top $menuTopLine
+                            $currentIndex = $VmSizes.Count
+                            Update-Scroll
+                            Render-Menu -Sel $currentIndex -Top $menuTopLine -Offset $scrollOffset
                         }
                     }
                 }
@@ -439,72 +474,61 @@ function Show-VmSelectionMenu {
             [Console]::CursorVisible = $true
         }
 
-        # Position cursor below the menu for any further output
-        [Console]::SetCursorPosition(0, $menuTopLine + $itemCount)
+        [Console]::SetCursorPosition(0, $menuTopLine + $maxVisible)
 
         if ($escaped) {
             Write-Host ""
             Write-Host "   Selection cancelled by user. Provisioning aborted." -ForegroundColor Red
             exit 1
         }
-        else {
-            # ── Resolve selection from menu ────────────────────────────
-            $selectedSku    = $null
-            $selectedFamily = $null
 
-            if ($currentIndex -eq $Catalog.Count) {
-                $customSku = Read-Host "   Enter VM SKU (e.g. Standard_NC24ads_A100_v4)"
-                if ([string]::IsNullOrWhiteSpace($customSku)) {
-                    Write-Host "   No value entered. Re-showing menu..." -ForegroundColor Yellow
-                    continue
-                }
-                $selectedSku = $customSku.Trim()
-            }
-            else {
-                $selectedSku = $Catalog[$currentIndex].Sku
-            }
+        # ── Resolve selection ──────────────────────────────────────
+        $selectedSku    = $null
+        $selectedFamily = $null
+        $selectedCores  = 0
 
-            # ── Check region availability ──────────────────────────────
-            Write-Host "   Checking availability of $selectedSku in $Location..." -NoNewline
-            $availability = Test-VmAvailability -VmSize $selectedSku -Location $Location
-
-            if (-not $availability.Available) {
-                Write-Host " NOT AVAILABLE" -ForegroundColor Red
-                Write-Host "   '$selectedSku' is not available in region '$Location'. Try another." -ForegroundColor Yellow
+        if ($currentIndex -eq $VmSizes.Count) {
+            $customSku = Read-Host "   Enter VM SKU (e.g. Standard_NC24ads_A100_v4)"
+            if ([string]::IsNullOrWhiteSpace($customSku)) {
+                Write-Host "   No value entered. Re-showing menu..." -ForegroundColor Yellow
                 continue
             }
-            Write-Host " OK ($($availability.Cores) cores)" -ForegroundColor Green
+            $selectedSku = $customSku.Trim()
+            # Look up cores from the full list
+            $match = $VmSizes | Where-Object { $_.Name -eq $selectedSku } | Select-Object -First 1
+            if ($match) {
+                $selectedCores = $match.Cores
+            }
+            else {
+                Write-Host "   '$selectedSku' not found in region '$Location'." -ForegroundColor Red
+                continue
+            }
+        }
+        else {
+            $selectedSku   = $VmSizes[$currentIndex].Name
+            $selectedCores = $VmSizes[$currentIndex].Cores
+        }
 
-            # ── Resolve GPU quota family & check quota inline ──────────
-            if ($IsGpu) {
-                $catalogEntry = $Catalog | Where-Object { $_.Sku -eq $selectedSku } | Select-Object -First 1
-                if ($catalogEntry) {
-                    $selectedFamily = $catalogEntry.Family
-                }
-                elseif ($GPU_FAMILY_MAP.ContainsKey($selectedSku)) {
-                    $selectedFamily = $GPU_FAMILY_MAP[$selectedSku]
-                }
-                else {
-                    Write-Host "   Custom GPU SKU — quota family needed for validation."
-                    $selectedFamily = Read-Host "   Quota family (e.g. StandardNCADSA100v4Family, Enter to skip)"
-                    if ([string]::IsNullOrWhiteSpace($selectedFamily)) {
-                        $selectedFamily = $null
-                        Write-Host "   Skipping GPU quota check for this pool." -ForegroundColor Yellow
+        Write-Host "   $selectedSku — $selectedCores vCPUs" -ForegroundColor Green
+
+        # ── GPU quota check ────────────────────────────────────────
+        if ($IsGpu) {
+            Write-Host "   Resolving quota family..." -NoNewline
+            $selectedFamily = Get-QuotaFamilyForVm -VmSize $selectedSku -Location $Location
+            if ($selectedFamily) {
+                Write-Host " $selectedFamily" -ForegroundColor Gray
+                $totalCoresNeeded = $selectedCores * $MaxNodes
+                $quotaResult = Assert-VmQuota -Label $PoolName -Family $selectedFamily -QuotaData $QuotaData -CoresNeeded $totalCoresNeeded
+                if ($quotaResult -in @("zero", "low")) {
+                    $proceed = Read-Host "   Continue with this VM anyway? (y = keep, n = re-select) [n]"
+                    if ($proceed -ne 'y' -and $proceed -ne 'Y') {
+                        Write-Host "   Re-showing menu..." -ForegroundColor Yellow
+                        continue
                     }
                 }
-
-                # Early quota check — warn but let the user decide
-                if ($selectedFamily) {
-                    $totalCoresNeeded = $availability.Cores * $MaxNodes
-                    $quotaResult = Assert-VmQuota -Label $PoolName -Family $selectedFamily -Location $Location -CoresNeeded $totalCoresNeeded
-                    if ($quotaResult -in @("zero", "low")) {
-                        $proceed = Read-Host "   Continue with this VM anyway? (y = keep, n = re-select) [n]"
-                        if ($proceed -ne 'y' -and $proceed -ne 'Y') {
-                            Write-Host "   Re-showing menu..." -ForegroundColor Yellow
-                            continue
-                        }
-                    }
-                }
+            }
+            else {
+                Write-Host " not found (quota check skipped)" -ForegroundColor Yellow
             }
         }
 
@@ -517,7 +541,7 @@ function Show-VmSelectionMenu {
 
         return @{
             Sku    = $selectedSku
-            Cores  = $availability.Cores
+            Cores  = $selectedCores
             Family = $selectedFamily
         }
     }
