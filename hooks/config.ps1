@@ -3,6 +3,10 @@
 # =============================================================================
 # Source this file via: . "$PSScriptRoot/config.ps1"
 
+# ── Foundry Identity ────────────────────────────────────────────────────────
+$script:FoundryVersion = "1.0.0"
+$script:FoundryName    = "Video Agents Foundry Solution"
+
 # ── VM Size Defaults ─────────────────────────────────────────────────────
 # These are the fallback values when no env var is set.
 # The interactive menu (Step 4) lets the user override them.

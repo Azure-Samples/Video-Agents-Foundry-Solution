@@ -6,36 +6,35 @@ $ErrorActionPreference = "Stop"
 
 . "$PSScriptRoot/common.ps1"
 
-Write-Banner "Post-Up: Health Check & Deployment Summary"
+$totalSteps = 6
+$HealthResults = @()
 
-$HealthIssues = 0
+Write-FoundryBanner -Phase "Health Dashboard"
 
 # =====================================================
 # Get AKS credentials for kubectl access
 # =====================================================
-Write-Host ""
-Write-Host ">> Getting AKS credentials..."
-
 $HasClusterAccess = $false
 if ($env:AZURE_RESOURCE_GROUP -and $env:AZURE_AKS_CLUSTER_NAME) {
     try {
-        $KubeContext = Connect-AksCluster
+        $KubeContext = Invoke-WithSpinner -Message "Getting AKS credentials" -Action {
+            Connect-AksCluster
+        } -SuccessMessage "AKS credentials configured"
         $HasClusterAccess = $true
     }
     catch {
-        Write-Host "   WARNING: Could not get AKS credentials. Skipping Kubernetes health checks."
+        Log-Warning "Could not get AKS credentials. Skipping Kubernetes health checks."
     }
 }
 else {
-    Write-Host "   WARNING: AZURE_RESOURCE_GROUP or AZURE_AKS_CLUSTER_NAME not set."
-    Write-Host "   Skipping Kubernetes health checks."
+    Log-Warning "AZURE_RESOURCE_GROUP or AZURE_AKS_CLUSTER_NAME not set."
+    Log-Info "Skipping Kubernetes health checks."
 }
 
 # =====================================================
 # Step 1: AKS Cluster Health
 # =====================================================
-Write-Host ""
-Write-Host ">> Step 1: AKS Cluster Health..."
+Log-Step -Number 1 -Total $totalSteps -Title "AKS Cluster Health"
 
 if ($HasClusterAccess) {
     $aksState = $null
@@ -47,48 +46,50 @@ if ($HasClusterAccess) {
         $aksState = "Unknown"
     }
 
-    if ($aksState -eq "Succeeded") {
-        Write-Host "   AKS provisioning state: $aksState"
-    }
-    else {
-        Write-Host "   AKS provisioning state: $aksState (expected: Succeeded)"
-        $HealthIssues++
-    }
+    $aksStatus = if ($aksState -eq "Succeeded") { "Pass" } else { "Fail" }
+    Write-HealthRow -Name "AKS provisioning state" -Status $aksStatus -Detail $aksState
+    $HealthResults += @{ Name = "AKS provisioning state"; Status = $aksStatus; Detail = $aksState }
 
     try {
         $totalNodes = (kubectl --context $KubeContext get nodes --no-headers 2>$null | Measure-Object -Line).Lines
         $readyNodes = (kubectl --context $KubeContext get nodes --no-headers 2>$null | Select-String " Ready " | Measure-Object -Line).Lines
-        Write-Host "   Nodes: $readyNodes/$totalNodes Ready"
+        $nodeStatus = if ($readyNodes -eq $totalNodes) { "Pass" } else { "Warn" }
+        $nodeDetail = "$readyNodes/$totalNodes Ready"
     }
     catch {
-        Write-Host "   Nodes: unable to determine"
-        $HealthIssues++
+        $nodeStatus = "Fail"
+        $nodeDetail = "unable to determine"
     }
+    Write-HealthRow -Name "Cluster nodes" -Status $nodeStatus -Detail $nodeDetail
+    $HealthResults += @{ Name = "Cluster nodes"; Status = $nodeStatus; Detail = $nodeDetail }
 
     try {
         $gpuNodes = (kubectl --context $KubeContext get nodes -l "accelerator=nvidia" --no-headers 2>$null | Measure-Object -Line).Lines
         if ($gpuNodes -gt 0) {
-            Write-Host "   GPU nodes: $gpuNodes detected"
+            $gpuNodeStatus = "Pass"
+            $gpuNodeDetail = "$gpuNodes detected"
         }
         else {
-            Write-Host "   GPU nodes: none detected (may still be provisioning)"
-            $HealthIssues++
+            $gpuNodeStatus = "Warn"
+            $gpuNodeDetail = "none detected (may still be provisioning)"
         }
     }
     catch {
-        Write-Host "   GPU nodes: unable to determine"
-        $HealthIssues++
+        $gpuNodeStatus = "Fail"
+        $gpuNodeDetail = "unable to determine"
     }
+    Write-HealthRow -Name "GPU nodes" -Status $gpuNodeStatus -Detail $gpuNodeDetail
+    $HealthResults += @{ Name = "GPU nodes"; Status = $gpuNodeStatus; Detail = $gpuNodeDetail }
 }
 else {
-    Write-Host "   Skipped (no cluster access)"
+    Write-HealthRow -Name "AKS Cluster" -Status "Skip" -Detail "no cluster access"
+    $HealthResults += @{ Name = "AKS Cluster"; Status = "Skip"; Detail = "no cluster access" }
 }
 
 # =====================================================
 # Step 2: GPU Operator Health
 # =====================================================
-Write-Host ""
-Write-Host ">> Step 2: GPU Operator Health..."
+Log-Step -Number 2 -Total $totalSteps -Title "GPU Operator Health"
 
 if ($HasClusterAccess) {
     $gpuNsExists = $null
@@ -103,29 +104,33 @@ if ($HasClusterAccess) {
         try {
             $gpuRunning = Get-RunningPodCount -Namespace $NS_GPU_OPERATOR -KubeContext $KubeContext
             $gpuTotal = Get-TotalPodCount -Namespace $NS_GPU_OPERATOR -KubeContext $KubeContext
-            Write-Host "   GPU Operator pods: $gpuRunning/$gpuTotal Running"
+            $gpuPodStatus = if ($gpuRunning -eq $gpuTotal -and $gpuTotal -gt 0) { "Pass" } elseif ($gpuRunning -gt 0) { "Warn" } else { "Fail" }
+            $gpuPodDetail = "$gpuRunning/$gpuTotal Running"
             if ($gpuRunning -lt $gpuTotal) {
-                Write-Host "   Some pods are still initializing (GPU driver install can take several minutes)"
+                $gpuPodDetail += " (GPU driver install can take several minutes)"
             }
         }
         catch {
-            Write-Host "   GPU Operator pods: unable to determine"
+            $gpuPodStatus = "Fail"
+            $gpuPodDetail = "unable to determine"
         }
     }
     else {
-        Write-Host "   GPU Operator namespace not found"
-        $HealthIssues++
+        $gpuPodStatus = "Fail"
+        $gpuPodDetail = "namespace not found"
     }
+    Write-HealthRow -Name "GPU Operator" -Status $gpuPodStatus -Detail $gpuPodDetail
+    $HealthResults += @{ Name = "GPU Operator"; Status = $gpuPodStatus; Detail = $gpuPodDetail }
 }
 else {
-    Write-Host "   Skipped (no cluster access)"
+    Write-HealthRow -Name "GPU Operator" -Status "Skip" -Detail "no cluster access"
+    $HealthResults += @{ Name = "GPU Operator"; Status = "Skip"; Detail = "no cluster access" }
 }
 
 # =====================================================
 # Step 3: Arc Connection Health
 # =====================================================
-Write-Host ""
-Write-Host ">> Step 3: Arc Connection Health..."
+Log-Step -Number 3 -Total $totalSteps -Title "Arc Connection Health"
 
 $arcClusterName = $env:AZURE_ARC_CLUSTER_NAME
 if ($arcClusterName) {
@@ -140,78 +145,82 @@ if ($arcClusterName) {
         $arcStatus = "Unknown"
     }
 
-    if ($arcStatus -eq "Connected") {
-        Write-Host "   Arc cluster: $arcClusterName (Connected)"
-    }
-    else {
-        Write-Host "   Arc cluster: $arcClusterName ($arcStatus)"
-        $HealthIssues++
-    }
+    $arcHealth = if ($arcStatus -eq "Connected") { "Pass" } else { "Warn" }
+    Write-HealthRow -Name "Arc connection" -Status $arcHealth -Detail "$arcClusterName ($arcStatus)"
+    $HealthResults += @{ Name = "Arc connection"; Status = $arcHealth; Detail = "$arcClusterName ($arcStatus)" }
 
     if ($HasClusterAccess) {
         try {
             $arcPods = Get-TotalPodCount -Namespace $NS_AZURE_ARC -KubeContext $KubeContext
-            Write-Host "   Arc agent pods: $arcPods"
+            $arcPodStatus = if ($arcPods -gt 0) { "Pass" } else { "Warn" }
+            Write-HealthRow -Name "Arc agent pods" -Status $arcPodStatus -Detail "$arcPods running"
+            $HealthResults += @{ Name = "Arc agent pods"; Status = $arcPodStatus; Detail = "$arcPods running" }
         }
         catch {
-            Write-Host "   Arc agent pods: unable to determine"
+            Write-HealthRow -Name "Arc agent pods" -Status "Fail" -Detail "unable to determine"
+            $HealthResults += @{ Name = "Arc agent pods"; Status = "Fail"; Detail = "unable to determine" }
         }
     }
 }
 else {
-    Write-Host "   Arc cluster name not set. Skipping."
-    $HealthIssues++
+    Write-HealthRow -Name "Arc connection" -Status "Fail" -Detail "cluster name not set"
+    $HealthResults += @{ Name = "Arc connection"; Status = "Fail"; Detail = "cluster name not set" }
 }
 
 # =====================================================
 # Step 4: Ingress & Networking Health
 # =====================================================
-Write-Host ""
-Write-Host ">> Step 4: Ingress & Networking Health..."
+Log-Step -Number 4 -Total $totalSteps -Title "Ingress & Networking Health"
 
 if ($HasClusterAccess) {
     try {
         $ingressPods = Get-TotalPodCount -Namespace $NS_APP_ROUTING -KubeContext $KubeContext
-        Write-Host "   Ingress pods (app-routing-system): $ingressPods"
+        $ingressStatus = if ($ingressPods -gt 0) { "Pass" } else { "Warn" }
+        Write-HealthRow -Name "Ingress pods" -Status $ingressStatus -Detail "$ingressPods in $NS_APP_ROUTING"
+        $HealthResults += @{ Name = "Ingress pods"; Status = $ingressStatus; Detail = "$ingressPods in $NS_APP_ROUTING" }
     }
     catch {
-        Write-Host "   Ingress pods: unable to determine"
+        Write-HealthRow -Name "Ingress pods" -Status "Fail" -Detail "unable to determine"
+        $HealthResults += @{ Name = "Ingress pods"; Status = "Fail"; Detail = "unable to determine" }
     }
 
     if ($env:AZURE_STATIC_IP) {
-        Write-Host "   Public IP: $($env:AZURE_STATIC_IP)"
+        Write-HealthRow -Name "Public IP" -Status "Pass" -Detail $env:AZURE_STATIC_IP
+        $HealthResults += @{ Name = "Public IP"; Status = "Pass"; Detail = $env:AZURE_STATIC_IP }
     }
     else {
-        Write-Host "   Public IP: not configured"
+        Write-HealthRow -Name "Public IP" -Status "Warn" -Detail "not configured"
+        $HealthResults += @{ Name = "Public IP"; Status = "Warn"; Detail = "not configured" }
     }
 
     if ($env:AZURE_DNS_LABEL -and $env:AZURE_LOCATION) {
         $fqdn = "$($env:AZURE_DNS_LABEL).$($env:AZURE_LOCATION).cloudapp.azure.com"
-        Write-Host "   FQDN: $fqdn"
-
         try {
             $dnsResult = Resolve-DnsName $fqdn -ErrorAction SilentlyContinue
             if ($dnsResult) {
-                Write-Host "   DNS resolution: OK"
+                Write-HealthRow -Name "DNS resolution" -Status "Pass" -Detail $fqdn
+                $HealthResults += @{ Name = "DNS resolution"; Status = "Pass"; Detail = $fqdn }
             }
             else {
-                Write-Host "   DNS resolution: pending (may take a few minutes to propagate)"
+                Write-HealthRow -Name "DNS resolution" -Status "Warn" -Detail "pending propagation"
+                $HealthResults += @{ Name = "DNS resolution"; Status = "Warn"; Detail = "pending propagation" }
             }
         }
         catch {
-            Write-Host "   DNS resolution: pending (may take a few minutes to propagate)"
+            Write-HealthRow -Name "DNS resolution" -Status "Warn" -Detail "pending propagation"
+            $HealthResults += @{ Name = "DNS resolution"; Status = "Warn"; Detail = "pending propagation" }
         }
     }
 }
 else {
-    Write-Host "   Skipped (no cluster access)"
+    Write-HealthRow -Name "Ingress & Networking" -Status "Skip" -Detail "no cluster access"
+    $HealthResults += @{ Name = "Ingress & Networking"; Status = "Skip"; Detail = "no cluster access" }
 }
 
 # =====================================================
 # Step 5: Video Indexer Extension Health
 # =====================================================
-Write-Host ""
-Write-Host ">> Step 5: Video Indexer Extension Health..."
+Log-Step -Number 5 -Total $totalSteps -Title "Video Indexer Extension Health"
 
 if ($arcClusterName) {
     $viState = $null
@@ -227,34 +236,33 @@ if ($arcClusterName) {
         $viState = "Unknown"
     }
 
-    if ($viState -eq "Succeeded") {
-        Write-Host "   VI Extension: Provisioned"
-    }
-    else {
-        Write-Host "   VI Extension: $viState"
-        $HealthIssues++
-    }
+    $viExtStatus = if ($viState -eq "Succeeded") { "Pass" } else { "Warn" }
+    Write-HealthRow -Name "VI Extension" -Status $viExtStatus -Detail $viState
+    $HealthResults += @{ Name = "VI Extension"; Status = $viExtStatus; Detail = $viState }
 
     if ($HasClusterAccess) {
         try {
             $viRunning = Get-RunningPodCount -Namespace $NS_VIDEO_INDEXER -KubeContext $KubeContext
             $viTotal = Get-TotalPodCount -Namespace $NS_VIDEO_INDEXER -KubeContext $KubeContext
-            Write-Host "   VI pods: $viRunning/$viTotal Running"
+            $viPodStatus = if ($viRunning -eq $viTotal -and $viTotal -gt 0) { "Pass" } elseif ($viRunning -gt 0) { "Warn" } else { "Fail" }
+            Write-HealthRow -Name "VI pods" -Status $viPodStatus -Detail "$viRunning/$viTotal Running"
+            $HealthResults += @{ Name = "VI pods"; Status = $viPodStatus; Detail = "$viRunning/$viTotal Running" }
         }
         catch {
-            Write-Host "   VI pods: unable to determine"
+            Write-HealthRow -Name "VI pods" -Status "Fail" -Detail "unable to determine"
+            $HealthResults += @{ Name = "VI pods"; Status = "Fail"; Detail = "unable to determine" }
         }
     }
 }
 else {
-    Write-Host "   Skipped (no Arc cluster configured)"
+    Write-HealthRow -Name "VI Extension" -Status "Skip" -Detail "no Arc cluster configured"
+    $HealthResults += @{ Name = "VI Extension"; Status = "Skip"; Detail = "no Arc cluster configured" }
 }
 
 # =====================================================
 # Step 6: Cert Manager Health
 # =====================================================
-Write-Host ""
-Write-Host ">> Step 6: Cert Manager Health..."
+Log-Step -Number 6 -Total $totalSteps -Title "Cert Manager Health"
 
 if ($HasClusterAccess) {
     $cmNsExists = $null
@@ -269,71 +277,74 @@ if ($HasClusterAccess) {
         try {
             $cmRunning = Get-RunningPodCount -Namespace $NS_CERT_MANAGER -KubeContext $KubeContext
             $cmTotal = Get-TotalPodCount -Namespace $NS_CERT_MANAGER -KubeContext $KubeContext
-            Write-Host "   Cert Manager pods: $cmRunning/$cmTotal Running"
+            $cmStatus = if ($cmRunning -eq $cmTotal -and $cmTotal -gt 0) { "Pass" } elseif ($cmRunning -gt 0) { "Warn" } else { "Fail" }
+            $cmDetail = "$cmRunning/$cmTotal Running"
         }
         catch {
-            Write-Host "   Cert Manager pods: unable to determine"
+            $cmStatus = "Fail"
+            $cmDetail = "unable to determine"
         }
     }
     else {
-        Write-Host "   Cert Manager namespace not found"
-        $HealthIssues++
+        $cmStatus = "Fail"
+        $cmDetail = "namespace not found"
     }
+    Write-HealthRow -Name "Cert Manager" -Status $cmStatus -Detail $cmDetail
+    $HealthResults += @{ Name = "Cert Manager"; Status = $cmStatus; Detail = $cmDetail }
 }
 else {
-    Write-Host "   Skipped (no cluster access)"
+    Write-HealthRow -Name "Cert Manager" -Status "Skip" -Detail "no cluster access"
+    $HealthResults += @{ Name = "Cert Manager"; Status = "Skip"; Detail = "no cluster access" }
 }
 
 # =====================================================
 # Summary Dashboard
 # =====================================================
+$passed   = ($HealthResults | Where-Object { $_.Status -eq "Pass" }).Count
+$failed   = ($HealthResults | Where-Object { $_.Status -eq "Fail" }).Count
+$warnings = ($HealthResults | Where-Object { $_.Status -eq "Warn" }).Count
+$total    = $HealthResults.Count
+
 Write-Host ""
-Write-Banner "Video Indexer Arc - Deployment Complete"
+Write-BoxBanner -Text "Deployment Summary" -Style Double -Width 56
 Write-Host ""
-Write-Host "  Resource Group:  $(if ($env:AZURE_RESOURCE_GROUP) { $env:AZURE_RESOURCE_GROUP } else { 'n/a' })"
-Write-Host "  AKS Cluster:     $(if ($env:AZURE_AKS_CLUSTER_NAME) { $env:AZURE_AKS_CLUSTER_NAME } else { 'n/a' })"
-Write-Host "  Arc Cluster:     $(if ($env:AZURE_ARC_CLUSTER_NAME) { $env:AZURE_ARC_CLUSTER_NAME } else { 'n/a' })"
-Write-Host "  Location:        $(if ($env:AZURE_LOCATION) { $env:AZURE_LOCATION } else { 'n/a' })"
-Write-Host ""
+
+Write-Section "Resources"
+Write-KeyValue "Resource Group" "$(if ($env:AZURE_RESOURCE_GROUP) { $env:AZURE_RESOURCE_GROUP } else { 'n/a' })"
+Write-KeyValue "AKS Cluster"    "$(if ($env:AZURE_AKS_CLUSTER_NAME) { $env:AZURE_AKS_CLUSTER_NAME } else { 'n/a' })"
+Write-KeyValue "Arc Cluster"    "$(if ($env:AZURE_ARC_CLUSTER_NAME) { $env:AZURE_ARC_CLUSTER_NAME } else { 'n/a' })"
+Write-KeyValue "Location"       "$(if ($env:AZURE_LOCATION) { $env:AZURE_LOCATION } else { 'n/a' })"
 
 if ($env:AZURE_VIDEO_INDEXER_ENDPOINT_URI) {
-    Write-Host "  Video Indexer:   $($env:AZURE_VIDEO_INDEXER_ENDPOINT_URI)"
+    Write-KeyValue "Video Indexer"   $env:AZURE_VIDEO_INDEXER_ENDPOINT_URI
 }
 
-Write-Host ""
-if ($HealthIssues -eq 0) {
-    Write-Host "  Health: ALL CHECKS PASSED"
-}
-else {
-    Write-Host "  Health: $HealthIssues issue(s) detected (see above)"
+Write-SummaryBlock -Passed $passed -Failed $failed -Warnings $warnings -Total $total
+
+if ($failed -gt 0) {
+    Log-Warning "Some components may still be initializing."
+    Log-Info "Re-check in a few minutes with: kubectl get pods -A"
     Write-Host ""
-    Write-Host "  Some components may still be initializing."
-    Write-Host "  Re-check in a few minutes with:"
-    Write-Host "    kubectl get pods -A"
 }
 
 # =====================================================
 # Next Steps
 # =====================================================
+Write-Section "Next Steps"
 Write-Host ""
-Write-Host "----------------------------------------------"
-Write-Host "  Next Steps"
-Write-Host "----------------------------------------------"
-Write-Host ""
+
 if ($env:AZURE_VIDEO_INDEXER_ENDPOINT_URI) {
-    Write-Host "  1. Access Video Indexer at:"
-    Write-Host "     $($env:AZURE_VIDEO_INDEXER_ENDPOINT_URI)"
+    Write-KeyValue "1. Access portal" $env:AZURE_VIDEO_INDEXER_ENDPOINT_URI
 }
-Write-Host "  2. Upload a video to verify end-to-end indexing"
-Write-Host "  3. Monitor GPU utilization:"
-Write-Host "     kubectl top nodes"
-Write-Host "  4. View VI extension logs:"
-Write-Host "     kubectl logs -n $NS_VIDEO_INDEXER -l app=videoindexer --tail=100"
-Write-Host "  5. To tear down all resources:"
-Write-Host "     azd down"
+Write-KeyValue "2. Test indexing"    "Upload a video to verify end-to-end"
+Write-KeyValue "3. Monitor GPUs"    "kubectl top nodes"
+Write-KeyValue "4. View VI logs"    "kubectl logs -n $NS_VIDEO_INDEXER -l app=videoindexer --tail=100"
+Write-KeyValue "5. Tear down"       "azd down"
+
+Write-Section "Useful Commands"
 Write-Host ""
-Write-Host "  Useful commands:"
-Write-Host "    kubectl get pods -A               # All pods"
-Write-Host "    kubectl get nodes -o wide          # Node details"
-Write-Host "    az connectedk8s show -g $($env:AZURE_RESOURCE_GROUP) -n $($env:AZURE_ARC_CLUSTER_NAME)"
+Write-KeyValue "All pods"         "kubectl get pods -A"
+Write-KeyValue "Node details"     "kubectl get nodes -o wide"
+Write-KeyValue "Arc status"       "az connectedk8s show -g $($env:AZURE_RESOURCE_GROUP) -n $($env:AZURE_ARC_CLUSTER_NAME)"
+
 Write-Host ""

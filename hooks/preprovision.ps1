@@ -6,12 +6,14 @@ $ErrorActionPreference = "Stop"
 
 . "$PSScriptRoot/common.ps1"
 
-Write-Banner "Pre-provision: Validation & Pre-flight Checks"
+$totalSteps = 5
+
+Write-FoundryBanner -Phase "Pre-Provision Validation"
 
 # =====================================================
 # Step 1: Check Azure CLI authentication
 # =====================================================
-Write-Step "1" "Checking Azure CLI authentication..."
+Log-Step -Number 1 -Total $totalSteps -Title "Checking Azure CLI Authentication"
 
 $accountInfo = $null
 try {
@@ -22,44 +24,46 @@ catch {
 }
 
 if (-not $accountInfo) {
-    Write-Error "Not logged in to Azure CLI. Run 'az login' before provisioning."
+    Log-Error "Not logged in to Azure CLI. Run 'az login' before provisioning."
     exit 1
 }
 
-Write-Host "   Signed in to account: $accountInfo"
+Log-Success "Signed in to account: $accountInfo"
 
 if ($env:AZURE_SUBSCRIPTION_ID) {
     try {
         az account set -s $env:AZURE_SUBSCRIPTION_ID 2>$null
     }
     catch {
-        Write-Error "Cannot access subscription '$($env:AZURE_SUBSCRIPTION_ID)'. Verify the subscription ID and your access permissions."
+        Log-Error "Cannot access subscription '$($env:AZURE_SUBSCRIPTION_ID)'."
+        Log-Info "Verify the subscription ID and your access permissions."
         exit 1
     }
     $subName = (az account show --query "name" -o tsv 2>$null)
-    Write-Host "   Subscription: $subName ($($env:AZURE_SUBSCRIPTION_ID))"
+    Log-Success "Subscription: $subName"
+    Write-KeyValue "ID" $env:AZURE_SUBSCRIPTION_ID
 }
 
 # =====================================================
 # Step 2: Check required CLI tools
 # =====================================================
-Write-Step "2" "Checking required CLI tools..."
+Log-Step -Number 2 -Total $totalSteps -Title "Checking Required CLI Tools"
 
 Assert-CliTools -Required @('az', 'helm', 'kubectl') -Optional @('kubelogin', 'jq')
 
 # =====================================================
 # Step 3: Validate required environment variables
 # =====================================================
-Write-Step "3" "Validating pre-provision environment variables..."
+Log-Step -Number 3 -Total $totalSteps -Title "Validating Environment Variables"
 
 $preProvisionVars = @('AZURE_SUBSCRIPTION_ID', 'AZURE_LOCATION', 'AZURE_ENV_NAME')
 foreach ($var in $preProvisionVars) {
     $val = [System.Environment]::GetEnvironmentVariable($var)
     if ($val) {
-        Write-Host "   ${var}: $val"
+        Write-KeyValue $var $val
     }
     else {
-        Write-Host "   ${var}: MISSING" -ForegroundColor Red
+        Write-HealthRow -Name $var -Status "Fail" -Detail "not set"
     }
 }
 # Use the shared assertion for the actual error check
@@ -69,15 +73,18 @@ Assert-EnvVars $preProvisionVars
 # Step 4: Select VM sizes for AKS node pools
 #         (includes region availability + GPU quota checks)
 # =====================================================
-Write-Step "4" "Selecting VM sizes for AKS node pools..."
+Log-Step -Number 4 -Total $totalSteps -Title "Selecting VM Sizes for AKS Node Pools"
 
-Write-Host "   Querying available VM sizes in $($env:AZURE_LOCATION)..."
-$allVmSizes = Get-AzVmSizesForRegion -Location $env:AZURE_LOCATION
+$allVmSizes = Invoke-WithSpinner -Message "Querying VM sizes in $($env:AZURE_LOCATION)" -Action {
+    Get-AzVmSizesForRegion -Location $env:AZURE_LOCATION
+} -SuccessMessage "Found VM sizes in $($env:AZURE_LOCATION)"
+
 if ($allVmSizes.Count -eq 0) {
-    Write-Host "   ERROR: Could not retrieve VM sizes for region '$($env:AZURE_LOCATION)'." -ForegroundColor Red
+    Log-Error "Could not retrieve VM sizes for region '$($env:AZURE_LOCATION)'."
     exit 1
 }
-Write-Host "   Found $($allVmSizes.Count) VM sizes."
+
+Log-Info "$($allVmSizes.Count) VM sizes available"
 
 # Determine current/default values (env var overrides config default)
 $currentSystemVm     = if ($env:SYSTEM_VM_SIZE)          { $env:SYSTEM_VM_SIZE }          else { $DEFAULT_SYSTEM_VM_SIZE }
@@ -90,14 +97,16 @@ $systemVmSizes   = Select-VmSizesForMenu -AllSizes $allVmSizes -Prefixes $CPU_VM
 $workloadVmSizes = Select-VmSizesForMenu -AllSizes $allVmSizes -Prefixes $CPU_VM_PREFIXES -RecommendedFamilies $WORKLOAD_RECOMMENDED_FAMILIES -DefaultSku $currentWorkloadVm   -SizesPerFamily $SIZES_PER_FAMILY -MinCores $WORKLOAD_MIN_CORES
 $gpuVmSizes      = Select-VmSizesForMenu -AllSizes $allVmSizes -Prefixes $GPU_VM_PREFIXES -RecommendedFamilies $GPU_RECOMMENDED_FAMILIES      -DefaultSku $currentDeepstreamVm -SizesPerFamily $SIZES_PER_FAMILY
 
-Write-Host "   System: $($systemVmSizes.Count)  |  Workload: $($workloadVmSizes.Count)  |  GPU: $($gpuVmSizes.Count) sizes"
+Write-KeyValue "System pool"   "$($systemVmSizes.Count) sizes"
+Write-KeyValue "Workload pool" "$($workloadVmSizes.Count) sizes"
+Write-KeyValue "GPU pool"      "$($gpuVmSizes.Count) sizes"
 
-Write-Host "   Querying GPU quota..."
-$quotaData = Get-AzVmQuotaForRegion -Location $env:AZURE_LOCATION
+$quotaData = Invoke-WithSpinner -Message "Querying GPU quota" -Action {
+    Get-AzVmQuotaForRegion -Location $env:AZURE_LOCATION
+} -SuccessMessage "GPU quota data retrieved"
 
-Write-Host ""
-Write-Host "   Choose a VM SKU for each AKS node pool."
-Write-Host "   The default is highlighted — press Enter to accept it, C for custom."
+Write-Section "Choose a VM SKU for each AKS node pool"
+Log-Info "The default is highlighted. Press Enter to accept, C for custom."
 
 # CPU pools (separate lists for system vs workload)
 $selectedSystem   = Show-VmSelectionMenu -PoolName "System (CPU)"   -EnvVarName "SYSTEM_VM_SIZE"   -VmSizes $systemVmSizes   -DefaultSku $currentSystemVm   -Location $env:AZURE_LOCATION
@@ -114,7 +123,7 @@ $INFERENCE_GPU_VM_SIZE  = $selectedInference.Sku
 # =====================================================
 # Step 5: Register required Azure resource providers
 # =====================================================
-Write-Step "5" "Checking Azure resource provider registrations..."
+Log-Step -Number 5 -Total $totalSteps -Title "Checking Azure Resource Provider Registrations"
 
 $null = Register-RequiredProviders
 
@@ -122,16 +131,19 @@ $null = Register-RequiredProviders
 # Summary
 # =====================================================
 Write-Host ""
-Write-Banner "Pre-provision validation passed!"
+Write-BoxBanner -Text "Pre-Provision Validation Passed" -Style Single -Width 50
+
+Write-Section "Configuration Summary"
+Write-KeyValue "Subscription"   "$(if ($subName) { $subName } else { $env:AZURE_SUBSCRIPTION_ID })"
+Write-KeyValue "Location"       $env:AZURE_LOCATION
+Write-KeyValue "Environment"    $env:AZURE_ENV_NAME
+Write-KeyValue "System CPU"     $selectedSystem.Sku
+Write-KeyValue "Workload CPU"   $selectedWorkload.Sku
+Write-KeyValue "Deepstream GPU" "$DEEPSTREAM_GPU_VM_SIZE ($DEEPSTREAM_GPU_MAX_NODE_COUNT node(s))"
+Write-KeyValue "Inference GPU"  "$INFERENCE_GPU_VM_SIZE ($INFERENCE_GPU_MAX_NODE_COUNT node(s))"
+Write-KeyValue "Providers"      "all registered"
+Write-KeyValue "Tools"          "all present"
+
 Write-Host ""
-Write-Host "  Subscription:    $(if ($subName) { $subName } else { $env:AZURE_SUBSCRIPTION_ID })"
-Write-Host "  Location:        $($env:AZURE_LOCATION)"
-Write-Host "  Environment:     $($env:AZURE_ENV_NAME)"
-Write-Host "  System CPU:      $($selectedSystem.Sku)"
-Write-Host "  Workload CPU:    $($selectedWorkload.Sku)"
-Write-Host "  Deepstream GPU:  $DEEPSTREAM_GPU_VM_SIZE ($DEEPSTREAM_GPU_MAX_NODE_COUNT node(s))"
-Write-Host "  Inference GPU:   $INFERENCE_GPU_VM_SIZE ($INFERENCE_GPU_MAX_NODE_COUNT node(s))"
-Write-Host "  Providers:       all registered"
-Write-Host "  Tools:           all present"
+Log-Success "Proceeding with provisioning..."
 Write-Host ""
-Write-Host "Proceeding with provisioning..."

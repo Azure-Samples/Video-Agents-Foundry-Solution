@@ -2,24 +2,10 @@
 # Shared Utilities: Common functions used across all PowerShell hooks
 # =============================================================================
 # Source this file via: . "$PSScriptRoot/common.ps1"
-# This file automatically loads config.ps1.
+# This file automatically loads config.ps1 and ui.ps1.
 
 . "$PSScriptRoot/config.ps1"
-
-# ── Output Helpers ───────────────────────────────────────────────────────────
-
-function Write-Banner {
-    param([string]$Title)
-    Write-Host "=============================================="
-    Write-Host $Title
-    Write-Host "=============================================="
-}
-
-function Write-Step {
-    param([string]$StepNumber, [string]$Message)
-    Write-Host ""
-    Write-Host ">> Step ${StepNumber}: ${Message}"
-}
+. "$PSScriptRoot/ui.ps1"
 
 # ── Prerequisite Checks ─────────────────────────────────────────────────────
 
@@ -27,7 +13,12 @@ function Assert-EnvVars {
     param([string[]]$Required)
     $missing = $Required | Where-Object { -not (Get-Item "env:$_" -ErrorAction SilentlyContinue) }
     if ($missing) {
-        Write-Error "The following required environment variables are not set:`n  $($missing -join "`n  ")`nRun 'azd env get-values' to check your environment."
+        Log-Error "Missing required environment variables:"
+        foreach ($var in $missing) {
+            Write-Host "     $($script:C.Error)$($script:Sym.Error)$($script:C.Reset)  $var"
+        }
+        Write-Host ""
+        Log-Info "Run 'azd env get-values' to check your environment."
         exit 1
     }
 }
@@ -40,23 +31,24 @@ function Assert-CliTools {
     $errorCount = 0
     foreach ($cmd in $Required) {
         if (Get-Command $cmd -ErrorAction SilentlyContinue) {
-            Write-Host "   ${cmd}: OK"
+            Log-Success "$cmd"
         }
         else {
-            Write-Host "   ${cmd}: MISSING" -ForegroundColor Red
+            Log-Error "$cmd - not found"
             $errorCount++
         }
     }
     foreach ($cmd in $Optional) {
         if (Get-Command $cmd -ErrorAction SilentlyContinue) {
-            Write-Host "   ${cmd}: OK"
+            Log-Success "$cmd"
         }
         else {
-            Write-Host "   ${cmd}: not found (optional, but recommended)"
+            Log-Warning "$cmd - not found (optional)"
         }
     }
     if ($errorCount -gt 0) {
-        Write-Error "$errorCount required tool(s) missing. Install them before proceeding."
+        Write-Host ""
+        Log-Error "$errorCount required tool(s) missing. Install them before proceeding."
         exit 1
     }
 }
@@ -77,28 +69,29 @@ function Register-RequiredProviders {
 
         switch ($state) {
             "Registered" {
-                Write-Host "   ${provider}: Registered"
+                Log-Success "$provider"
             }
             "Registering" {
-                Write-Host "   ${provider}: Registering (in progress)"
+                Log-Warning "$provider (registration in progress)"
                 $providersRegistering++
             }
             { $_ -in @("NotRegistered", "Unregistered") } {
-                Write-Host "   ${provider}: Not registered - registering now..."
-                az provider register --namespace $provider --wait false 2>$null
+                Invoke-WithSpinner -Message "Registering $provider" -Action {
+                    az provider register --namespace $provider --wait false 2>$null
+                } -SuccessMessage "$provider registered"
                 $providersRegistering++
             }
             default {
-                Write-Host "   ${provider}: $state (unexpected state)"
+                Log-Warning "$provider ($state)"
             }
         }
     }
 
     if ($providersRegistering -gt 0) {
         Write-Host ""
-        Write-Host "   NOTE: $providersRegistering provider(s) are being registered."
-        Write-Host "   Registration can take 2-5 minutes. Provisioning will proceed,"
-        Write-Host "   but if it fails, wait a few minutes and retry."
+        Log-Warning "$providersRegistering provider(s) are being registered."
+        Log-Info "Registration can take 2-5 minutes. Provisioning will proceed,"
+        Log-Info "but if it fails, wait a few minutes and retry."
     }
 
     return $providersRegistering
@@ -300,11 +293,11 @@ function Assert-VmQuota {
     )
 
     if (-not $Family) {
-        Write-Host "   [$Label] Skipping quota check (no quota family)" -ForegroundColor Yellow
+        Log-Warning "[$Label] Skipping quota check (no quota family)"
         return "skip"
     }
 
-    Write-Host "   [$Label] Checking quota for '$Family'..." -NoNewline
+    Write-LogMessage -Message "[$Label] Checking quota for '$Family'..." -Symbol $script:Sym.Info -SymbolColor $script:C.Accent -NoNewline
 
     if (-not $QuotaData.ContainsKey($Family)) {
         Write-Host " UNKNOWN (family not found)" -ForegroundColor Yellow
@@ -314,26 +307,28 @@ function Assert-VmQuota {
     $q = $QuotaData[$Family]
 
     if ($q.Limit -eq 0) {
-        Write-Host " ZERO QUOTA" -ForegroundColor Red
-        Write-Host "   [$Label] No quota allocated for '$Family'." -ForegroundColor Red
-        Write-Host "   Request GPU quota at: $QUOTA_URL"
-        Write-Host "   For step-by-step instructions, see: $GPU_QUOTA_DOC_URL"
+        Write-Host ""
+        Log-Error "[$Label] No quota allocated for '$Family'."
+        Log-Info "Request GPU quota at: $QUOTA_URL"
+        Log-Info "For step-by-step instructions, see: $GPU_QUOTA_DOC_URL"
         return "zero"
     }
 
     if ($CoresNeeded -gt 0 -and $q.Available -lt $CoresNeeded) {
-        Write-Host " LOW ($($q.Available) cores free, need $CoresNeeded)" -ForegroundColor Yellow
-        Write-Host "   [$Label] Insufficient quota — $($q.Available)/$($q.Limit) available ($($q.Used) used)" -ForegroundColor Yellow
-        Write-Host "   Request quota increase at: $QUOTA_URL"
-        Write-Host "   For step-by-step instructions, see: $GPU_QUOTA_DOC_URL"
+        Write-Host ""
+        Log-Warning "[$Label] Insufficient quota: $($q.Available)/$($q.Limit) available ($($q.Used) used), need $CoresNeeded"
+        Log-Info "Request quota increase at: $QUOTA_URL"
+        Log-Info "For step-by-step instructions, see: $GPU_QUOTA_DOC_URL"
         return "low"
     }
 
-    Write-Host " OK ($($q.Available) cores free)" -ForegroundColor Green
+    Write-Host " $($script:C.Success)OK ($($q.Available) cores free)$($script:C.Reset)"
     return "ok"
 }
 
 # ── Interactive VM Selection Menu ─────────────────────────────────────────
+# NOTE: This function uses low-level [Console] manipulation for interactive
+# arrow-key menus. Its internal styling is intentionally left as-is.
 
 function Show-VmSelectionMenu {
     <#
@@ -360,8 +355,8 @@ function Show-VmSelectionMenu {
     )
 
     if ($VmSizes.Count -eq 0) {
-        Write-Host "   No VM sizes available in region '$Location' for this pool." -ForegroundColor Red
-        Write-Host "   Selection cancelled. Provisioning aborted." -ForegroundColor Red
+        Log-Error "No VM sizes available in region '$Location' for this pool."
+        Log-Error "Selection cancelled. Provisioning aborted."
         exit 1
     }
 
@@ -475,8 +470,8 @@ function Show-VmSelectionMenu {
     # ── Outer loop ─────────────────────────────────────────────────
     while ($true) {
         Write-Host ""
-        Write-Host "   Select VM size for $PoolName node pool ($($VmSizes.Count) sizes available):"
-        Write-Host "   Use $([char]0x2191)/$([char]0x2193) to move, Enter to select, C custom, Esc cancel"
+        Write-Section "Select VM size for $PoolName ($($VmSizes.Count) sizes available)"
+        Log-Info "Use $([char]0x2191)/$([char]0x2193) to move, Enter to select, C custom, Esc cancel"
         Write-Host ""
 
         # Reserve exactly $maxVisible blank lines (viewport size, not total items)
@@ -524,7 +519,7 @@ function Show-VmSelectionMenu {
 
         if ($escaped) {
             Write-Host ""
-            Write-Host "   Selection cancelled by user. Provisioning aborted." -ForegroundColor Red
+            Log-Error "Selection cancelled by user. Provisioning aborted."
             exit 1
         }
 
@@ -536,7 +531,7 @@ function Show-VmSelectionMenu {
         if ($currentIndex -eq $VmSizes.Count) {
             $customSku = Read-Host "   Enter VM SKU (e.g. Standard_NC24ads_A100_v4)"
             if ([string]::IsNullOrWhiteSpace($customSku)) {
-                Write-Host "   No value entered. Re-showing menu..." -ForegroundColor Yellow
+                Log-Warning "No value entered. Re-showing menu..."
                 continue
             }
             $selectedSku = $customSku.Trim()
@@ -546,7 +541,7 @@ function Show-VmSelectionMenu {
                 $selectedCores = $match.Cores
             }
             else {
-                Write-Host "   '$selectedSku' not found in region '$Location'." -ForegroundColor Red
+                Log-Error "'$selectedSku' not found in region '$Location'."
                 continue
             }
         }
@@ -555,34 +550,34 @@ function Show-VmSelectionMenu {
             $selectedCores = $VmSizes[$currentIndex].Cores
         }
 
-        Write-Host "   $selectedSku — $selectedCores vCPUs" -ForegroundColor Green
+        Log-Success "$selectedSku $($script:C.Muted)($selectedCores vCPUs)$($script:C.Reset)"
 
         # ── GPU quota check ────────────────────────────────────────
         if ($IsGpu) {
-            Write-Host "   Resolving quota family..." -NoNewline
+            Write-LogMessage -Message "Resolving quota family..." -Symbol $script:Sym.Info -SymbolColor $script:C.Accent -NoNewline
             $selectedFamily = Get-QuotaFamilyForVm -VmSize $selectedSku -Location $Location
             if ($selectedFamily) {
-                Write-Host " $selectedFamily" -ForegroundColor Gray
+                Write-Host " $($script:C.Muted)$selectedFamily$($script:C.Reset)"
                 $totalCoresNeeded = $selectedCores * $MaxNodes
                 $quotaResult = Assert-VmQuota -Label $PoolName -Family $selectedFamily -QuotaData $QuotaData -CoresNeeded $totalCoresNeeded
                 if ($quotaResult -in @("zero", "low")) {
                     $proceed = Read-Host "   Continue with this VM anyway? (y = keep, n = re-select) [n]"
                     if ($proceed -ne 'y' -and $proceed -ne 'Y') {
-                        Write-Host "   Re-showing menu..." -ForegroundColor Yellow
+                        Log-Warning "Re-showing menu..."
                         continue
                     }
                 }
             }
             else {
-                Write-Host " not found (quota check skipped)" -ForegroundColor Yellow
+                Write-Host " $($script:C.Warning)not found (quota check skipped)$($script:C.Reset)"
             }
         }
 
         # ── Persist to azd env ─────────────────────────────────────
         try   { azd env set $EnvVarName $selectedSku 2>$null }
-        catch { Write-Host "   Warning: could not persist $EnvVarName via 'azd env set'." -ForegroundColor Yellow }
+        catch { Log-Warning "Could not persist $EnvVarName via 'azd env set'." }
 
-        Write-Host "   Selected: $selectedSku" -ForegroundColor Green
+        Log-Success "Selected: $selectedSku"
         Write-Host ""
 
         return @{
