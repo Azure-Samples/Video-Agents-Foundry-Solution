@@ -3,42 +3,31 @@
 # Shared Utilities: Common functions used across all Bash hooks
 # =============================================================================
 # Source this file via: source "$(dirname "$0")/common.sh"
-# This file automatically loads config.sh.
+# This file automatically loads config.sh and ui.sh.
 
 HOOKS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${HOOKS_DIR}/config.sh"
-
-# ── Output Helpers ───────────────────────────────────────────────────────────
-
-write_banner() {
-    echo "=============================================="
-    echo "$1"
-    echo "=============================================="
-}
-
-write_step() {
-    local step_number="$1"
-    local message="$2"
-    echo ""
-    echo ">> Step ${step_number}: ${message}"
-}
+source "${HOOKS_DIR}/ui.sh"
 
 # ── Prerequisite Checks ─────────────────────────────────────────────────────
 
 assert_env_vars() {
     # Usage: assert_env_vars VAR1 VAR2 VAR3
-    local missing=""
+    local missing=()
     for var in "$@"; do
         eval val=\$$var 2>/dev/null || val=""
         if [ -z "$val" ]; then
-            missing="${missing}  - ${var}\n"
+            missing+=("$var")
         fi
     done
 
-    if [ -n "$missing" ]; then
-        echo "ERROR: The following required environment variables are not set:" >&2
-        printf "%b" "$missing" >&2
-        echo "Run 'azd env get-values' to check your environment." >&2
+    if [ ${#missing[@]} -gt 0 ]; then
+        log_error "Missing required environment variables:"
+        for var in "${missing[@]}"; do
+            printf "     %b%s%b  %s\n" "$C_ERROR" "$SYM_ERROR" "$C_RESET" "$var"
+        done
+        echo ""
+        log_info "Run 'azd env get-values' to check your environment."
         exit 1
     fi
 }
@@ -55,22 +44,20 @@ assert_cli_tools() {
         fi
 
         if command -v "$cmd" >/dev/null 2>&1; then
-            local version
-            version=$($cmd version --short 2>/dev/null || $cmd version --client --short 2>/dev/null || $cmd --version 2>/dev/null | head -1 || echo "installed")
-            echo "   ${cmd}: OK (${version})"
+            log_success "$cmd"
         else
             if [ "$mode" = "required" ]; then
-                echo "   ${cmd}: MISSING" >&2
+                log_error "$cmd - not found"
                 error_count=$((error_count + 1))
             else
-                echo "   ${cmd}: not found (optional, but recommended)"
+                log_warning "$cmd - not found (optional)"
             fi
         fi
     done
 
     if [ "$error_count" -gt 0 ]; then
-        echo "" >&2
-        echo "   ERROR: ${error_count} required tool(s) missing. Install them before proceeding." >&2
+        echo ""
+        log_error "${error_count} required tool(s) missing. Install them before proceeding."
         exit 1
     fi
 }
@@ -79,7 +66,6 @@ assert_cli_tools() {
 
 register_required_providers() {
     # Usage: register_required_providers [provider1 provider2 ...]
-    # If no arguments, uses REQUIRED_PROVIDERS from config.sh
     local providers=("${@:-${REQUIRED_PROVIDERS[@]}}")
     if [ ${#providers[@]} -eq 0 ]; then
         providers=("${REQUIRED_PROVIDERS[@]}")
@@ -91,28 +77,28 @@ register_required_providers() {
         state=$(az provider show -n "$provider" --query "registrationState" -o tsv 2>/dev/null || echo "Unknown")
         case "$state" in
             Registered)
-                echo "   ${provider}: Registered"
+                log_success "$provider"
                 ;;
             Registering)
-                echo "   ${provider}: Registering (in progress)"
+                log_warning "$provider (registration in progress)"
                 providers_registering=$((providers_registering + 1))
                 ;;
             NotRegistered|Unregistered)
-                echo "   ${provider}: Not registered - registering now..."
-                az provider register --namespace "$provider" --wait false 2>/dev/null || true
+                run_with_spinner "Registering $provider" "$provider registered" \
+                    az provider register --namespace "$provider" --wait false
                 providers_registering=$((providers_registering + 1))
                 ;;
             *)
-                echo "   ${provider}: ${state} (unexpected state)"
+                log_warning "$provider ($state)"
                 ;;
         esac
     done
 
     if [ "$providers_registering" -gt 0 ]; then
         echo ""
-        echo "   NOTE: ${providers_registering} provider(s) are being registered."
-        echo "   Registration can take 2-5 minutes. Provisioning will proceed,"
-        echo "   but if it fails, wait a few minutes and retry."
+        log_warning "${providers_registering} provider(s) are being registered."
+        log_info "Registration can take 2-5 minutes. Provisioning will proceed,"
+        log_info "but if it fails, wait a few minutes and retry."
     fi
 
     return "$providers_registering"
@@ -180,9 +166,6 @@ get_filtered_vm_sizes() {
 }
 
 # Picks VM sizes for the menu based on recommended families.
-# For each family pattern, matches VMs within core range, takes up to sizes_per_family.
-# Default SKU is always included. Result is sorted by cores.
-# Usage: select_vm_sizes_for_menu SRC_ARRAY OUT_ARRAY FAMILIES_ARRAY "DefaultSku" per_family min_cores max_cores
 select_vm_sizes_for_menu() {
     local -n _src=$1
     local -n _out=$2
@@ -201,7 +184,6 @@ select_vm_sizes_for_menu() {
             local sku="${entry%%|*}"
             local rest="${entry#*|}"
             local cores="${rest%%|*}"
-            # Filter by core range
             [ "$cores" -lt "$min_cores" ] && continue
             [ "$cores" -gt "$max_cores" ] && continue
             if echo "$sku" | grep -qE "$pattern"; then
@@ -230,7 +212,6 @@ select_vm_sizes_for_menu() {
 }
 
 # Looks up quota for a family directly via az CLI (single call).
-# Sets globals: VM_QUOTA_LIMIT, VM_QUOTA_USED, VM_QUOTA_AVAILABLE
 VM_QUOTA_LIMIT=0
 VM_QUOTA_USED=0
 VM_QUOTA_AVAILABLE=0
@@ -250,7 +231,6 @@ lookup_vm_quota() {
 }
 
 # Resolves quota family for a GPU VM using the pattern lookup table.
-# No API call needed. Sets global GET_QUOTA_FAMILY_RESULT.
 GET_QUOTA_FAMILY_RESULT=""
 get_quota_family_for_vm() {
     local vm_size="$1"
@@ -265,48 +245,46 @@ get_quota_family_for_vm() {
 }
 
 # Checks GPU quota, prints formatted status, sets ASSERT_QUOTA_RESULT.
-# Values: "ok", "skip", "zero", "low", "error"
 ASSERT_QUOTA_RESULT=""
 assert_vm_quota() {
     local label="$1" family="$2" location="$3" cores_needed="$4"
     ASSERT_QUOTA_RESULT=""
 
     if [ -z "$family" ]; then
-        echo "   [${label}] Skipping quota check (no quota family)"
+        log_warning "[$label] Skipping quota check (no quota family)"
         ASSERT_QUOTA_RESULT="skip"; return 0
     fi
 
-    printf "   [%s] Checking quota for '%s'..." "$label" "$family"
+    _write_log_message "[$label] Checking quota for '$family'..." "$SYM_INFO" "$C_ACCENT" "$C_TEXT" false true
 
     if ! lookup_vm_quota "$family" "$location"; then
-        printf " \033[33mUNKNOWN (family not found)\033[0m\n"
+        printf " %bUNKNOWN (family not found)%b\n" "$C_WARNING" "$C_RESET"
         ASSERT_QUOTA_RESULT="error"; return 1
     fi
 
     if [ "$VM_QUOTA_LIMIT" -eq 0 ]; then
-        printf " \033[31mZERO QUOTA\033[0m\n"
-        echo "   [${label}] No quota allocated for '${family}'."
-        echo "   Request GPU quota at: ${QUOTA_URL}"
-        echo "   For step-by-step instructions, see: ${GPU_QUOTA_DOC_URL}"
+        echo ""
+        log_error "[$label] No quota allocated for '$family'."
+        log_info "Request GPU quota at: $QUOTA_URL"
+        log_info "For step-by-step instructions, see: $GPU_QUOTA_DOC_URL"
         ASSERT_QUOTA_RESULT="zero"; return 1
     fi
 
     if [ -n "$cores_needed" ] && [ "$cores_needed" -gt 0 ] && [ "$VM_QUOTA_AVAILABLE" -lt "$cores_needed" ]; then
-        printf " \033[33mLOW (%s cores free, need %s)\033[0m\n" "$VM_QUOTA_AVAILABLE" "$cores_needed"
-        echo "   [${label}] Insufficient — ${VM_QUOTA_AVAILABLE}/${VM_QUOTA_LIMIT} available (${VM_QUOTA_USED} used)"
-        echo "   Request quota increase at: ${QUOTA_URL}"
+        echo ""
+        log_warning "[$label] Insufficient: ${VM_QUOTA_AVAILABLE}/${VM_QUOTA_LIMIT} available (${VM_QUOTA_USED} used), need $cores_needed"
+        log_info "Request quota increase at: $QUOTA_URL"
         ASSERT_QUOTA_RESULT="low"; return 1
     fi
 
-    printf " \033[32mOK (%s cores free)\033[0m\n" "$VM_QUOTA_AVAILABLE"
+    printf " %bOK (%s cores free)%b\n" "$C_SUCCESS" "$VM_QUOTA_AVAILABLE" "$C_RESET"
     ASSERT_QUOTA_RESULT="ok"; return 0
 }
 
 # ── Interactive VM Selection Menu ─────────────────────────────────────────
+# NOTE: This function uses low-level terminal manipulation for interactive
+# arrow-key menus. Its internal styling is intentionally left as-is.
 
-# Arrow-key menu. Data is a bash array of "name|cores|memGB" lines (from get_filtered_vm_sizes).
-# Usage: show_vm_selection_menu "PoolName" "ENV_VAR" vm_array_name "DefaultSku" "Location" max_nodes "gpu"
-# Sets globals: SELECTED_VM_SKU, SELECTED_VM_CORES, SELECTED_VM_FAMILY
 SELECTED_VM_SKU=""
 SELECTED_VM_CORES=0
 SELECTED_VM_FAMILY=""
@@ -314,7 +292,7 @@ SELECTED_VM_FAMILY=""
 show_vm_selection_menu() {
     local pool_name="$1"
     local env_var_name="$2"
-    local -n _vm_array=$3       # nameref to caller's array
+    local -n _vm_array=$3
     local default_sku="$4"
     local location="$5"
     local max_nodes="${6:-1}"
@@ -326,8 +304,8 @@ show_vm_selection_menu() {
     [ "$item_count" -lt "$max_visible" ] && max_visible=$item_count
 
     if [ "$vm_count" -eq 0 ]; then
-        echo "   No VM sizes available for this pool." >&2
-        echo "   Provisioning aborted." >&2
+        log_error "No VM sizes available for this pool."
+        log_error "Provisioning aborted."
         exit 1
     fi
 
@@ -388,8 +366,8 @@ show_vm_selection_menu() {
 
     while true; do
         echo ""
-        echo "   Select VM size for ${pool_name} node pool (${vm_count} sizes available):"
-        printf "   Use \xe2\x86\x91/\xe2\x86\x93 to move, Enter to select, C custom, Esc cancel\n"
+        write_section "Select VM size for ${pool_name} (${vm_count} sizes available)"
+        log_info "Use ↑/↓ to move, Enter to select, C custom, Esc cancel"
         echo ""
 
         # Get cursor row via ANSI DSR
@@ -439,48 +417,51 @@ show_vm_selection_menu() {
         printf "\033[%d;1H" "$((menu_top + max_visible))"
 
         if [ "$escaped" = true ]; then
-            echo ""; echo "   Selection cancelled by user. Provisioning aborted." >&2; exit 1
+            echo ""
+            log_error "Selection cancelled by user. Provisioning aborted."
+            exit 1
         fi
 
         # Resolve selection
         local selected_sku="" selected_cores=0 selected_family=""
         if [ "$current_index" -eq "$vm_count" ]; then
             echo ""; printf "   Enter VM SKU (e.g. Standard_NC24ads_A100_v4): "; read -r custom_sku
-            [ -z "$custom_sku" ] && { echo "   No value entered. Re-showing menu..."; continue; }
+            [ -z "$custom_sku" ] && { log_warning "No value entered. Re-showing menu..."; continue; }
             selected_sku="$(echo "$custom_sku" | xargs)"
             for ((i=0; i<vm_count; i++)); do
                 [ "${vm_names[$i]}" = "$selected_sku" ] && { selected_cores="${vm_cores[$i]}"; break; }
             done
-            [ "$selected_cores" -eq 0 ] && { printf "   \033[31m'%s' not found in region.\033[0m\n" "$selected_sku"; continue; }
+            [ "$selected_cores" -eq 0 ] && { log_error "'$selected_sku' not found in region."; continue; }
         else
             selected_sku="${vm_names[$current_index]}"
             selected_cores="${vm_cores[$current_index]}"
         fi
 
-        printf "   \033[32m%s — %s vCPUs\033[0m\n" "$selected_sku" "$selected_cores"
+        log_success "${selected_sku} (${selected_cores} vCPUs)"
 
         # GPU quota check
         if [ "$is_gpu" = "gpu" ]; then
-            printf "   Resolving quota family..."
+            _write_log_message "Resolving quota family..." "$SYM_INFO" "$C_ACCENT" "$C_TEXT" false true
             get_quota_family_for_vm "$selected_sku" "$location"
             selected_family="$GET_QUOTA_FAMILY_RESULT"
             if [ -n "$selected_family" ]; then
-                printf " %s\n" "$selected_family"
+                printf " %b%s%b\n" "$C_MUTED" "$selected_family" "$C_RESET"
                 local total_cores=$((selected_cores * max_nodes))
                 assert_vm_quota "$pool_name" "$selected_family" "$location" "$total_cores"
                 if [ "$ASSERT_QUOTA_RESULT" = "zero" ] || [ "$ASSERT_QUOTA_RESULT" = "low" ]; then
                     echo ""; printf "   Continue anyway? (y/n) [n]: "; read -r proceed
-                    [ "$proceed" != "y" ] && [ "$proceed" != "Y" ] && { echo "   Re-showing menu..."; continue; }
+                    [ "$proceed" != "y" ] && [ "$proceed" != "Y" ] && { log_warning "Re-showing menu..."; continue; }
                 fi
             else
-                printf " not found (quota check skipped)\n"
+                printf " %bnot found (quota check skipped)%b\n" "$C_WARNING" "$C_RESET"
             fi
         fi
 
         azd env set "$env_var_name" "$selected_sku" 2>/dev/null || \
-            echo "   Warning: Could not persist ${env_var_name} via 'azd env set'."
+            log_warning "Could not persist ${env_var_name} via 'azd env set'."
 
-        printf "   \033[32mSelected: %s\033[0m\n\n" "$selected_sku"
+        log_success "Selected: $selected_sku"
+        echo ""
         SELECTED_VM_SKU="$selected_sku"
         SELECTED_VM_CORES="$selected_cores"
         SELECTED_VM_FAMILY="$selected_family"

@@ -41,7 +41,7 @@ if ($env:AZURE_SUBSCRIPTION_ID) {
     }
     $subName = (az account show --query "name" -o tsv 2>$null)
     Log-Success "Subscription: $subName"
-    Write-KeyValue "ID" $env:AZURE_SUBSCRIPTION_ID
+    Log-Success "ID" $env:AZURE_SUBSCRIPTION_ID
 }
 
 # =====================================================

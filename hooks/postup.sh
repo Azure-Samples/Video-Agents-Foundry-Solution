@@ -8,85 +8,99 @@ set -e
 
 source "$(dirname "$0")/common.sh"
 
-write_banner "Post-Up: Health Check & Deployment Summary"
+TOTAL_STEPS=6
+HEALTH_PASSED=0
+HEALTH_FAILED=0
+HEALTH_WARNINGS=0
+HEALTH_TOTAL=0
 
-HEALTH_ISSUES=0
+_track_health() {
+    local status="$1"
+    HEALTH_TOTAL=$((HEALTH_TOTAL + 1))
+    case "$status" in
+        Pass) HEALTH_PASSED=$((HEALTH_PASSED + 1)) ;;
+        Fail) HEALTH_FAILED=$((HEALTH_FAILED + 1)) ;;
+        Warn) HEALTH_WARNINGS=$((HEALTH_WARNINGS + 1)) ;;
+    esac
+}
+
+write_foundry_banner "Health Dashboard"
 
 # =====================================================
 # Get AKS credentials for kubectl access
 # =====================================================
-echo ""
-echo ">> Getting AKS credentials..."
-
+HAS_CLUSTER_ACCESS=false
 if [ -z "${AZURE_RESOURCE_GROUP:-}" ] || [ -z "${AZURE_AKS_CLUSTER_NAME:-}" ]; then
-    echo "   WARNING: AZURE_RESOURCE_GROUP or AZURE_AKS_CLUSTER_NAME not set."
-    echo "   Skipping Kubernetes health checks."
-    HAS_CLUSTER_ACCESS=false
+    log_warning "AZURE_RESOURCE_GROUP or AZURE_AKS_CLUSTER_NAME not set."
+    log_info "Skipping Kubernetes health checks."
 else
-    KUBE_CONTEXT=$(connect_aks_cluster)
-    HAS_CLUSTER_ACCESS=true
+    _SPINNER_FRAME=0; spinner_tick "Getting AKS credentials"
+    KUBE_CONTEXT=$(connect_aks_cluster 2>/dev/null) && HAS_CLUSTER_ACCESS=true
+    if [ "$HAS_CLUSTER_ACCESS" = true ]; then
+        spinner_complete "AKS credentials configured"
+    else
+        spinner_fail "Could not get AKS credentials"
+        log_warning "Skipping Kubernetes health checks."
+    fi
 fi
 
 # =====================================================
 # Step 1: AKS Cluster Health
 # =====================================================
-echo ""
-echo ">> Step 1: AKS Cluster Health..."
+log_step 1 $TOTAL_STEPS "AKS Cluster Health"
 
 if [ "$HAS_CLUSTER_ACCESS" = "true" ]; then
     AKS_STATE=$(az aks show -g "$AZURE_RESOURCE_GROUP" -n "$AZURE_AKS_CLUSTER_NAME" \
         --query "provisioningState" -o tsv 2>/dev/null || echo "Unknown")
-
-    if [ "$AKS_STATE" = "Succeeded" ]; then
-        echo "   AKS provisioning state: ${AKS_STATE}"
-    else
-        echo "   AKS provisioning state: ${AKS_STATE} (expected: Succeeded)"
-        HEALTH_ISSUES=$((HEALTH_ISSUES + 1))
-    fi
+    AKS_STATUS="Pass"; [ "$AKS_STATE" != "Succeeded" ] && AKS_STATUS="Fail"
+    write_health_row "AKS provisioning state" "$AKS_STATUS" "$AKS_STATE"
+    _track_health "$AKS_STATUS"
 
     TOTAL_NODES=$(kubectl --context "$KUBE_CONTEXT" get nodes --no-headers 2>/dev/null | wc -l | tr -d ' ')
     READY_NODES=$(kubectl --context "$KUBE_CONTEXT" get nodes --no-headers 2>/dev/null | grep -c " Ready " || echo "0")
-    echo "   Nodes: ${READY_NODES}/${TOTAL_NODES} Ready"
+    NODE_STATUS="Pass"; [ "$READY_NODES" != "$TOTAL_NODES" ] && NODE_STATUS="Warn"
+    write_health_row "Cluster nodes" "$NODE_STATUS" "${READY_NODES}/${TOTAL_NODES} Ready"
+    _track_health "$NODE_STATUS"
 
     GPU_NODES=$(kubectl --context "$KUBE_CONTEXT" get nodes -l "accelerator=nvidia" --no-headers 2>/dev/null | wc -l | tr -d ' ' || echo "0")
-    if [ "$GPU_NODES" -gt 0 ]; then
-        echo "   GPU nodes: ${GPU_NODES} detected"
-    else
-        echo "   GPU nodes: none detected (may still be provisioning)"
-        HEALTH_ISSUES=$((HEALTH_ISSUES + 1))
-    fi
+    GPU_NODE_STATUS="Pass"; [ "$GPU_NODES" -eq 0 ] && GPU_NODE_STATUS="Warn"
+    GPU_NODE_DETAIL="$GPU_NODES detected"
+    [ "$GPU_NODES" -eq 0 ] && GPU_NODE_DETAIL="none detected (may still be provisioning)"
+    write_health_row "GPU nodes" "$GPU_NODE_STATUS" "$GPU_NODE_DETAIL"
+    _track_health "$GPU_NODE_STATUS"
 else
-    echo "   Skipped (no cluster access)"
+    write_health_row "AKS Cluster" "Skip" "no cluster access"
 fi
 
 # =====================================================
 # Step 2: GPU Operator Health
 # =====================================================
-echo ""
-echo ">> Step 2: GPU Operator Health..."
+log_step 2 $TOTAL_STEPS "GPU Operator Health"
 
 if [ "$HAS_CLUSTER_ACCESS" = "true" ]; then
     GPU_NS_EXISTS=$(kubectl --context "$KUBE_CONTEXT" get namespace "$NS_GPU_OPERATOR" --no-headers 2>/dev/null || true)
     if [ -n "$GPU_NS_EXISTS" ]; then
         GPU_RUNNING=$(get_running_pod_count "$NS_GPU_OPERATOR" "$KUBE_CONTEXT")
         GPU_TOTAL=$(get_total_pod_count "$NS_GPU_OPERATOR" "$KUBE_CONTEXT")
-        echo "   GPU Operator pods: ${GPU_RUNNING}/${GPU_TOTAL} Running"
-        if [ "$GPU_RUNNING" -lt "$GPU_TOTAL" ]; then
-            echo "   Some pods are still initializing (GPU driver install can take several minutes)"
-        fi
+        GPU_POD_STATUS="Pass"
+        [ "$GPU_RUNNING" -lt "$GPU_TOTAL" ] && GPU_POD_STATUS="Warn"
+        [ "$GPU_RUNNING" -eq 0 ] && GPU_POD_STATUS="Fail"
+        GPU_DETAIL="${GPU_RUNNING}/${GPU_TOTAL} Running"
+        [ "$GPU_RUNNING" -lt "$GPU_TOTAL" ] && GPU_DETAIL="${GPU_DETAIL} (GPU driver install can take several minutes)"
+        write_health_row "GPU Operator" "$GPU_POD_STATUS" "$GPU_DETAIL"
+        _track_health "$GPU_POD_STATUS"
     else
-        echo "   GPU Operator namespace not found"
-        HEALTH_ISSUES=$((HEALTH_ISSUES + 1))
+        write_health_row "GPU Operator" "Fail" "namespace not found"
+        _track_health "Fail"
     fi
 else
-    echo "   Skipped (no cluster access)"
+    write_health_row "GPU Operator" "Skip" "no cluster access"
 fi
 
 # =====================================================
 # Step 3: Arc Connection Health
 # =====================================================
-echo ""
-echo ">> Step 3: Arc Connection Health..."
+log_step 3 $TOTAL_STEPS "Arc Connection Health"
 
 ARC_CLUSTER_NAME="${AZURE_ARC_CLUSTER_NAME:-}"
 if [ -n "$ARC_CLUSTER_NAME" ]; then
@@ -94,60 +108,60 @@ if [ -n "$ARC_CLUSTER_NAME" ]; then
         --name "$ARC_CLUSTER_NAME" \
         --resource-group "$AZURE_RESOURCE_GROUP" \
         --query "connectivityStatus" -o tsv 2>/dev/null || echo "Unknown")
-
-    if [ "$ARC_STATUS" = "Connected" ]; then
-        echo "   Arc cluster: ${ARC_CLUSTER_NAME} (Connected)"
-    else
-        echo "   Arc cluster: ${ARC_CLUSTER_NAME} (${ARC_STATUS})"
-        HEALTH_ISSUES=$((HEALTH_ISSUES + 1))
-    fi
+    ARC_HEALTH="Pass"; [ "$ARC_STATUS" != "Connected" ] && ARC_HEALTH="Warn"
+    write_health_row "Arc connection" "$ARC_HEALTH" "$ARC_CLUSTER_NAME ($ARC_STATUS)"
+    _track_health "$ARC_HEALTH"
 
     if [ "$HAS_CLUSTER_ACCESS" = "true" ]; then
         ARC_PODS=$(get_total_pod_count "$NS_AZURE_ARC" "$KUBE_CONTEXT")
-        echo "   Arc agent pods: ${ARC_PODS}"
+        ARC_POD_STATUS="Pass"; [ "$ARC_PODS" -eq 0 ] && ARC_POD_STATUS="Warn"
+        write_health_row "Arc agent pods" "$ARC_POD_STATUS" "$ARC_PODS running"
+        _track_health "$ARC_POD_STATUS"
     fi
 else
-    echo "   Arc cluster name not set. Skipping."
-    HEALTH_ISSUES=$((HEALTH_ISSUES + 1))
+    write_health_row "Arc connection" "Fail" "cluster name not set"
+    _track_health "Fail"
 fi
 
 # =====================================================
 # Step 4: Ingress & Networking Health
 # =====================================================
-echo ""
-echo ">> Step 4: Ingress & Networking Health..."
+log_step 4 $TOTAL_STEPS "Ingress & Networking Health"
 
 if [ "$HAS_CLUSTER_ACCESS" = "true" ]; then
     INGRESS_PODS=$(get_total_pod_count "$NS_APP_ROUTING" "$KUBE_CONTEXT")
-    echo "   Ingress pods (app-routing-system): ${INGRESS_PODS}"
+    INGRESS_STATUS="Pass"; [ "$INGRESS_PODS" -eq 0 ] && INGRESS_STATUS="Warn"
+    write_health_row "Ingress pods" "$INGRESS_STATUS" "$INGRESS_PODS in $NS_APP_ROUTING"
+    _track_health "$INGRESS_STATUS"
 
     if [ -n "${AZURE_STATIC_IP:-}" ]; then
-        echo "   Public IP: ${AZURE_STATIC_IP}"
+        write_health_row "Public IP" "Pass" "$AZURE_STATIC_IP"
+        _track_health "Pass"
     else
-        echo "   Public IP: not configured"
+        write_health_row "Public IP" "Warn" "not configured"
+        _track_health "Warn"
     fi
 
     if [ -n "${AZURE_DNS_LABEL:-}" ] && [ -n "${AZURE_LOCATION:-}" ]; then
         FQDN="${AZURE_DNS_LABEL}.${AZURE_LOCATION}.cloudapp.azure.com"
-        echo "   FQDN: ${FQDN}"
-
         DNS_RESOLVED=$(host "$FQDN" 2>/dev/null | grep -c "has address" || \
             nslookup "$FQDN" 2>/dev/null | grep -c "Address:" || echo "0")
         if [ "$DNS_RESOLVED" -gt 0 ]; then
-            echo "   DNS resolution: OK"
+            write_health_row "DNS resolution" "Pass" "$FQDN"
+            _track_health "Pass"
         else
-            echo "   DNS resolution: pending (may take a few minutes to propagate)"
+            write_health_row "DNS resolution" "Warn" "pending propagation"
+            _track_health "Warn"
         fi
     fi
 else
-    echo "   Skipped (no cluster access)"
+    write_health_row "Ingress & Networking" "Skip" "no cluster access"
 fi
 
 # =====================================================
 # Step 5: Video Indexer Extension Health
 # =====================================================
-echo ""
-echo ">> Step 5: Video Indexer Extension Health..."
+log_step 5 $TOTAL_STEPS "Video Indexer Extension Health"
 
 if [ -n "$ARC_CLUSTER_NAME" ]; then
     VI_STATE=$(az k8s-extension show \
@@ -156,93 +170,89 @@ if [ -n "$ARC_CLUSTER_NAME" ]; then
         --cluster-type connectedClusters \
         --name videoindexer \
         --query "provisioningState" -o tsv 2>/dev/null || echo "Unknown")
-
-    if [ "$VI_STATE" = "Succeeded" ]; then
-        echo "   VI Extension: Provisioned"
-    else
-        echo "   VI Extension: ${VI_STATE}"
-        HEALTH_ISSUES=$((HEALTH_ISSUES + 1))
-    fi
+    VI_EXT_STATUS="Pass"; [ "$VI_STATE" != "Succeeded" ] && VI_EXT_STATUS="Warn"
+    write_health_row "VI Extension" "$VI_EXT_STATUS" "$VI_STATE"
+    _track_health "$VI_EXT_STATUS"
 
     if [ "$HAS_CLUSTER_ACCESS" = "true" ]; then
         VI_RUNNING=$(get_running_pod_count "$NS_VIDEO_INDEXER" "$KUBE_CONTEXT")
         VI_TOTAL=$(get_total_pod_count "$NS_VIDEO_INDEXER" "$KUBE_CONTEXT")
-        echo "   VI pods: ${VI_RUNNING}/${VI_TOTAL} Running"
+        VI_POD_STATUS="Pass"
+        [ "$VI_RUNNING" -lt "$VI_TOTAL" ] && VI_POD_STATUS="Warn"
+        [ "$VI_RUNNING" -eq 0 ] && [ "$VI_TOTAL" -gt 0 ] && VI_POD_STATUS="Fail"
+        write_health_row "VI pods" "$VI_POD_STATUS" "${VI_RUNNING}/${VI_TOTAL} Running"
+        _track_health "$VI_POD_STATUS"
     fi
 else
-    echo "   Skipped (no Arc cluster configured)"
+    write_health_row "VI Extension" "Skip" "no Arc cluster configured"
 fi
 
 # =====================================================
 # Step 6: Cert Manager Health
 # =====================================================
-echo ""
-echo ">> Step 6: Cert Manager Health..."
+log_step 6 $TOTAL_STEPS "Cert Manager Health"
 
 if [ "$HAS_CLUSTER_ACCESS" = "true" ]; then
     CM_NS_EXISTS=$(kubectl --context "$KUBE_CONTEXT" get namespace "$NS_CERT_MANAGER" --no-headers 2>/dev/null || true)
     if [ -n "$CM_NS_EXISTS" ]; then
         CM_RUNNING=$(get_running_pod_count "$NS_CERT_MANAGER" "$KUBE_CONTEXT")
         CM_TOTAL=$(get_total_pod_count "$NS_CERT_MANAGER" "$KUBE_CONTEXT")
-        echo "   Cert Manager pods: ${CM_RUNNING}/${CM_TOTAL} Running"
+        CM_STATUS="Pass"
+        [ "$CM_RUNNING" -lt "$CM_TOTAL" ] && CM_STATUS="Warn"
+        [ "$CM_RUNNING" -eq 0 ] && [ "$CM_TOTAL" -gt 0 ] && CM_STATUS="Fail"
+        write_health_row "Cert Manager" "$CM_STATUS" "${CM_RUNNING}/${CM_TOTAL} Running"
+        _track_health "$CM_STATUS"
     else
-        echo "   Cert Manager namespace not found"
-        HEALTH_ISSUES=$((HEALTH_ISSUES + 1))
+        write_health_row "Cert Manager" "Fail" "namespace not found"
+        _track_health "Fail"
     fi
 else
-    echo "   Skipped (no cluster access)"
+    write_health_row "Cert Manager" "Skip" "no cluster access"
 fi
 
 # =====================================================
 # Summary Dashboard
 # =====================================================
 echo ""
-write_banner "Video Indexer Arc - Deployment Complete"
-echo ""
-echo "  Resource Group:  ${AZURE_RESOURCE_GROUP:-n/a}"
-echo "  AKS Cluster:     ${AZURE_AKS_CLUSTER_NAME:-n/a}"
-echo "  Arc Cluster:     ${AZURE_ARC_CLUSTER_NAME:-n/a}"
-echo "  Location:        ${AZURE_LOCATION:-n/a}"
-echo ""
+write_box_banner "Deployment Summary" "" "Double" 56
+
+write_section "Resources"
+write_key_value "Resource Group" "${AZURE_RESOURCE_GROUP:-n/a}"
+write_key_value "AKS Cluster"    "${AZURE_AKS_CLUSTER_NAME:-n/a}"
+write_key_value "Arc Cluster"    "${AZURE_ARC_CLUSTER_NAME:-n/a}"
+write_key_value "Location"       "${AZURE_LOCATION:-n/a}"
 
 ENDPOINT_URI="${AZURE_VIDEO_INDEXER_ENDPOINT_URI:-}"
 if [ -n "$ENDPOINT_URI" ]; then
-    echo "  Video Indexer:   ${ENDPOINT_URI}"
+    write_key_value "Video Indexer" "$ENDPOINT_URI"
 fi
 
-echo ""
-if [ "$HEALTH_ISSUES" -eq 0 ]; then
-    echo "  Health: ALL CHECKS PASSED"
-else
-    echo "  Health: ${HEALTH_ISSUES} issue(s) detected (see above)"
+write_summary_block "$HEALTH_PASSED" "$HEALTH_FAILED" "$HEALTH_WARNINGS" "$HEALTH_TOTAL"
+
+if [ "$HEALTH_FAILED" -gt 0 ]; then
+    log_warning "Some components may still be initializing."
+    log_info "Re-check in a few minutes with: kubectl get pods -A"
     echo ""
-    echo "  Some components may still be initializing."
-    echo "  Re-check in a few minutes with:"
-    echo "    kubectl get pods -A"
 fi
 
 # =====================================================
 # Next Steps
 # =====================================================
+write_section "Next Steps"
 echo ""
-echo "----------------------------------------------"
-echo "  Next Steps"
-echo "----------------------------------------------"
-echo ""
+
 if [ -n "$ENDPOINT_URI" ]; then
-    echo "  1. Access Video Indexer at:"
-    echo "     ${ENDPOINT_URI}"
+    write_key_value "1. Access portal" "$ENDPOINT_URI"
 fi
-echo "  2. Upload a video to verify end-to-end indexing"
-echo "  3. Monitor GPU utilization:"
-echo "     kubectl top nodes"
-echo "  4. View VI extension logs:"
-echo "     kubectl logs -n ${NS_VIDEO_INDEXER} -l app=videoindexer --tail=100"
-echo "  5. To tear down all resources:"
-echo "     azd down"
+write_key_value "2. Test indexing"    "Upload a video to verify end-to-end"
+write_key_value "3. Monitor GPUs"    "kubectl top nodes"
+write_key_value "4. View VI logs"    "kubectl logs -n ${NS_VIDEO_INDEXER} -l app=videoindexer --tail=100"
+write_key_value "5. Tear down"       "azd down"
+
+write_section "Useful Commands"
 echo ""
-echo "  Useful commands:"
-echo "    kubectl get pods -A               # All pods"
-echo "    kubectl get nodes -o wide          # Node details"
-echo "    az connectedk8s show -g ${AZURE_RESOURCE_GROUP:-RG} -n ${AZURE_ARC_CLUSTER_NAME:-ARC}"
+write_key_value "All pods"         "kubectl get pods -A"
+write_key_value "Node details"     "kubectl get nodes -o wide"
+write_key_value "Arc status"       "az connectedk8s show -g ${AZURE_RESOURCE_GROUP:-RG} -n ${AZURE_ARC_CLUSTER_NAME:-ARC}"
+
 echo ""

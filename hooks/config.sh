@@ -4,6 +4,10 @@
 # =============================================================================
 # Source this file via: source "$(dirname "$0")/config.sh"
 
+# ── Foundry Identity ────────────────────────────────────────────────────────
+FOUNDRY_VERSION="1.0.0"
+FOUNDRY_NAME="Video Agents Foundry Solution"
+
 # ── VM Size Defaults ─────────────────────────────────────────────────────
 # These are the fallback values when no env var is set.
 # The interactive menu (Step 4) lets the user override them.
