@@ -73,20 +73,23 @@ CURRENT_WORKLOAD_VM="${WORKLOAD_VM_SIZE:-$DEFAULT_WORKLOAD_VM_SIZE}"
 CURRENT_DEEPSTREAM_VM="${DEEPSTREAM_GPU_VM_SIZE:-$DEFAULT_DEEPSTREAM_GPU_SIZE}"
 CURRENT_INFERENCE_VM="${INFERENCE_GPU_VM_SIZE:-$DEFAULT_INFERENCE_GPU_SIZE}"
 
-# Fetch full lists, then select top N centered on the default
-run_with_spinner "Querying VM sizes in ${AZURE_LOCATION}" "" \
-    true  # placeholder — actual fetch below since we need the output
-# Actually fetch (run_with_spinner eats stdout, so do it inline)
-_SPINNER_FRAME=0; spinner_tick "Querying VM sizes in ${AZURE_LOCATION}"
+# Fetch full lists (spinner around the actual fetch since we need stdout)
+_SPINNER_FRAME=0; spinner_tick "Querying available VM SKUs in ${AZURE_LOCATION}"
 mapfile -t ALL_CPU_VMS < <(get_filtered_vm_sizes "$AZURE_LOCATION" "${CPU_VM_PREFIXES[@]}")
 mapfile -t ALL_GPU_VMS < <(get_filtered_vm_sizes "$AZURE_LOCATION" "${GPU_VM_PREFIXES[@]}")
-spinner_complete "Found VM sizes in ${AZURE_LOCATION}"
+spinner_complete "Found VM SKUs in ${AZURE_LOCATION}"
 
 log_info "${#ALL_CPU_VMS[@]} CPU + ${#ALL_GPU_VMS[@]} GPU sizes available"
 
 select_vm_sizes_for_menu ALL_CPU_VMS SYSTEM_VMS   SYSTEM_RECOMMENDED_FAMILIES   "$CURRENT_SYSTEM_VM"     "$SIZES_PER_FAMILY" 0 "$SYSTEM_MAX_CORES"
 select_vm_sizes_for_menu ALL_CPU_VMS WORKLOAD_VMS WORKLOAD_RECOMMENDED_FAMILIES "$CURRENT_WORKLOAD_VM"   "$SIZES_PER_FAMILY" "$WORKLOAD_MIN_CORES"
 select_vm_sizes_for_menu ALL_GPU_VMS GPU_VMS      GPU_RECOMMENDED_FAMILIES      "$CURRENT_DEEPSTREAM_VM" "$SIZES_PER_FAMILY"
+
+# Resolve defaults — if the configured default isn't available, pick the closest match
+CURRENT_SYSTEM_VM=$(resolve_default_sku "$CURRENT_SYSTEM_VM" SYSTEM_VMS 4)
+CURRENT_WORKLOAD_VM=$(resolve_default_sku "$CURRENT_WORKLOAD_VM" WORKLOAD_VMS 32)
+CURRENT_DEEPSTREAM_VM=$(resolve_default_sku "$CURRENT_DEEPSTREAM_VM" GPU_VMS 24)
+CURRENT_INFERENCE_VM=$(resolve_default_sku "$CURRENT_INFERENCE_VM" GPU_VMS 24)
 
 write_key_value "System pool"   "${#SYSTEM_VMS[@]} sizes"
 write_key_value "Workload pool" "${#WORKLOAD_VMS[@]} sizes"

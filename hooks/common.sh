@@ -149,6 +149,7 @@ test_namespace_exists() {
 # ── Azure VM Data (pure az CLI + bash, no python) ────────────────────────
 
 # Fetches VM sizes for a region, filtered by name prefixes, sorted by cores.
+# Uses az vm list-skus (not list-sizes) to respect subscription restrictions.
 # Output: pipe-delimited lines "name|cores|memGB" to stdout.
 get_filtered_vm_sizes() {
     local location="$1"; shift
@@ -158,11 +159,54 @@ get_filtered_vm_sizes() {
         [ -n "$filter" ] && filter="${filter} || "
         filter="${filter}starts_with(name, '${p}')"
     done
-    az vm list-sizes --location "$location" \
-        --query "sort_by([?${filter}], &numberOfCores)[].{n:name, c:numberOfCores, m:memoryInMB}" \
-        -o tsv 2>/dev/null | while IFS=$'\t' read -r name cores memMB; do
-        echo "${name}|${cores}|$((memMB / 1024))"
+    az vm list-skus --location "$location" --resource-type virtualMachines \
+        --query "sort_by([?restrictions[?type=='Location']|length(@)==\`0\` && (${filter})], &to_number(capabilities[?name=='vCPUs'].value|[0]))[].{n:name, c:capabilities[?name=='vCPUs'].value|[0], m:capabilities[?name=='MemoryGB'].value|[0]}" \
+        -o tsv 2>/dev/null | while IFS=$'\t' read -r name cores memGB; do
+        echo "${name}|${cores}|${memGB}"
     done
+}
+
+# Checks if a default SKU is available; if not, picks the closest by core count.
+# Usage: resolved=$(resolve_default_sku "Standard_D4a_v4" ARRAY_NAME 4)
+resolve_default_sku() {
+    local default_sku="$1"
+    local -n _sizes=$2
+    local prefer_cores="${3:-0}"
+
+    if [ ${#_sizes[@]} -eq 0 ]; then
+        echo "$default_sku"
+        return
+    fi
+
+    # Check if default exists
+    for entry in "${_sizes[@]}"; do
+        local sku="${entry%%|*}"
+        [ "$sku" = "$default_sku" ] && { echo "$default_sku"; return; }
+    done
+
+    # Not available — pick closest by core count
+    log_warning "Default SKU '$default_sku' is not available in this subscription/region." >&2
+
+    local best_sku="" best_diff=999999
+    for entry in "${_sizes[@]}"; do
+        local sku="${entry%%|*}"
+        local rest="${entry#*|}"
+        local cores="${rest%%|*}"
+        local diff=$(( cores - prefer_cores ))
+        [ "$diff" -lt 0 ] && diff=$(( -diff ))
+        if [ "$diff" -lt "$best_diff" ]; then
+            best_diff="$diff"
+            best_sku="$sku"
+            best_cores="$cores"
+        fi
+    done
+
+    if [ -n "$best_sku" ]; then
+        log_info "Auto-selected '$best_sku' ($best_cores vCPUs) as closest match." >&2
+        echo "$best_sku"
+    else
+        echo "$default_sku"
+    fi
 }
 
 # Picks VM sizes for the menu based on recommended families.

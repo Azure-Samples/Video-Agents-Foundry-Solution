@@ -97,6 +97,12 @@ $systemVmSizes   = Select-VmSizesForMenu -AllSizes $allVmSizes -Prefixes $CPU_VM
 $workloadVmSizes = Select-VmSizesForMenu -AllSizes $allVmSizes -Prefixes $CPU_VM_PREFIXES -RecommendedFamilies $WORKLOAD_RECOMMENDED_FAMILIES -DefaultSku $currentWorkloadVm   -SizesPerFamily $SIZES_PER_FAMILY -MinCores $WORKLOAD_MIN_CORES
 $gpuVmSizes      = Select-VmSizesForMenu -AllSizes $allVmSizes -Prefixes $GPU_VM_PREFIXES -RecommendedFamilies $GPU_RECOMMENDED_FAMILIES      -DefaultSku $currentDeepstreamVm -SizesPerFamily $SIZES_PER_FAMILY
 
+# Resolve defaults — if the configured default isn't available, pick the closest match
+$currentSystemVm     = Resolve-DefaultSku -DefaultSku $currentSystemVm     -AvailableSizes $systemVmSizes   -PreferCores 4
+$currentWorkloadVm   = Resolve-DefaultSku -DefaultSku $currentWorkloadVm   -AvailableSizes $workloadVmSizes -PreferCores 32
+$currentDeepstreamVm = Resolve-DefaultSku -DefaultSku $currentDeepstreamVm -AvailableSizes $gpuVmSizes      -PreferCores 24
+$currentInferenceVm  = Resolve-DefaultSku -DefaultSku $currentInferenceVm  -AvailableSizes $gpuVmSizes      -PreferCores 24
+
 Write-KeyValue "System pool"   "$($systemVmSizes.Count) sizes"
 Write-KeyValue "Workload pool" "$($workloadVmSizes.Count) sizes"
 Write-KeyValue "GPU pool"      "$($gpuVmSizes.Count) sizes"

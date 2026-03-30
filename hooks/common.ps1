@@ -183,15 +183,52 @@ function Test-NamespaceExists {
 function Get-AzVmSizesForRegion {
     <#
     .SYNOPSIS
-        Queries az vm list-sizes for a region and returns an array of hashtables.
+        Queries az vm list-skus for a region and returns an array of hashtables.
+        Uses list-skus (not list-sizes) to respect subscription restrictions —
+        only SKUs the subscription is allowed to use are returned.
         Each entry: @{ Name; Cores; MemoryGB }
     #>
     param([string]$Location)
-    $raw = (az vm list-sizes --location $Location -o json 2>$null) | ConvertFrom-Json
+    $query = "[?restrictions[?type=='Location']|length(@)==``0``].{name:name, vCPUs:capabilities[?name=='vCPUs'].value|[0], memGB:capabilities[?name=='MemoryGB'].value|[0]}"
+    $raw = (az vm list-skus --location $Location --resource-type virtualMachines --query $query -o json 2>$null) | ConvertFrom-Json
     if (-not $raw) { return @() }
     return $raw | ForEach-Object {
-        @{ Name = $_.name; Cores = [int]$_.numberOfCores; MemoryGB = [math]::Round($_.memoryInMB / 1024) }
+        @{ Name = $_.name; Cores = [int]$_.vCPUs; MemoryGB = [int]$_.memGB }
     }
+}
+
+function Resolve-DefaultSku {
+    <#
+    .SYNOPSIS
+        Checks if the desired default SKU exists in the available list.
+        If not, picks the closest available SKU by core count.
+    #>
+    param(
+        [string]$DefaultSku,
+        [array]$AvailableSizes,
+        [int]$PreferCores = 0
+    )
+    if (-not $AvailableSizes -or $AvailableSizes.Count -eq 0) { return $DefaultSku }
+
+    # Check if default exists in available list
+    $match = $AvailableSizes | Where-Object { $_.Name -eq $DefaultSku }
+    if ($match) { return $DefaultSku }
+
+    # Not available — log and pick the closest by core count
+    Log-Warning "Default SKU '$DefaultSku' is not available in this subscription/region."
+
+    if ($PreferCores -gt 0) {
+        $closest = $AvailableSizes | Sort-Object { [math]::Abs($_.Cores - $PreferCores) } | Select-Object -First 1
+    }
+    else {
+        $closest = $AvailableSizes | Select-Object -First 1
+    }
+
+    if ($closest) {
+        Log-Info "Auto-selected '$($closest.Name)' ($($closest.Cores) vCPUs) as closest match."
+        return $closest.Name
+    }
+    return $DefaultSku
 }
 
 function Select-VmSizesForMenu {
