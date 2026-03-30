@@ -164,12 +164,9 @@ test_namespace_exists() {
 
 # Fetches VM sizes for a region, filtered by name prefixes, sorted by cores.
 # Output: pipe-delimited lines "name|cores|memGB" to stdout.
-# Usage: mapfile -t CPU_VMS < <(get_filtered_vm_sizes "eastus" "Standard_D")
-#        mapfile -t GPU_VMS < <(get_filtered_vm_sizes "eastus" "Standard_NC" "Standard_NV" "Standard_ND")
 get_filtered_vm_sizes() {
     local location="$1"; shift
     local -a prefixes=("$@")
-    # Build JMESPath filter: [?starts_with(name,'P1') || starts_with(name,'P2')]
     local filter=""
     for p in "${prefixes[@]}"; do
         [ -n "$filter" ] && filter="${filter} || "
@@ -180,6 +177,56 @@ get_filtered_vm_sizes() {
         -o tsv 2>/dev/null | while IFS=$'\t' read -r name cores memMB; do
         echo "${name}|${cores}|$((memMB / 1024))"
     done
+}
+
+# Picks VM sizes for the menu based on recommended families.
+# For each family pattern, matches VMs within core range, takes up to sizes_per_family.
+# Default SKU is always included. Result is sorted by cores.
+# Usage: select_vm_sizes_for_menu SRC_ARRAY OUT_ARRAY FAMILIES_ARRAY "DefaultSku" per_family min_cores max_cores
+select_vm_sizes_for_menu() {
+    local -n _src=$1
+    local -n _out=$2
+    local -n _families=$3
+    local default_sku="$4"
+    local per_family="${5:-3}"
+    local min_cores="${6:-0}"
+    local max_cores="${7:-999999}"
+
+    _out=()
+    local -A seen
+
+    for pattern in "${_families[@]}"; do
+        local count=0
+        for entry in "${_src[@]}"; do
+            local sku="${entry%%|*}"
+            local rest="${entry#*|}"
+            local cores="${rest%%|*}"
+            # Filter by core range
+            [ "$cores" -lt "$min_cores" ] && continue
+            [ "$cores" -gt "$max_cores" ] && continue
+            if echo "$sku" | grep -qE "$pattern"; then
+                if [ -z "${seen[$sku]+x}" ]; then
+                    seen[$sku]=1
+                    _out+=("$entry")
+                    count=$((count + 1))
+                    [ "$count" -ge "$per_family" ] && break
+                fi
+            fi
+        done
+    done
+
+    # Ensure default SKU is included
+    if [ -n "$default_sku" ] && [ -z "${seen[$default_sku]+x}" ]; then
+        for entry in "${_src[@]}"; do
+            local sku="${entry%%|*}"
+            [ "$sku" = "$default_sku" ] && { _out+=("$entry"); break; }
+        done
+    fi
+
+    # Sort output by cores
+    local -a sorted
+    mapfile -t sorted < <(printf '%s\n' "${_out[@]}" | sort -t'|' -k2 -n)
+    _out=("${sorted[@]}")
 }
 
 # Looks up quota for a family directly via az CLI (single call).
@@ -202,13 +249,19 @@ lookup_vm_quota() {
     return 0
 }
 
-# Looks up quota family for a VM via az vm list-skus.
-# Sets global GET_QUOTA_FAMILY_RESULT
+# Resolves quota family for a GPU VM using the pattern lookup table.
+# No API call needed. Sets global GET_QUOTA_FAMILY_RESULT.
 GET_QUOTA_FAMILY_RESULT=""
 get_quota_family_for_vm() {
-    local vm_size="$1" location="$2"
-    GET_QUOTA_FAMILY_RESULT=$(az vm list-skus --location "$location" --size "$vm_size" \
-        --query "[0].family" -o tsv 2>/dev/null || true)
+    local vm_size="$1"
+    GET_QUOTA_FAMILY_RESULT=""
+    for ((i=0; i<${#GPU_QUOTA_PATTERNS[@]}; i++)); do
+        if echo "$vm_size" | grep -qE "${GPU_QUOTA_PATTERNS[$i]}"; then
+            GET_QUOTA_FAMILY_RESULT="${GPU_QUOTA_FAMILIES[$i]}"
+            return 0
+        fi
+    done
+    return 1
 }
 
 # Checks GPU quota, prints formatted status, sets ASSERT_QUOTA_RESULT.

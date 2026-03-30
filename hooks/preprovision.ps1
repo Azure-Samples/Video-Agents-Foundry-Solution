@@ -79,28 +79,29 @@ if ($allVmSizes.Count -eq 0) {
 }
 Write-Host "   Found $($allVmSizes.Count) VM sizes."
 
-# Split into CPU and GPU lists by name prefix
-$cpuVmSizes = $allVmSizes | Where-Object { $n = $_.Name; ($CPU_VM_PREFIXES | Where-Object { $n.StartsWith($_) }).Count -gt 0 } | Sort-Object { $_.Cores }, { $_.Name }
-$gpuVmSizes = $allVmSizes | Where-Object { $n = $_.Name; ($GPU_VM_PREFIXES | Where-Object { $n.StartsWith($_) }).Count -gt 0 } | Sort-Object { $_.Cores }, { $_.Name }
-
-Write-Host "   CPU sizes: $($cpuVmSizes.Count)  |  GPU sizes: $($gpuVmSizes.Count)"
-
-Write-Host "   Querying GPU quota..."
-$quotaData = Get-AzVmQuotaForRegion -Location $env:AZURE_LOCATION
-
-Write-Host ""
-Write-Host "   Choose a VM SKU for each AKS node pool."
-Write-Host "   The default is highlighted — press Enter to accept it."
-
 # Determine current/default values (env var overrides config default)
 $currentSystemVm     = if ($env:SYSTEM_VM_SIZE)          { $env:SYSTEM_VM_SIZE }          else { $DEFAULT_SYSTEM_VM_SIZE }
 $currentWorkloadVm   = if ($env:WORKLOAD_VM_SIZE)        { $env:WORKLOAD_VM_SIZE }        else { $DEFAULT_WORKLOAD_VM_SIZE }
 $currentDeepstreamVm = if ($env:DEEPSTREAM_GPU_VM_SIZE)  { $env:DEEPSTREAM_GPU_VM_SIZE }  else { $DEFAULT_DEEPSTREAM_GPU_SIZE }
 $currentInferenceVm  = if ($env:INFERENCE_GPU_VM_SIZE)   { $env:INFERENCE_GPU_VM_SIZE }   else { $DEFAULT_INFERENCE_GPU_SIZE }
 
-# CPU pools
-$selectedSystem   = Show-VmSelectionMenu -PoolName "System (CPU)"   -EnvVarName "SYSTEM_VM_SIZE"   -VmSizes $cpuVmSizes -DefaultSku $currentSystemVm   -Location $env:AZURE_LOCATION
-$selectedWorkload = Show-VmSelectionMenu -PoolName "Workload (CPU)" -EnvVarName "WORKLOAD_VM_SIZE" -VmSizes $cpuVmSizes -DefaultSku $currentWorkloadVm -Location $env:AZURE_LOCATION
+# Pick recommended VM sizes per pool (4 families x 3 sizes = ~12 items each)
+$systemVmSizes   = Select-VmSizesForMenu -AllSizes $allVmSizes -Prefixes $CPU_VM_PREFIXES -RecommendedFamilies $SYSTEM_RECOMMENDED_FAMILIES   -DefaultSku $currentSystemVm     -SizesPerFamily $SIZES_PER_FAMILY -MaxCores $SYSTEM_MAX_CORES
+$workloadVmSizes = Select-VmSizesForMenu -AllSizes $allVmSizes -Prefixes $CPU_VM_PREFIXES -RecommendedFamilies $WORKLOAD_RECOMMENDED_FAMILIES -DefaultSku $currentWorkloadVm   -SizesPerFamily $SIZES_PER_FAMILY -MinCores $WORKLOAD_MIN_CORES
+$gpuVmSizes      = Select-VmSizesForMenu -AllSizes $allVmSizes -Prefixes $GPU_VM_PREFIXES -RecommendedFamilies $GPU_RECOMMENDED_FAMILIES      -DefaultSku $currentDeepstreamVm -SizesPerFamily $SIZES_PER_FAMILY
+
+Write-Host "   System: $($systemVmSizes.Count)  |  Workload: $($workloadVmSizes.Count)  |  GPU: $($gpuVmSizes.Count) sizes"
+
+Write-Host "   Querying GPU quota..."
+$quotaData = Get-AzVmQuotaForRegion -Location $env:AZURE_LOCATION
+
+Write-Host ""
+Write-Host "   Choose a VM SKU for each AKS node pool."
+Write-Host "   The default is highlighted — press Enter to accept it, C for custom."
+
+# CPU pools (separate lists for system vs workload)
+$selectedSystem   = Show-VmSelectionMenu -PoolName "System (CPU)"   -EnvVarName "SYSTEM_VM_SIZE"   -VmSizes $systemVmSizes   -DefaultSku $currentSystemVm   -Location $env:AZURE_LOCATION
+$selectedWorkload = Show-VmSelectionMenu -PoolName "Workload (CPU)" -EnvVarName "WORKLOAD_VM_SIZE" -VmSizes $workloadVmSizes -DefaultSku $currentWorkloadVm -Location $env:AZURE_LOCATION
 
 # GPU pools (quota validated inline, node count determines total cores checked)
 $selectedDeepstream = Show-VmSelectionMenu -PoolName "Deepstream (GPU)" -EnvVarName "DEEPSTREAM_GPU_VM_SIZE" -VmSizes $gpuVmSizes -DefaultSku $currentDeepstreamVm -Location $env:AZURE_LOCATION -IsGpu -MaxNodes $DEEPSTREAM_GPU_MAX_NODE_COUNT -QuotaData $quotaData

@@ -67,26 +67,30 @@ write_step "4" "Selecting VM sizes for AKS node pools..."
 
 echo "   Querying available VM sizes in ${AZURE_LOCATION}..."
 
-# Fetch CPU and GPU VM lists (pure az CLI, no temp files)
-mapfile -t CPU_VMS < <(get_filtered_vm_sizes "$AZURE_LOCATION" "${CPU_VM_PREFIXES[@]}")
-mapfile -t GPU_VMS < <(get_filtered_vm_sizes "$AZURE_LOCATION" "${GPU_VM_PREFIXES[@]}")
-
-echo "   CPU sizes: ${#CPU_VMS[@]}  |  GPU sizes: ${#GPU_VMS[@]}"
-echo ""
-echo "   Choose a VM SKU for each AKS node pool."
-echo "   The default is highlighted - press Enter to accept it."
-
 # Determine current/default values
 CURRENT_SYSTEM_VM="${SYSTEM_VM_SIZE:-$DEFAULT_SYSTEM_VM_SIZE}"
 CURRENT_WORKLOAD_VM="${WORKLOAD_VM_SIZE:-$DEFAULT_WORKLOAD_VM_SIZE}"
 CURRENT_DEEPSTREAM_VM="${DEEPSTREAM_GPU_VM_SIZE:-$DEFAULT_DEEPSTREAM_GPU_SIZE}"
 CURRENT_INFERENCE_VM="${INFERENCE_GPU_VM_SIZE:-$DEFAULT_INFERENCE_GPU_SIZE}"
 
-# CPU pools
-show_vm_selection_menu "System (CPU)"   "SYSTEM_VM_SIZE"   CPU_VMS "$CURRENT_SYSTEM_VM"   "$AZURE_LOCATION"
+# Fetch full lists, then select top N centered on the default
+mapfile -t ALL_CPU_VMS < <(get_filtered_vm_sizes "$AZURE_LOCATION" "${CPU_VM_PREFIXES[@]}")
+mapfile -t ALL_GPU_VMS < <(get_filtered_vm_sizes "$AZURE_LOCATION" "${GPU_VM_PREFIXES[@]}")
+
+select_vm_sizes_for_menu ALL_CPU_VMS SYSTEM_VMS   SYSTEM_RECOMMENDED_FAMILIES   "$CURRENT_SYSTEM_VM"     "$SIZES_PER_FAMILY" 0 "$SYSTEM_MAX_CORES"
+select_vm_sizes_for_menu ALL_CPU_VMS WORKLOAD_VMS WORKLOAD_RECOMMENDED_FAMILIES "$CURRENT_WORKLOAD_VM"   "$SIZES_PER_FAMILY" "$WORKLOAD_MIN_CORES"
+select_vm_sizes_for_menu ALL_GPU_VMS GPU_VMS      GPU_RECOMMENDED_FAMILIES      "$CURRENT_DEEPSTREAM_VM" "$SIZES_PER_FAMILY"
+
+echo "   System: ${#SYSTEM_VMS[@]}  |  Workload: ${#WORKLOAD_VMS[@]}  |  GPU: ${#GPU_VMS[@]} sizes"
+echo ""
+echo "   Choose a VM SKU for each AKS node pool."
+echo "   The default is highlighted - press Enter to accept it, C for custom."
+
+# CPU pools (separate lists for system vs workload)
+show_vm_selection_menu "System (CPU)"   "SYSTEM_VM_SIZE"   SYSTEM_VMS   "$CURRENT_SYSTEM_VM"   "$AZURE_LOCATION"
 SYSTEM_SKU="$SELECTED_VM_SKU"
 
-show_vm_selection_menu "Workload (CPU)" "WORKLOAD_VM_SIZE" CPU_VMS "$CURRENT_WORKLOAD_VM" "$AZURE_LOCATION"
+show_vm_selection_menu "Workload (CPU)" "WORKLOAD_VM_SIZE" WORKLOAD_VMS "$CURRENT_WORKLOAD_VM" "$AZURE_LOCATION"
 WORKLOAD_SKU="$SELECTED_VM_SKU"
 
 # GPU pools (quota validated inline, node count determines total cores checked)

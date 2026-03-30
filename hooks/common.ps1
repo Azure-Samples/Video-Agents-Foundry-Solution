@@ -201,6 +201,52 @@ function Get-AzVmSizesForRegion {
     }
 }
 
+function Select-VmSizesForMenu {
+    <#
+    .SYNOPSIS
+        Picks VM sizes for the interactive menu based on recommended families.
+        For each family, matches VM names that contain the family pattern,
+        filters by core range, takes up to $SizesPerFamily sorted by cores.
+        The default SKU is always included. Result is sorted by cores.
+    #>
+    param(
+        [array]$AllSizes,
+        [string[]]$Prefixes,
+        [string[]]$RecommendedFamilies,
+        [string]$DefaultSku,
+        [int]$SizesPerFamily = 3,
+        [int]$MinCores = 0,
+        [int]$MaxCores = [int]::MaxValue
+    )
+
+    # Filter by broad prefix first (CPU vs GPU), then by core range
+    $pool = $AllSizes | Where-Object {
+        $n = $_.Name; $c = $_.Cores
+        ($Prefixes | Where-Object { $n.StartsWith($_) }).Count -gt 0 -and
+        $c -ge $MinCores -and $c -le $MaxCores
+    }
+
+    # For each recommended family, find matching VMs and take top N by cores
+    $selected = @{}  # keyed by Name to deduplicate
+    foreach ($family in $RecommendedFamilies) {
+        $familyMatches = $pool | Where-Object { $_.Name -match $family } |
+                   Sort-Object { $_.Cores }, { $_.Name } |
+                   Select-Object -First $SizesPerFamily
+        foreach ($vm in $familyMatches) {
+            $selected[$vm.Name] = $vm
+        }
+    }
+
+    # Ensure the default SKU is included
+    if ($DefaultSku -and -not $selected.ContainsKey($DefaultSku)) {
+        $defVm = $pool | Where-Object { $_.Name -eq $DefaultSku } | Select-Object -First 1
+        if ($defVm) { $selected[$defVm.Name] = $defVm }
+    }
+
+    # Return sorted by cores
+    return $selected.Values | Sort-Object { $_.Cores }, { $_.Name }
+}
+
 function Get-AzVmQuotaForRegion {
     <#
     .SYNOPSIS
@@ -224,19 +270,19 @@ function Get-AzVmQuotaForRegion {
 function Get-QuotaFamilyForVm {
     <#
     .SYNOPSIS
-        Derives the quota family name for a VM size by looking it up in az vm list-skus.
-        Returns the family string, or $null if not found.
+        Resolves the quota family name for a GPU VM size using the
+        GPU_QUOTA_FAMILY_MAP regex lookup table. No API call needed.
+        Returns the family string, or $null if no pattern matches.
     #>
     param(
         [string]$VmSize,
-        [string]$Location
+        [string]$Location   # kept for interface compat, not used
     )
-    try {
-        $family = (az vm list-skus --location $Location --size $VmSize `
-                --query "[0].family" -o tsv 2>$null)
-        if ($family) { return $family }
+    foreach ($pattern in $GPU_QUOTA_FAMILY_MAP.Keys) {
+        if ($VmSize -match $pattern) {
+            return $GPU_QUOTA_FAMILY_MAP[$pattern]
+        }
     }
-    catch { }
     return $null
 }
 
