@@ -17,10 +17,10 @@ Write-FoundryBanner -Phase "Health Dashboard"
 $HasClusterAccess = $false
 if ($env:AZURE_RESOURCE_GROUP -and $env:AZURE_AKS_CLUSTER_NAME) {
     try {
-        $KubeContext = Invoke-WithSpinner -Message "Getting AKS credentials" -Action {
-            Connect-AksCluster
-        } -SuccessMessage "AKS credentials configured"
+        Log-Info "Getting AKS credentials..."
+        $KubeContext = Connect-AksCluster
         $HasClusterAccess = $true
+        Log-Success "AKS credentials configured"
     }
     catch {
         Log-Warning "Could not get AKS credentials. Skipping Kubernetes health checks."

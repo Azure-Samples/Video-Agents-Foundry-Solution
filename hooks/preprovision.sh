@@ -73,11 +73,11 @@ CURRENT_WORKLOAD_VM="${WORKLOAD_VM_SIZE:-$DEFAULT_WORKLOAD_VM_SIZE}"
 CURRENT_DEEPSTREAM_VM="${DEEPSTREAM_GPU_VM_SIZE:-$DEFAULT_DEEPSTREAM_GPU_SIZE}"
 CURRENT_INFERENCE_VM="${INFERENCE_GPU_VM_SIZE:-$DEFAULT_INFERENCE_GPU_SIZE}"
 
-# Fetch full lists (spinner around the actual fetch since we need stdout)
-_SPINNER_FRAME=0; spinner_tick "Querying available VM SKUs in ${AZURE_LOCATION}"
+# Fetch full lists
+log_info "Querying available VM SKUs in ${AZURE_LOCATION}..."
 mapfile -t ALL_CPU_VMS < <(get_filtered_vm_sizes "$AZURE_LOCATION" "${CPU_VM_PREFIXES[@]}")
 mapfile -t ALL_GPU_VMS < <(get_filtered_vm_sizes "$AZURE_LOCATION" "${GPU_VM_PREFIXES[@]}")
-spinner_complete "Found VM SKUs in ${AZURE_LOCATION}"
+log_success "Found VM SKUs in ${AZURE_LOCATION}"
 
 log_info "${#ALL_CPU_VMS[@]} CPU + ${#ALL_GPU_VMS[@]} GPU sizes available"
 

@@ -34,12 +34,12 @@ if [ -z "${AZURE_RESOURCE_GROUP:-}" ] || [ -z "${AZURE_AKS_CLUSTER_NAME:-}" ]; t
     log_warning "AZURE_RESOURCE_GROUP or AZURE_AKS_CLUSTER_NAME not set."
     log_info "Skipping Kubernetes health checks."
 else
-    _SPINNER_FRAME=0; spinner_tick "Getting AKS credentials"
+    log_info "Getting AKS credentials..."
     KUBE_CONTEXT=$(connect_aks_cluster 2>/dev/null) && HAS_CLUSTER_ACCESS=true
     if [ "$HAS_CLUSTER_ACCESS" = true ]; then
-        spinner_complete "AKS credentials configured"
+        log_success "AKS credentials configured"
     else
-        spinner_fail "Could not get AKS credentials"
+        log_warning "Could not get AKS credentials."
         log_warning "Skipping Kubernetes health checks."
     fi
 fi

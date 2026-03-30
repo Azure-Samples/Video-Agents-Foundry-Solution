@@ -84,8 +84,9 @@ register_required_providers() {
                 providers_registering=$((providers_registering + 1))
                 ;;
             NotRegistered|Unregistered)
-                run_with_spinner "Registering $provider" "$provider registered" \
-                    az provider register --namespace "$provider" --wait false
+                log_info "Registering $provider..."
+                az provider register --namespace "$provider" --wait false 2>/dev/null || true
+                log_success "$provider registered"
                 providers_registering=$((providers_registering + 1))
                 ;;
             *)

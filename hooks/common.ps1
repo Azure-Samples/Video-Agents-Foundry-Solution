@@ -76,9 +76,9 @@ function Register-RequiredProviders {
                 $providersRegistering++
             }
             { $_ -in @("NotRegistered", "Unregistered") } {
-                Invoke-WithSpinner -Message "Registering $provider" -Action {
-                    az provider register --namespace $provider --wait false 2>$null
-                } -SuccessMessage "$provider registered"
+                Log-Info "Registering $provider..."
+                az provider register --namespace $provider --wait false 2>$null
+                Log-Success "$provider registered"
                 $providersRegistering++
             }
             default {

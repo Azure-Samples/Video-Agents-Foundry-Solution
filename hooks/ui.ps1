@@ -84,12 +84,6 @@ if ($script:AnsiSupported) {
         BL = [char]0x2514; BR = [char]0x2518
         H  = [char]0x2500; V  = [char]0x2502
     }
-
-    $script:SpinnerFrames = @(
-        [char]0x280B, [char]0x2819, [char]0x2839, [char]0x2838,
-        [char]0x283C, [char]0x2834, [char]0x2826, [char]0x2827,
-        [char]0x2807, [char]0x280F
-    )
 }
 else {
     $script:Sym = @{
@@ -106,8 +100,6 @@ else {
         TL = "+"; TR = "+"; BL = "+"; BR = "+"
         H  = "-"; V  = "|"
     }
-
-    $script:SpinnerFrames = @("|", "/", "-", "\")
 }
 
 # ── Core Logging ────────────────────────────────────────────────────────────
@@ -253,69 +245,6 @@ function Write-FoundryBanner {
     }
     Write-Host "  $($c.Muted)$rule$($c.Reset)"
     Write-Host ""
-}
-
-# ── Spinner System ──────────────────────────────────────────────────────────
-
-function Start-Spinner {
-    param([string]$Message)
-    return @{
-        FrameIndex = 0
-        Message    = $Message
-    }
-}
-
-function Invoke-SpinnerTick {
-    param([hashtable]$Spinner)
-    $frame = $script:SpinnerFrames[$Spinner.FrameIndex % $script:SpinnerFrames.Count]
-    Write-Host "`r  $($script:C.Accent)$frame$($script:C.Reset)  $($script:C.Muted)$($Spinner.Message)...$($script:C.Reset)    " -NoNewline
-    $Spinner.FrameIndex++
-}
-
-function Complete-Spinner {
-    param(
-        [hashtable]$Spinner,
-        [string]$Message = ""
-    )
-    $msg = if ($Message) { $Message } else { $Spinner.Message }
-    Write-Host "`r  $($script:C.Success)$($script:Sym.Success)$($script:C.Reset)  $msg$(' ' * 30)"
-}
-
-function Fail-Spinner {
-    param(
-        [hashtable]$Spinner,
-        [string]$Message = ""
-    )
-    $msg = if ($Message) { $Message } else { $Spinner.Message }
-    Write-Host "`r  $($script:C.Error)$($script:Sym.Error)$($script:C.Reset)  $($script:C.Error)$msg$($script:C.Reset)$(' ' * 30)"
-}
-
-function Invoke-WithSpinner {
-    <#
-    .SYNOPSIS
-        Runs a script block with a spinner indicator.
-        Shows spinner frame at start, runs action, replaces with checkmark or cross.
-    #>
-    param(
-        [string]$Message,
-        [scriptblock]$Action,
-        [string]$SuccessMessage = "",
-        [string]$FailMessage = ""
-    )
-
-    $spinner = Start-Spinner -Message $Message
-    Invoke-SpinnerTick $spinner
-    try {
-        $result = & $Action
-        $ok = if ($SuccessMessage) { $SuccessMessage } else { $Message }
-        Complete-Spinner -Spinner $spinner -Message $ok
-        return $result
-    }
-    catch {
-        $fail = if ($FailMessage) { $FailMessage } else { "Failed: $Message" }
-        Fail-Spinner -Spinner $spinner -Message $fail
-        throw
-    }
 }
 
 # ── Structural Helpers ──────────────────────────────────────────────────────

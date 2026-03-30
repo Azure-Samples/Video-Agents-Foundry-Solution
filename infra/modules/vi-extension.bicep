@@ -68,18 +68,6 @@ var baseConfigProperties = {
   'ViAi.LiveSummarization.enabled': string(liveSummarizationEnabled)
 }
 
-// - name: SELF_HOSTED_MODEL_ENDPOINT
-//   value: http://inference-agent.video-indexer.svc:8443/v1
-// - name: MODEL_PROVIDERS_CONFIG
-//    value: >-
-// {"azureOpenAI":{"enabled":false},"selfHosted":{"availableModels":["gpt-oss:20b"],"enabled":true,"overrideBaseUrl":""}}
-
-// name: AZURE_OPENAI_ENDPOINT
-// value: https://nassiharel-agents-poc-resource.openai.azure.com/openai/v1/
-// - name: MODEL_PROVIDERS_CONFIG
-// value: >-
-// {"azureOpenAI":{"enabled":true, "availableModels":["gpt-5.2"] }}
-
 resource connectedCluster 'Microsoft.Kubernetes/connectedClusters@2024-01-01' existing = {
   name: arcConnectedClusterName
 }

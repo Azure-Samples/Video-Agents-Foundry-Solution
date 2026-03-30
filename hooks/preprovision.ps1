@@ -75,16 +75,15 @@ Assert-EnvVars $preProvisionVars
 # =====================================================
 Log-Step -Number 4 -Total $totalSteps -Title "Selecting VM Sizes for AKS Node Pools"
 
-$allVmSizes = Invoke-WithSpinner -Message "Querying VM sizes in $($env:AZURE_LOCATION)" -Action {
-    Get-AzVmSizesForRegion -Location $env:AZURE_LOCATION
-} -SuccessMessage "Found VM sizes in $($env:AZURE_LOCATION)"
+Log-Info "Querying available VM SKUs in $($env:AZURE_LOCATION)..."
+$allVmSizes = Get-AzVmSizesForRegion -Location $env:AZURE_LOCATION
 
 if ($allVmSizes.Count -eq 0) {
     Log-Error "Could not retrieve VM sizes for region '$($env:AZURE_LOCATION)'."
     exit 1
 }
 
-Log-Info "$($allVmSizes.Count) VM sizes available"
+Log-Success "Found $($allVmSizes.Count) VM sizes in $($env:AZURE_LOCATION)"
 
 # Determine current/default values (env var overrides config default)
 $currentSystemVm     = if ($env:SYSTEM_VM_SIZE)          { $env:SYSTEM_VM_SIZE }          else { $DEFAULT_SYSTEM_VM_SIZE }
@@ -107,9 +106,9 @@ Write-KeyValue "System pool"   "$($systemVmSizes.Count) sizes"
 Write-KeyValue "Workload pool" "$($workloadVmSizes.Count) sizes"
 Write-KeyValue "GPU pool"      "$($gpuVmSizes.Count) sizes"
 
-$quotaData = Invoke-WithSpinner -Message "Querying GPU quota" -Action {
-    Get-AzVmQuotaForRegion -Location $env:AZURE_LOCATION
-} -SuccessMessage "GPU quota data retrieved"
+Log-Info "Querying GPU quota..."
+$quotaData = Get-AzVmQuotaForRegion -Location $env:AZURE_LOCATION
+Log-Success "GPU quota data retrieved"
 
 Write-Section "Choose a VM SKU for each AKS node pool"
 Log-Info "The default is highlighted. Press Enter to accept, C for custom."

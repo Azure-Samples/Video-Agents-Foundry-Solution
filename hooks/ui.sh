@@ -66,16 +66,12 @@ if [ "$ANSI_SUPPORTED" = true ]; then
 
     BOX_D_TL="╔" BOX_D_TR="╗" BOX_D_BL="╚" BOX_D_BR="╝" BOX_D_H="═" BOX_D_V="║"
     BOX_S_TL="┌" BOX_S_TR="┐" BOX_S_BL="└" BOX_S_BR="┘" BOX_S_H="─" BOX_S_V="│"
-
-    SPINNER_FRAMES=("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
 else
     SYM_SUCCESS="+" SYM_ERROR="x" SYM_WARNING="!" SYM_INFO="*"
     SYM_PENDING="o" SYM_POINTER=">" SYM_ARROW="->" SYM_HLINE="-" SYM_STEP=">"
 
     BOX_D_TL="+" BOX_D_TR="+" BOX_D_BL="+" BOX_D_BR="+" BOX_D_H="=" BOX_D_V="|"
     BOX_S_TL="+" BOX_S_TR="+" BOX_S_BL="+" BOX_S_BR="+" BOX_S_H="-" BOX_S_V="|"
-
-    SPINNER_FRAMES=("|" "/" "-" "\\")
 fi
 
 # ── Core Logging ────────────────────────────────────────────────────────────
@@ -224,44 +220,6 @@ write_foundry_banner() {
     fi
     printf "  %b%s%b\n" "$C_MUTED" "$rule" "$C_RESET"
     printf "\n"
-}
-
-# ── Spinner System ──────────────────────────────────────────────────────────
-
-_SPINNER_FRAME=0
-
-spinner_tick() {
-    local message="$1"
-    local frame="${SPINNER_FRAMES[$_SPINNER_FRAME % ${#SPINNER_FRAMES[@]}]}"
-    printf "\r  %b%s%b  %b%s...%b    " "$C_ACCENT" "$frame" "$C_RESET" "$C_MUTED" "$message" "$C_RESET"
-    _SPINNER_FRAME=$((_SPINNER_FRAME + 1))
-}
-
-spinner_complete() {
-    local message="$1"
-    printf "\r  %b%s%b  %s%*s\n" "$C_SUCCESS" "$SYM_SUCCESS" "$C_RESET" "$message" 30 ""
-}
-
-spinner_fail() {
-    local message="$1"
-    printf "\r  %b%s%b  %b%s%b%*s\n" "$C_ERROR" "$SYM_ERROR" "$C_RESET" "$C_ERROR" "$message" "$C_RESET" 30 ""
-}
-
-run_with_spinner() {
-    # Usage: run_with_spinner "message" "success_message" command args...
-    local message="$1"; shift
-    local success_message="$1"; shift
-    [ -z "$success_message" ] && success_message="$message"
-
-    _SPINNER_FRAME=0
-    spinner_tick "$message"
-
-    if "$@" >/dev/null 2>&1; then
-        spinner_complete "$success_message"
-    else
-        spinner_fail "Failed: $message"
-        return 1
-    fi
 }
 
 # ── Structural Helpers ──────────────────────────────────────────────────────

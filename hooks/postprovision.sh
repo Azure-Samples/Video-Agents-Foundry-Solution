@@ -32,8 +32,9 @@ assert_env_vars AZURE_SUBSCRIPTION_ID AZURE_RESOURCE_GROUP AZURE_AKS_CLUSTER_NAM
 # =====================================================
 for ext in connectedk8s k8s-extension; do
     if ! az extension show --name "$ext" >/dev/null 2>&1; then
-        run_with_spinner "Installing Azure CLI extension: $ext" "Installed extension: $ext" \
-            az extension add --name "$ext" --yes
+        log_info "Installing Azure CLI extension: $ext..."
+        az extension add --name "$ext" --yes 2>/dev/null
+        log_success "Installed extension: $ext"
     fi
 done
 
@@ -61,10 +62,9 @@ GPU_OPERATOR_VERSION="${GPU_OPERATOR_VERSION:-v25.10.01}"
 # =====================================================
 log_step 1 $TOTAL_STEPS "Getting AKS Cluster Credentials"
 
-_SPINNER_FRAME=0; spinner_tick "Fetching AKS credentials"
+log_info "Fetching AKS credentials..."
 KUBE_CONTEXT=$(connect_aks_cluster)
-spinner_complete "AKS credentials configured"
-
+log_success "AKS credentials configured"
 write_key_value "Context" "$KUBE_CONTEXT"
 
 # =====================================================
@@ -72,15 +72,19 @@ write_key_value "Context" "$KUBE_CONTEXT"
 # =====================================================
 log_step 2 $TOTAL_STEPS "Installing NVIDIA GPU Operator ($GPU_OPERATOR_VERSION)"
 
-run_with_spinner "Adding NVIDIA Helm repo" "NVIDIA Helm repo ready" \
-    bash -c "helm repo add $NVIDIA_HELM_REPO_NAME $NVIDIA_HELM_REPO_URL 2>/dev/null; helm repo update 2>/dev/null"
+# Add NVIDIA Helm repo (idempotent)
+log_info "Adding NVIDIA Helm repo..."
+helm repo add "$NVIDIA_HELM_REPO_NAME" "$NVIDIA_HELM_REPO_URL" 2>/dev/null || true
+helm repo update 2>/dev/null
+log_success "NVIDIA Helm repo ready"
 
-run_with_spinner "Installing GPU Operator" "NVIDIA GPU Operator installed" \
-    helm upgrade -i gpu-operator --wait \
-        -n "$NS_GPU_OPERATOR" --create-namespace \
-        --version "$GPU_OPERATOR_VERSION" \
-        --kube-context "$KUBE_CONTEXT" \
-        nvidia/gpu-operator
+log_info "Installing GPU Operator (this may take a few minutes)..."
+helm upgrade -i gpu-operator --wait \
+    -n "$NS_GPU_OPERATOR" --create-namespace \
+    --version "$GPU_OPERATOR_VERSION" \
+    --kube-context "$KUBE_CONTEXT" \
+    nvidia/gpu-operator
+log_success "NVIDIA GPU Operator installed"
 
 # =====================================================
 # Step 3: Connect AKS to Azure Arc
@@ -99,11 +103,12 @@ ARC_EXISTS=$(az connectedk8s show \
 if [ -n "$ARC_EXISTS" ]; then
     log_success "Arc-connected cluster already exists. Skipping."
 else
-    run_with_spinner "Connecting cluster to Azure Arc" "AKS cluster connected to Azure Arc" \
-        az connectedk8s connect \
-            --name "$ARC_CLUSTER_NAME" \
-            --resource-group "$AZURE_RESOURCE_GROUP" \
-            --location "$AZURE_LOCATION"
+    log_info "Connecting cluster to Azure Arc..."
+    az connectedk8s connect \
+        --name "$ARC_CLUSTER_NAME" \
+        --resource-group "$AZURE_RESOURCE_GROUP" \
+        --location "$AZURE_LOCATION"
+    log_success "AKS cluster connected to Azure Arc"
 fi
 
 # Save the Arc cluster name to azd env
@@ -140,13 +145,14 @@ PUBLIC_IP_EXISTS=$(az network public-ip show \
 if [ -n "$PUBLIC_IP_EXISTS" ]; then
     log_success "Public IP '$PUBLIC_IP_NAME' already exists. Skipping."
 else
-    run_with_spinner "Creating public IP '$PUBLIC_IP_NAME'" "Public IP '$PUBLIC_IP_NAME' created with DNS label '$DNS_LABEL'" \
-        az network public-ip create \
-            --resource-group "$AKS_MC_RG" \
-            --name "$PUBLIC_IP_NAME" \
-            --sku Standard \
-            --allocation-method Static \
-            --dns-name "$DNS_LABEL"
+    log_info "Creating public IP '$PUBLIC_IP_NAME'..."
+    az network public-ip create \
+        --resource-group "$AKS_MC_RG" \
+        --name "$PUBLIC_IP_NAME" \
+        --sku Standard \
+        --allocation-method Static \
+        --dns-name "$DNS_LABEL" >/dev/null
+    log_success "Public IP '$PUBLIC_IP_NAME' created with DNS label '$DNS_LABEL'"
 fi
 
 # Get the static IP address
@@ -180,10 +186,11 @@ APPROUTING_ENABLED=$(az aks show \
 if [ "$APPROUTING_ENABLED" = "true" ]; then
     log_success "App Routing already enabled. Skipping."
 else
-    run_with_spinner "Enabling App Routing" "App Routing enabled" \
-        az aks approuting enable \
-            -g "$AZURE_RESOURCE_GROUP" \
-            -n "$AZURE_AKS_CLUSTER_NAME"
+    log_info "Enabling App Routing..."
+    az aks approuting enable \
+        -g "$AZURE_RESOURCE_GROUP" \
+        -n "$AZURE_AKS_CLUSTER_NAME"
+    log_success "App Routing enabled"
 fi
 
 # =====================================================
@@ -191,8 +198,8 @@ fi
 # =====================================================
 log_step 6 $TOTAL_STEPS "Creating Nginx Ingress Controller"
 
-run_with_spinner "Applying Nginx Ingress Controller" "Nginx Ingress Controller created" \
-    bash -c "cat <<INNEREOF | kubectl --context '$KUBE_CONTEXT' apply -f -
+log_info "Applying Nginx Ingress Controller..."
+cat <<EOF | kubectl --context "$KUBE_CONTEXT" apply -f -
 apiVersion: approuting.kubernetes.azure.com/v1alpha1
 kind: NginxIngressController
 metadata:
@@ -203,7 +210,8 @@ spec:
   loadBalancerAnnotations:
     service.beta.kubernetes.io/azure-pip-name: ${PUBLIC_IP_NAME}
     service.beta.kubernetes.io/azure-load-balancer-resource-group: ${AKS_MC_RG}
-INNEREOF"
+EOF
+log_success "Nginx Ingress Controller created"
 
 # =====================================================
 # Step 7: Verify Ingress Controller
@@ -213,23 +221,21 @@ log_step 7 $TOTAL_STEPS "Verifying Ingress Controller"
 log_info "Waiting for external IP assignment (up to ${TIMEOUT_INGRESS_IP}s)..."
 ELAPSED=0
 EXTERNAL_IP=""
-_SPINNER_FRAME=0
 while [ $ELAPSED -lt $TIMEOUT_INGRESS_IP ]; do
     EXTERNAL_IP=$(kubectl --context "$KUBE_CONTEXT" get svc nginx -n "$NS_APP_ROUTING" -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
     if [ -n "$EXTERNAL_IP" ]; then
         break
     fi
-    spinner_tick "Waiting for external IP"
     sleep 5
     ELAPSED=$((ELAPSED + 5))
 done
 
 if [ -n "$EXTERNAL_IP" ]; then
-    spinner_complete "Ingress Controller is ready"
+    log_success "Ingress Controller is ready"
     write_key_value "External IP" "$EXTERNAL_IP"
 else
-    spinner_fail "External IP not assigned after ${TIMEOUT_INGRESS_IP}s"
-    log_warning "Check manually: kubectl --context $KUBE_CONTEXT get svc nginx -n $NS_APP_ROUTING -w"
+    log_warning "External IP not assigned after ${TIMEOUT_INGRESS_IP}s"
+    log_info "Check manually: kubectl --context $KUBE_CONTEXT get svc nginx -n $NS_APP_ROUTING -w"
 fi
 
 # =====================================================
@@ -237,29 +243,31 @@ fi
 # =====================================================
 log_step 8 $TOTAL_STEPS "Deploying Cert Manager Extension"
 
-run_with_spinner "Deploying Cert Manager" "Cert Manager extension deployed" \
-    az deployment group create \
-        --resource-group "$AZURE_RESOURCE_GROUP" \
-        --template-file ./infra/modules/cert-manager.bicep \
-        --parameters \
-            arcConnectedClusterName="$ARC_CLUSTER_NAME"
+log_info "Deploying Cert Manager..."
+az deployment group create \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
+    --template-file ./infra/modules/cert-manager.bicep \
+    --parameters \
+        arcConnectedClusterName="$ARC_CLUSTER_NAME"
+log_success "Cert Manager extension deployed"
 
 # =====================================================
 # Step 9: Deploy VI Arc Extension via Bicep
 # =====================================================
 log_step 9 $TOTAL_STEPS "Deploying Video Indexer Arc Extension"
 
-run_with_spinner "Deploying VI Arc extension" "Video Indexer Arc extension deployed" \
-    az deployment group create \
-        --resource-group "$AZURE_RESOURCE_GROUP" \
-        --template-file ./infra/modules/vi-extension.bicep \
-        --parameters \
-            arcConnectedClusterName="$ARC_CLUSTER_NAME" \
-            accountId="$AZURE_VIDEO_INDEXER_ACCOUNT_ID" \
-            accountResourceId="$AZURE_VIDEO_INDEXER_ACCOUNT_RESOURCE_ID" \
-            videoIndexerEndpointUri="$VIDEO_INDEXER_ENDPOINT_URI" \
-            deepstreamNodeSelectorValue="$AZURE_DEEPSTREAM_NODE_SELECTOR_VALUE" \
-            inferenceNodeSelectorValue="$AZURE_INFERENCE_NODE_SELECTOR_VALUE"
+log_info "Deploying VI Arc extension (this may take several minutes)..."
+az deployment group create \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
+    --template-file ./infra/modules/vi-extension.bicep \
+    --parameters \
+        arcConnectedClusterName="$ARC_CLUSTER_NAME" \
+        accountId="$AZURE_VIDEO_INDEXER_ACCOUNT_ID" \
+        accountResourceId="$AZURE_VIDEO_INDEXER_ACCOUNT_RESOURCE_ID" \
+        videoIndexerEndpointUri="$VIDEO_INDEXER_ENDPOINT_URI" \
+        deepstreamNodeSelectorValue="$AZURE_DEEPSTREAM_NODE_SELECTOR_VALUE" \
+        inferenceNodeSelectorValue="$AZURE_INFERENCE_NODE_SELECTOR_VALUE"
+log_success "Video Indexer Arc extension deployed"
 
 # =====================================================
 # Step 10: Post-deployment health checks
