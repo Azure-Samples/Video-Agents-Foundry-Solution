@@ -8,154 +8,134 @@ set -e
 
 source "$(dirname "$0")/common.sh"
 
-write_banner "Pre-provision: Validation & Pre-flight Checks"
+TOTAL_STEPS=5
+
+write_foundry_banner "Pre-Provision Validation"
 
 # =====================================================
 # Step 1: Check Azure CLI authentication
 # =====================================================
-write_step "1" "Checking Azure CLI authentication..."
+log_step 1 $TOTAL_STEPS "Checking Azure CLI Authentication"
 
 ACCOUNT_INFO=$(az account show --query "{name:name, id:id}" -o tsv 2>/dev/null || true)
 
 if [ -z "$ACCOUNT_INFO" ]; then
-    echo "   ERROR: Not logged in to Azure CLI." >&2
-    echo "   Run 'az login' before provisioning." >&2
+    log_error "Not logged in to Azure CLI. Run 'az login' before provisioning."
     exit 1
 fi
 
 ACCOUNT_NAME=$(az account show --query "name" -o tsv 2>/dev/null)
-echo "   Signed in to account: ${ACCOUNT_NAME}"
+log_success "Signed in to account: ${ACCOUNT_NAME}"
 
 if [ -n "${AZURE_SUBSCRIPTION_ID:-}" ]; then
     az account set -s "$AZURE_SUBSCRIPTION_ID" 2>/dev/null || {
-        echo "   ERROR: Cannot access subscription '${AZURE_SUBSCRIPTION_ID}'." >&2
-        echo "   Verify the subscription ID and your access permissions." >&2
+        log_error "Cannot access subscription '${AZURE_SUBSCRIPTION_ID}'."
+        log_info "Verify the subscription ID and your access permissions."
         exit 1
     }
     SUB_NAME=$(az account show --query "name" -o tsv 2>/dev/null)
-    echo "   Subscription: ${SUB_NAME} (${AZURE_SUBSCRIPTION_ID})"
+    log_success "Subscription: ${SUB_NAME}"
+    write_key_value "ID" "$AZURE_SUBSCRIPTION_ID"
 fi
 
 # =====================================================
 # Step 2: Check required CLI tools
 # =====================================================
-write_step "2" "Checking required CLI tools..."
+log_step 2 $TOTAL_STEPS "Checking Required CLI Tools"
 
 assert_cli_tools az helm kubectl -- kubelogin jq
 
 # =====================================================
 # Step 3: Validate required environment variables
 # =====================================================
-write_step "3" "Validating pre-provision environment variables..."
+log_step 3 $TOTAL_STEPS "Validating Environment Variables"
 
 for var in AZURE_SUBSCRIPTION_ID AZURE_LOCATION AZURE_ENV_NAME; do
     eval val=\$$var 2>/dev/null || val=""
     if [ -z "$val" ]; then
-        echo "   ${var}: MISSING"
+        write_health_row "$var" "Fail" "not set"
     else
-        echo "   ${var}: ${val}"
+        write_key_value "$var" "$val"
     fi
 done
 # Use the shared assertion for the actual error check
 assert_env_vars AZURE_SUBSCRIPTION_ID AZURE_LOCATION AZURE_ENV_NAME
 
 # =====================================================
-# Step 4: Register required Azure resource providers
+# Step 4: Select VM sizes for AKS node pools
+#         (includes region availability + GPU quota checks)
 # =====================================================
-write_step "4" "Checking Azure resource provider registrations..."
+log_step 4 $TOTAL_STEPS "Selecting VM Sizes for AKS Node Pools"
+
+# Determine current/default values
+CURRENT_SYSTEM_VM="${SYSTEM_VM_SIZE:-$DEFAULT_SYSTEM_VM_SIZE}"
+CURRENT_WORKLOAD_VM="${WORKLOAD_VM_SIZE:-$DEFAULT_WORKLOAD_VM_SIZE}"
+CURRENT_DEEPSTREAM_VM="${DEEPSTREAM_GPU_VM_SIZE:-$DEFAULT_DEEPSTREAM_GPU_SIZE}"
+CURRENT_INFERENCE_VM="${INFERENCE_GPU_VM_SIZE:-$DEFAULT_INFERENCE_GPU_SIZE}"
+
+# Fetch full lists
+log_info "Querying available VM SKUs in ${AZURE_LOCATION}..."
+mapfile -t ALL_CPU_VMS < <(get_filtered_vm_sizes "$AZURE_LOCATION" "${CPU_VM_PREFIXES[@]}")
+mapfile -t ALL_GPU_VMS < <(get_filtered_vm_sizes "$AZURE_LOCATION" "${GPU_VM_PREFIXES[@]}")
+log_success "Found VM SKUs in ${AZURE_LOCATION}"
+
+log_info "${#ALL_CPU_VMS[@]} CPU + ${#ALL_GPU_VMS[@]} GPU sizes available"
+
+select_vm_sizes_for_menu ALL_CPU_VMS SYSTEM_VMS   SYSTEM_RECOMMENDED_FAMILIES   "$CURRENT_SYSTEM_VM"     "$SIZES_PER_FAMILY" 0 "$SYSTEM_MAX_CORES"
+select_vm_sizes_for_menu ALL_CPU_VMS WORKLOAD_VMS WORKLOAD_RECOMMENDED_FAMILIES "$CURRENT_WORKLOAD_VM"   "$SIZES_PER_FAMILY" "$WORKLOAD_MIN_CORES"
+select_vm_sizes_for_menu ALL_GPU_VMS GPU_VMS      GPU_RECOMMENDED_FAMILIES      "$CURRENT_DEEPSTREAM_VM" "$SIZES_PER_FAMILY"
+
+# Resolve defaults — if the configured default isn't available, pick the closest match
+CURRENT_SYSTEM_VM=$(resolve_default_sku "$CURRENT_SYSTEM_VM" SYSTEM_VMS 4)
+CURRENT_WORKLOAD_VM=$(resolve_default_sku "$CURRENT_WORKLOAD_VM" WORKLOAD_VMS 32)
+CURRENT_DEEPSTREAM_VM=$(resolve_default_sku "$CURRENT_DEEPSTREAM_VM" GPU_VMS 24)
+CURRENT_INFERENCE_VM=$(resolve_default_sku "$CURRENT_INFERENCE_VM" GPU_VMS 24)
+
+write_key_value "System pool"   "${#SYSTEM_VMS[@]} sizes"
+write_key_value "Workload pool" "${#WORKLOAD_VMS[@]} sizes"
+write_key_value "GPU pool"      "${#GPU_VMS[@]} sizes"
+
+write_section "Choose a VM SKU for each AKS node pool"
+log_info "The default is highlighted. Press Enter to accept, C for custom."
+
+# CPU pools (separate lists for system vs workload)
+show_vm_selection_menu "System (CPU)"   "SYSTEM_VM_SIZE"   SYSTEM_VMS   "$CURRENT_SYSTEM_VM"   "$AZURE_LOCATION"
+SYSTEM_SKU="$SELECTED_VM_SKU"
+
+show_vm_selection_menu "Workload (CPU)" "WORKLOAD_VM_SIZE" WORKLOAD_VMS "$CURRENT_WORKLOAD_VM" "$AZURE_LOCATION"
+WORKLOAD_SKU="$SELECTED_VM_SKU"
+
+# GPU pools (quota validated inline, node count determines total cores checked)
+show_vm_selection_menu "Deepstream (GPU)" "DEEPSTREAM_GPU_VM_SIZE" GPU_VMS "$CURRENT_DEEPSTREAM_VM" "$AZURE_LOCATION" "$DEEPSTREAM_GPU_MAX_NODE_COUNT" "gpu"
+DEEPSTREAM_GPU_VM_SIZE="$SELECTED_VM_SKU"
+
+show_vm_selection_menu "Inference (GPU)" "INFERENCE_GPU_VM_SIZE" GPU_VMS "$CURRENT_INFERENCE_VM" "$AZURE_LOCATION" "$INFERENCE_GPU_MAX_NODE_COUNT" "gpu"
+INFERENCE_GPU_VM_SIZE="$SELECTED_VM_SKU"
+
+# =====================================================
+# Step 5: Register required Azure resource providers
+# =====================================================
+log_step 5 $TOTAL_STEPS "Checking Azure Resource Provider Registrations"
 
 register_required_providers || true
-
-# =====================================================
-# Step 5: Validate region supports required VM sizes
-# =====================================================
-write_step "5" "Checking region capability for GPU VMs..."
-
-declare -A GPU_VM_CORES
-
-for GPU_VM in "$DEEPSTREAM_GPU_VM_SIZE" "$INFERENCE_GPU_VM_SIZE"; do
-    VM_INFO=$(az vm list-sizes --location "$AZURE_LOCATION" \
-        --query "[?name=='${GPU_VM}'] | [0]" -o json 2>/dev/null || true)
-
-    if [ -z "$VM_INFO" ] || [ "$VM_INFO" = "null" ]; then
-        echo "   ERROR: VM size '${GPU_VM}' is not available in region '${AZURE_LOCATION}'." >&2
-        echo "   This VM is required for a GPU node pool." >&2
-        echo "" >&2
-        echo "   Change region with: azd env set AZURE_LOCATION <region>" >&2
-        exit 1
-    fi
-
-    NUM_CORES=$(echo "$VM_INFO" | grep -o '"numberOfCores":[0-9]*' | grep -o '[0-9]*')
-    GPU_VM_CORES["$GPU_VM"]="$NUM_CORES"
-    echo "   ${GPU_VM}: available in ${AZURE_LOCATION} (${NUM_CORES} cores)"
-done
-
-# =====================================================
-# Step 6: Check GPU VM quota
-# =====================================================
-write_step "6" "Checking GPU VM quota..."
-
-ALL_PASSED=true
-
-# Check GPU quota for a single pool
-# Args: pool_name, vm_size, quota_family, max_nodes
-check_gpu_quota() {
-    local POOL_NAME="$1" VM_SIZE="$2" FAMILY="$3" MAX_NODES="$4"
-    local CORES_PER_VM="${GPU_VM_CORES[$VM_SIZE]}"
-    local CORES_NEEDED=$((CORES_PER_VM * MAX_NODES))
-
-    local QUOTA_OUTPUT
-    QUOTA_OUTPUT=$(az vm list-usage --location "$AZURE_LOCATION" \
-        --query "[?contains(name.value, '${FAMILY}')]" \
-        -o json 2>&1)
-
-    if [ $? -ne 0 ]; then
-        echo "   [${POOL_NAME}] ERROR: Failed to query GPU quota — ${QUOTA_OUTPUT}" >&2
-        ALL_PASSED=false
-        return
-    fi
-
-    CURRENT_USAGE=$(echo "$QUOTA_OUTPUT" | grep -o '"currentValue":[0-9]*' | head -1 | grep -o '[0-9]*' || echo "0")
-    QUOTA_LIMIT=$(echo "$QUOTA_OUTPUT" | grep -o '"limit":[0-9]*' | head -1 | grep -o '[0-9]*' || echo "0")
-    AVAILABLE=$((QUOTA_LIMIT - CURRENT_USAGE))
-
-    echo "   [${POOL_NAME}] ${VM_SIZE} — ${MAX_NODES} node(s) x ${CORES_PER_VM} cores = ${CORES_NEEDED} cores needed"
-
-    if [ "$QUOTA_LIMIT" -eq 0 ]; then
-        echo "   [${POOL_NAME}] ERROR: No GPU quota found for family '${FAMILY}' in region '${AZURE_LOCATION}'." >&2
-        echo "   This typically means zero quota is allocated for this subscription/region." >&2
-        echo "   Request GPU quota at: ${QUOTA_URL}" >&2
-        echo "   For step-by-step instructions, see: ${GPU_QUOTA_DOC_URL}" >&2
-        ALL_PASSED=false
-    elif [ "$AVAILABLE" -lt "$CORES_NEEDED" ]; then
-        echo "   [${POOL_NAME}] ERROR: Insufficient quota — ${AVAILABLE} cores available, ${CORES_NEEDED} required (${CURRENT_USAGE}/${QUOTA_LIMIT} used)" >&2
-        echo "   Request quota increase at: ${QUOTA_URL}" >&2
-        echo "   For step-by-step instructions, see: ${GPU_QUOTA_DOC_URL}" >&2
-        ALL_PASSED=false
-    else
-        echo "   [${POOL_NAME}] OK — ${AVAILABLE} cores available (${CURRENT_USAGE}/${QUOTA_LIMIT} used)"
-    fi
-}
-
-check_gpu_quota "Deepstream" "$DEEPSTREAM_GPU_VM_SIZE" "$DEEPSTREAM_GPU_QUOTA_FAMILY" "$DEEPSTREAM_GPU_MAX_NODE_COUNT"
-check_gpu_quota "Inference"  "$INFERENCE_GPU_VM_SIZE"  "$INFERENCE_GPU_QUOTA_FAMILY"  "$INFERENCE_GPU_MAX_NODE_COUNT"
-
-if [ "$ALL_PASSED" = false ]; then
-    exit 1
-fi
 
 # =====================================================
 # Summary
 # =====================================================
 echo ""
-write_banner "Pre-provision validation passed!"
+write_box_banner "Pre-Provision Validation Passed" "" "Single" 50
+
+write_section "Configuration Summary"
+write_key_value "Subscription"   "${SUB_NAME:-$AZURE_SUBSCRIPTION_ID}"
+write_key_value "Location"       "$AZURE_LOCATION"
+write_key_value "Environment"    "$AZURE_ENV_NAME"
+write_key_value "System CPU"     "$SYSTEM_SKU"
+write_key_value "Workload CPU"   "$WORKLOAD_SKU"
+write_key_value "Deepstream GPU" "${DEEPSTREAM_GPU_VM_SIZE} (${DEEPSTREAM_GPU_MAX_NODE_COUNT} node(s))"
+write_key_value "Inference GPU"  "${INFERENCE_GPU_VM_SIZE} (${INFERENCE_GPU_MAX_NODE_COUNT} node(s))"
+write_key_value "Providers"      "all registered"
+write_key_value "Tools"          "all present"
+
 echo ""
-echo "  Subscription:    ${SUB_NAME:-$AZURE_SUBSCRIPTION_ID}"
-echo "  Location:        ${AZURE_LOCATION}"
-echo "  Environment:     ${AZURE_ENV_NAME}"
-echo "  Deepstream GPU:  ${DEEPSTREAM_GPU_VM_SIZE} (${DEEPSTREAM_GPU_MAX_NODE_COUNT} node(s))"
-echo "  Inference GPU:   ${INFERENCE_GPU_VM_SIZE} (${INFERENCE_GPU_MAX_NODE_COUNT} node(s))"
-echo "  Providers:       all registered"
-echo "  Tools:           all present"
+log_success "Proceeding with provisioning..."
 echo ""
-echo "Proceeding with provisioning..."

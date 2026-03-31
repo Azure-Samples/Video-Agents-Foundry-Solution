@@ -35,6 +35,15 @@ param inferenceNodeSelectorValue string
 @description('Enable live video stream')
 param liveVideoStreamEnabled bool = true
 
+@description('Enable media streamer')
+param mediaStreamerEnabled bool = true
+
+@description('Media streamer image')
+param mediaStreamerImage string = 'mcr.microsoft.com/vi-arc/media-streamer'
+
+@description('Media streamer image tag')
+param mediaStreamerTag string = '1.17.0-ft'
+
 @description('Enable agents')
 param agentsEnabled bool = true
 
@@ -46,6 +55,9 @@ param liveSummarizationEnabled bool = false
 
 @description('Enable media server streams')
 param mediaServerStreamsEnabled bool = true
+
+@description('Enable the inference agent (should be disabled when a Foundry project handles model serving)')
+param inferenceAgentEnabled bool = false
 
 // Base config properties
 @description('Storage class for persistent volumes')
@@ -60,25 +72,16 @@ var baseConfigProperties = {
   'videoIndexer.agents.enabled': string(agentsEnabled)
   'storage.storageClass': storageClass
   'storage.accessMode': 'ReadWriteMany'
+  'ViAi.inferenceAgent.enabled': string(inferenceAgentEnabled)
   'ViAi.gpu.enabled': string(useGpuForSummarization)
   'ViAi.gpu.tolerations.key': tolerationsKeyForGpu
-  'ViAi.mediaServerStreams.enabled': string(mediaServerStreamsEnabled)
+  'ViAi.mediaServerStreams.enabled': string(mediaStreamerEnabled)
+  'ViAi.mediaServerStreams.image.repository': string(mediaStreamerImage)
+  'ViAi.mediaServerStreams.image.tag': string(mediaStreamerTag)
   'ViAi.deepstream.nodeSelector.workload': deepstreamNodeSelectorValue
   'ViAi.inference.nodeSelector.workload': inferenceNodeSelectorValue
   'ViAi.LiveSummarization.enabled': string(liveSummarizationEnabled)
 }
-
-// - name: SELF_HOSTED_MODEL_ENDPOINT
-//   value: http://inference-agent.video-indexer.svc:8443/v1
-// - name: MODEL_PROVIDERS_CONFIG
-//    value: >-
-// {"azureOpenAI":{"enabled":false},"selfHosted":{"availableModels":["gpt-oss:20b"],"enabled":true,"overrideBaseUrl":""}}
-
-// name: AZURE_OPENAI_ENDPOINT
-// value: https://nassiharel-agents-poc-resource.openai.azure.com/openai/v1/
-// - name: MODEL_PROVIDERS_CONFIG
-// value: >-
-// {"azureOpenAI":{"enabled":true, "availableModels":["gpt-5.2"] }}
 
 resource connectedCluster 'Microsoft.Kubernetes/connectedClusters@2024-01-01' existing = {
   name: arcConnectedClusterName

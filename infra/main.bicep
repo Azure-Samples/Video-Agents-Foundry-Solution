@@ -23,7 +23,7 @@ param principalId string = ''
 param createRoleForUser bool = true
 
 @description('Whether to create a Foundry project and link it to the VI extension')
-param createFoundryProject bool = false
+param createFoundryProject bool = true
 
 @description('Model name to deploy in AI Foundry (e.g. gpt-4o-mini)')
 param aiModelName string = 'gpt-4o-mini'
@@ -37,6 +37,12 @@ param aiModelCapacity int = 1
 @description('Kubernetes version for the AKS cluster')
 param kubernetesVersion string
 
+@description('VM size for system node pool')
+param systemVmSize string
+
+@description('VM size for workload node pool')
+param workloadVmSize string
+
 @description('VM size for the GPU deepstream workload node pool')
 param deepstreamGpuVmSize string
 
@@ -46,12 +52,12 @@ param inferenceGpuVmSize string
 @description('Maximum number of deepstream GPU nodes')
 param deepstreamGpuMaxNodeCount int
 
-@description('Maximum number of inference GPU nodes')
-param inferenceGpuMaxNodeCount int
-
 // =====================================================
 // Variables
 // =====================================================
+
+// Inference GPU node count: 1 node when Foundry handles model serving, 2 otherwise
+var inferenceGpuMaxNodeCount = createFoundryProject ? 1 : 2
 
 var abbrs = loadJsonContent('abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
@@ -115,6 +121,8 @@ module aks 'modules/aks.bicep' = {
     location: location
     tags: tags
     kubernetesVersion: kubernetesVersion
+    systemVmSize: systemVmSize
+    workloadVmSize: workloadVmSize
     deepstreamGpuVmSize: deepstreamGpuVmSize
     inferenceGpuVmSize: inferenceGpuVmSize
     deepstreamGpuMaxNodeCount: deepstreamGpuMaxNodeCount

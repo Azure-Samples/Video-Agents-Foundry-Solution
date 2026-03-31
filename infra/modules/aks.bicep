@@ -11,10 +11,10 @@ param tags object = {}
 param kubernetesVersion string
 
 @description('VM size for the system node pool')
-param systemVmSize string = 'Standard_D4as_v4'
+param systemVmSize string
 
 @description('VM size for the workload node pool')
-param workloadVmSize string = 'Standard_D32as_v4'
+param workloadVmSize string
 
 @description('VM size for the GPU deepstream workload node pool')
 param deepstreamGpuVmSize string
