@@ -35,6 +35,15 @@ param inferenceNodeSelectorValue string
 @description('Enable live video stream')
 param liveVideoStreamEnabled bool = true
 
+@description('Enable media streamer')
+param mediaStreamerEnabled bool = true
+
+@description('Media streamer image')
+param mediaStreamerImage string = 'mcr.microsoft.com/vi-arc/media-streamer'
+
+@description('Media streamer image tag')
+param mediaStreamerTag string = '1.17.0-ft'
+
 @description('Enable agents')
 param agentsEnabled bool = true
 
@@ -66,7 +75,9 @@ var baseConfigProperties = {
   'ViAi.inferenceAgent.enabled': string(inferenceAgentEnabled)
   'ViAi.gpu.enabled': string(useGpuForSummarization)
   'ViAi.gpu.tolerations.key': tolerationsKeyForGpu
-  'ViAi.mediaServerStreams.enabled': string(mediaServerStreamsEnabled)
+  'ViAi.mediaServerStreams.enabled': string(mediaStreamerEnabled)
+  'ViAi.mediaServerStreams.image.repository': string(mediaStreamerImage)
+  'ViAi.mediaServerStreams.image.tag': string(mediaStreamerTag)
   'ViAi.deepstream.nodeSelector.workload': deepstreamNodeSelectorValue
   'ViAi.inference.nodeSelector.workload': inferenceNodeSelectorValue
   'ViAi.LiveSummarization.enabled': string(liveSummarizationEnabled)
