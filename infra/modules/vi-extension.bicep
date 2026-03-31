@@ -47,6 +47,9 @@ param liveSummarizationEnabled bool = false
 @description('Enable media server streams')
 param mediaServerStreamsEnabled bool = true
 
+@description('Enable the inference agent (should be disabled when a Foundry project handles model serving)')
+param inferenceAgentEnabled bool = false
+
 // Base config properties
 @description('Storage class for persistent volumes')
 param storageClass string = 'azurefile-csi-premium'
@@ -60,6 +63,7 @@ var baseConfigProperties = {
   'videoIndexer.agents.enabled': string(agentsEnabled)
   'storage.storageClass': storageClass
   'storage.accessMode': 'ReadWriteMany'
+  'ViAi.inferenceAgent.enabled': string(inferenceAgentEnabled)
   'ViAi.gpu.enabled': string(useGpuForSummarization)
   'ViAi.gpu.tolerations.key': tolerationsKeyForGpu
   'ViAi.mediaServerStreams.enabled': string(mediaServerStreamsEnabled)

@@ -256,6 +256,12 @@ log_success "Cert Manager extension deployed"
 # =====================================================
 log_step 9 $TOTAL_STEPS "Deploying Video Indexer Arc Extension"
 
+if [ "$CREATE_FOUNDRY_PROJECT" = "true" ]; then
+    INFERENCE_AGENT_ENABLED="false"
+else
+    INFERENCE_AGENT_ENABLED="true"
+fi
+
 log_info "Deploying VI Arc extension (this may take several minutes)..."
 az deployment group create \
     --resource-group "$AZURE_RESOURCE_GROUP" \
@@ -266,7 +272,8 @@ az deployment group create \
         accountResourceId="$AZURE_VIDEO_INDEXER_ACCOUNT_RESOURCE_ID" \
         videoIndexerEndpointUri="$VIDEO_INDEXER_ENDPOINT_URI" \
         deepstreamNodeSelectorValue="$AZURE_DEEPSTREAM_NODE_SELECTOR_VALUE" \
-        inferenceNodeSelectorValue="$AZURE_INFERENCE_NODE_SELECTOR_VALUE"
+        inferenceNodeSelectorValue="$AZURE_INFERENCE_NODE_SELECTOR_VALUE" \
+        inferenceAgentEnabled=$INFERENCE_AGENT_ENABLED
 log_success "Video Indexer Arc extension deployed"
 
 # =====================================================
