@@ -8,7 +8,7 @@ set -e
 
 source "$(dirname "$0")/common.sh"
 
-TOTAL_STEPS=10
+TOTAL_STEPS=12
 
 write_foundry_banner "Post-Provision Setup"
 
@@ -276,10 +276,140 @@ az deployment group create \
         inferenceAgentEnabled=$INFERENCE_AGENT_ENABLED
 log_success "Video Indexer Arc extension deployed"
 
+log_info "Assigning permissions to Arc extension managed identity..."
+PRINCIPAL_ID=$(az k8s-extension show \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
+    --cluster-name "$ARC_CLUSTER_NAME" \
+    --cluster-type connectedClusters \
+    --name videoindexer \
+    --query "identity.principalId" -o tsv 2>/dev/null || true)
+
+ACCOUNT_RESOURCE_ID="$AZURE_VIDEO_INDEXER_ACCOUNT_RESOURCE_ID"
+
+if [ -z "$PRINCIPAL_ID" ]; then
+    log_error "Extension managed identity principalId not found. Cannot assign permissions."
+elif [ -z "$ACCOUNT_RESOURCE_ID" ]; then
+    log_error "Video Indexer account resource ID not found. Cannot assign permissions."
+else
+    log_info "Adding Role Assignment for principal '$PRINCIPAL_ID'..."
+    az role assignment create \
+        --assignee-object-id "$PRINCIPAL_ID" \
+        --assignee-principal-type ServicePrincipal \
+        --role Contributor \
+        --scope "$ACCOUNT_RESOURCE_ID"
+    log_success "Permissions assigned to Arc extension managed identity"
+fi
+
 # =====================================================
-# Step 10: Post-deployment health checks
+# Acquire VI Extension Access Token (used by Steps 10-11)
 # =====================================================
-log_step 10 $TOTAL_STEPS "Running Post-Deployment Health Checks"
+VI_ACCESS_TOKEN=""
+VI_API_BASE=""
+
+EXTENSION_ID=$(az k8s-extension show \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
+    --cluster-name "$ARC_CLUSTER_NAME" \
+    --cluster-type connectedClusters \
+    --name videoindexer \
+    --query "id" -o tsv 2>/dev/null || true)
+
+if [ -z "$EXTENSION_ID" ]; then
+    log_warning "Failed to retrieve VI extension ID. Skipping camera and agent job setup."
+else
+    log_info "Generating VI extension access token..."
+    TOKEN_URL="https://management.azure.com${AZURE_VIDEO_INDEXER_ACCOUNT_RESOURCE_ID}/generateExtensionAccessToken?api-version=2023-06-02-preview"
+    TOKEN_BODY="{\"permissionType\":\"Contributor\",\"scope\":\"Account\",\"extensionId\":\"${EXTENSION_ID}\"}"
+
+    VI_ACCESS_TOKEN=$(az rest --method post --url "$TOKEN_URL" \
+        --body "$TOKEN_BODY" \
+        --query "accessToken" -o tsv 2>/dev/null || true)
+
+    if [ -z "$VI_ACCESS_TOKEN" ]; then
+        log_warning "Failed to generate VI extension access token. Skipping camera and agent job setup."
+    else
+        log_success "VI extension access token obtained"
+        VI_API_BASE="${VIDEO_INDEXER_ENDPOINT_URI}/Accounts/${AZURE_VIDEO_INDEXER_ACCOUNT_ID}"
+    fi
+fi
+
+# =====================================================
+# Step 10: Create Sample Camera
+# =====================================================
+log_step 10 $TOTAL_STEPS "Creating Sample Camera"
+
+CAMERA_NAME="flags"
+CAMERA_RTSP_URL="rtsp://media-server.video-indexer:8554/${CAMERA_NAME}"
+CAMERA_ID=""
+
+if [ -z "$VI_ACCESS_TOKEN" ]; then
+    log_warning "No VI access token available. Skipping camera creation."
+else
+    log_info "Creating camera '$CAMERA_NAME'..."
+
+    CAMERA_BODY="{\"Name\":\"${CAMERA_NAME}\",\"Description\":\"${CAMERA_NAME}\",\"RtspUrl\":\"${CAMERA_RTSP_URL}\",\"LiveStreamingEnabled\":true,\"RecordingEnabled\":true,\"IsPinned\":true,\"RecordingsRetentionInHours\":72,\"UseCameraNtp\":false}"
+
+    CAMERA_RESPONSE=$(curl -sk -X POST "${VI_API_BASE}/cameras" \
+        -H "Authorization: Bearer $VI_ACCESS_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d "$CAMERA_BODY" 2>/dev/null || true)
+
+    CAMERA_ID=$(echo "$CAMERA_RESPONSE" | jq -r '.id // empty' 2>/dev/null || true)
+
+    if [ -n "$CAMERA_ID" ]; then
+        log_success "Camera '$CAMERA_NAME' created"
+        write_key_value "Camera ID" "$CAMERA_ID"
+    else
+        log_warning "Failed to create camera: $CAMERA_RESPONSE"
+    fi
+fi
+
+# =====================================================
+# Step 11: Create Agent Job
+# =====================================================
+log_step 11 $TOTAL_STEPS "Creating Agent Job"
+
+if [ -z "$VI_ACCESS_TOKEN" ]; then
+    log_warning "No VI access token available. Skipping agent job creation."
+elif [ -z "$CAMERA_ID" ]; then
+    log_warning "No camera available. Skipping agent job creation."
+else
+    # Get the first available agent
+    AGENT_ID=""
+    AGENTS_RESPONSE=$(curl -sk -X GET "${VI_API_BASE}/agents" \
+        -H "Authorization: Bearer $VI_ACCESS_TOKEN" 2>/dev/null || true)
+
+    AGENT_ID=$(echo "$AGENTS_RESPONSE" | jq -r '.results[0].agentId // empty' 2>/dev/null || true)
+
+    if [ -z "$AGENT_ID" ]; then
+        log_warning "No agents found. Skipping agent job creation."
+    else
+        AGENT_NAME=$(echo "$AGENTS_RESPONSE" | jq -r '.results[0].name // empty' 2>/dev/null || true)
+        write_key_value "Agent" "$AGENT_NAME"
+
+        log_info "Creating agent job..."
+        JOB_PROMPT='In the current frame, is there a flag of a country? Answer shortly in a JSON format: {\"isDetected\": true if a flag was detected or false if not, \"answer\": a full frame and flag textual description}'
+        JOB_BODY="{\"agentId\":\"${AGENT_ID}\",\"cameraId\":\"${CAMERA_ID}\",\"name\":\"sample-agent-job\",\"description\":\"Sample agent job created during provisioning\",\"eventName\":\"sample-event\",\"enabled\":true,\"prompt\":\"${JOB_PROMPT}\",\"callbackUrl\":\"\",\"intervalInSeconds\":20,\"retentionInSeconds\":86400}"
+
+        JOB_RESPONSE=$(curl -sk -X POST "${VI_API_BASE}/AgentJobs" \
+            -H "Authorization: Bearer $VI_ACCESS_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$JOB_BODY" 2>/dev/null || true)
+
+        JOB_ID=$(echo "$JOB_RESPONSE" | jq -r '.id // empty' 2>/dev/null || true)
+
+        if [ -n "$JOB_ID" ]; then
+            log_success "Agent job created"
+            write_key_value "Job ID" "$JOB_ID"
+        else
+            log_warning "Failed to create agent job: $JOB_RESPONSE"
+        fi
+    fi
+fi
+
+# =====================================================
+# Step 12: Post-deployment health checks
+# =====================================================
+log_step 12 $TOTAL_STEPS "Running Post-Deployment Health Checks"
 
 ARC_STATUS=$(az connectedk8s show \
     --name "$ARC_CLUSTER_NAME" \
@@ -314,9 +444,10 @@ if [ -n "${AI_FOUNDRY_ACCOUNT_NAME:-}" ]; then
 fi
 
 echo ""
-log_success "Video Indexer portal: $VIDEO_INDEXER_ENDPOINT_URI"
+PORTAL_URL="https://www.videoindexer.ai/accounts/${AZURE_VIDEO_INDEXER_ACCOUNT_ID}/extensions/${EXTENSION_ID}"
+log_success "Video Indexer portal: $PORTAL_URL"
 case "$(uname)" in
-    Darwin*) open "$VIDEO_INDEXER_ENDPOINT_URI" ;;
-    Linux*) xdg-open "$VIDEO_INDEXER_ENDPOINT_URI" 2>/dev/null || true ;;
+    Darwin*) open "$PORTAL_URL" ;;
+    Linux*) xdg-open "$PORTAL_URL" 2>/dev/null || true ;;
     *) true ;;
 esac

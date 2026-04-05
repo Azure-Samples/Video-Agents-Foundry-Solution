@@ -18,7 +18,7 @@ param extensionName string = 'videoindexer'
   'stable'
 ])
 @description('Release train for the extension')
-param releaseTrain string = 'preview'
+param releaseTrain string = 'stable'
 
 @description('Whether to use GPU for summarization')
 param useGpuForSummarization bool = false
@@ -52,9 +52,6 @@ param mediaUploadsEnabled bool = true
 
 @description('Enable live summarization')
 param liveSummarizationEnabled bool = false
-
-@description('Enable media server streams')
-param mediaServerStreamsEnabled bool = true
 
 @description('Enable the inference agent (should be disabled when a Foundry project handles model serving)')
 param inferenceAgentEnabled bool = false
