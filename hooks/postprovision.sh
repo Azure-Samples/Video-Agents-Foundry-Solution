@@ -444,7 +444,7 @@ if [ -n "${AI_FOUNDRY_ACCOUNT_NAME:-}" ]; then
 fi
 
 echo ""
-PORTAL_URL="https://www.videoindexer.ai/accounts/${AZURE_VIDEO_INDEXER_ACCOUNT_ID}/extensions/${EXTENSION_ID}"
+PORTAL_URL="https://www.videoindexer.ai/accounts/${AZURE_VIDEO_INDEXER_ACCOUNT_ID}/extensions/${PRINCIPAL_ID}"
 log_success "Video Indexer portal: $PORTAL_URL"
 case "$(uname)" in
     Darwin*) open "$PORTAL_URL" ;;

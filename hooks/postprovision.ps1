@@ -529,6 +529,6 @@ if ($env:AI_FOUNDRY_ACCOUNT_NAME) {
 }
 
 Write-Host ""
-$portalUrl = "https://www.videoindexer.ai/accounts/$env:AZURE_VIDEO_INDEXER_ACCOUNT_ID/extensions/$extensionId"
+$portalUrl = "https://www.videoindexer.ai/accounts/$env:AZURE_VIDEO_INDEXER_ACCOUNT_ID/extensions/$principalId"
 Log-Success "Video Indexer portal: $portalUrl"
 Start-Process $portalUrl
