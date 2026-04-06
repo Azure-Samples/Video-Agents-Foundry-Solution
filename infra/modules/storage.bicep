@@ -10,13 +10,21 @@ param tags object = {}
 @description('Name of the blob container')
 param containerName string = 'vi-arc-container'
 
+@allowed([
+  'Standard_LRS'
+  'Standard_ZRS'
+  'Standard_GRS'
+])
+@description('Storage account SKU (ZRS recommended for zone-redundant video data)')
+param skuName string = 'Standard_ZRS'
+
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   name: name
   location: location
   tags: tags
   kind: 'StorageV2'
   sku: {
-    name: 'Standard_LRS'
+    name: skuName
   }
   properties: {
     accessTier: 'Hot'

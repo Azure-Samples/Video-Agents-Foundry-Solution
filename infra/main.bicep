@@ -52,6 +52,9 @@ param inferenceGpuVmSize string
 @description('Maximum number of deepstream GPU nodes')
 param deepstreamGpuMaxNodeCount int
 
+@description('Whether to enable the media streamer (RTSP camera + agent jobs in post-provision)')
+param mediaStreamerEnabled bool
+
 // =====================================================
 // Variables
 // =====================================================
@@ -189,3 +192,4 @@ output AI_FOUNDRY_AI_SERVICES_ENDPOINT string = createFoundryProject ? aiFoundry
 output AI_FOUNDRY_MODEL_DEPLOYMENT string = createFoundryProject ? aiFoundry.outputs.modelDeploymentName : ''
 output AI_FOUNDRY_ACCOUNT_NAME string = createFoundryProject ? aiFoundry.outputs.accountName : ''
 output AI_FOUNDRY_PROJECT_NAME string = createFoundryProject ? aiFoundry.outputs.projectName : ''
+output MEDIA_STREAMER_ENABLED bool = mediaStreamerEnabled

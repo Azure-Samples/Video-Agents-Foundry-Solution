@@ -6,6 +6,9 @@ The Video-Agents-Foundry-Solution allows users to process and analyze live and r
 
 > **_Note_:** In order to successfully deploy the VI Extension, you **must first** submit your subscription for approval and be approved. Please use this application link. [this form](https://aka.ms/vi-register).
 
+> Deploying this solution can take approximately 45-60 minutes.
+During deployment, the Azure Portal may show some resources as "Failed" or "Unavailable". This is expected behavior as some resources may take longer to provision or initialize. Please allow up to an hour for all resources to be fully deployed and operational. If you continue to see issues after this time, please refer to the troubleshooting guide in the documentation.
+
 **Comprehensive Guides**
 
 For a detailed, step-by-step guide on creating an AKS cluster with GPU support and deploying the Video Indexer Arc extension, see:

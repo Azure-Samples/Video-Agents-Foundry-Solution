@@ -8,6 +8,17 @@ workflows:
     steps:
       - azd: provision
 hooks:
+  preup:
+    windows:
+      shell: pwsh
+      run: ./hooks/validate-env.ps1
+      interactive: true
+      continueOnError: false
+    posix:
+      shell: sh
+      run: ./hooks/validate-env.sh
+      interactive: true
+      continueOnError: false
   preprovision:
     windows:
       shell: pwsh
@@ -33,3 +44,10 @@ hooks:
       shell: sh
       run: ./hooks/postup.sh
       interactive: true
+  predown:
+    windows:
+      shell: pwsh
+      run: ./hooks/predown.ps1
+    posix:
+      shell: sh
+      run: ./hooks/predown.sh

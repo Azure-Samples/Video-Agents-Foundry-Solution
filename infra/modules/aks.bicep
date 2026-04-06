@@ -155,13 +155,15 @@ resource aksCluster 'Microsoft.ContainerService/managedClusters@2024-09-01' = {
       }
       {
         name: 'inference'
-        count: inferenceGpuMaxNodeCount
+        count: 0
+        minCount: 0
+        maxCount: inferenceGpuMaxNodeCount
         vmSize: inferenceGpuVmSize
         osType: 'Linux'
         osSKU: 'AzureLinux'
         osDiskSizeGB: 200
         mode: 'User'
-        enableAutoScaling: false
+        enableAutoScaling: true
         type: 'VirtualMachineScaleSets'
         nodeTaints: [
           'nvidia.com/gpu=true:NoSchedule'

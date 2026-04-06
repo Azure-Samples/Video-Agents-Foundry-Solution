@@ -96,6 +96,10 @@ Log-Success "NVIDIA GPU Operator installed"
 # Step 3: Connect AKS to Azure Arc
 # =====================================================
 $ARC_CLUSTER_NAME = "${ARC_CLUSTER_PREFIX}$env:AZURE_AKS_CLUSTER_NAME"
+# Defensive clamp: Azure Arc cluster names must be <= 63 chars
+if ($ARC_CLUSTER_NAME.Length -gt 63) {
+    $ARC_CLUSTER_NAME = $ARC_CLUSTER_NAME.Substring(0, 63).TrimEnd('-')
+}
 Log-Step -Number 3 -Total $totalSteps -Title "Connecting AKS to Azure Arc"
 
 Write-KeyValue "Arc cluster name" $ARC_CLUSTER_NAME
@@ -184,8 +188,7 @@ $STATIC_IP = (az network public-ip show `
 
 Write-KeyValue "Static IP" $STATIC_IP
 
-# Construct endpoint URI (HTTP by default — switch to https:// after configuring SSL/TLS)
-$VIDEO_INDEXER_ENDPOINT_URI = "http://${DNS_LABEL}.$($env:AZURE_LOCATION).cloudapp.azure.com"
+$VIDEO_INDEXER_ENDPOINT_URI = "https://${DNS_LABEL}.$($env:AZURE_LOCATION).cloudapp.azure.com"
 Write-KeyValue "Endpoint URI" $VIDEO_INDEXER_ENDPOINT_URI
 Log-Warning "Using HTTP. To enable HTTPS, configure SSL/TLS on the Nginx Ingress Controller."
 
@@ -293,6 +296,7 @@ Log-Success "Cert Manager extension deployed"
 Log-Step -Number 9 -Total $totalSteps -Title "Deploying Video Indexer Arc Extension"
 
 $inferenceAgentEnabled = if ($env:CREATE_FOUNDRY_PROJECT -eq 'true') { 'false' } else { 'true' }
+$mediaStreamerEnabled = if ($env:MEDIA_STREAMER_ENABLED -eq 'false') { 'false' } else { 'true' }
 
 Log-Info "Deploying VI Arc extension (this may take several minutes)..."
 az deployment group create `
@@ -305,7 +309,8 @@ az deployment group create `
     videoIndexerEndpointUri="$VIDEO_INDEXER_ENDPOINT_URI" `
     deepstreamNodeSelectorValue="$env:AZURE_DEEPSTREAM_NODE_SELECTOR_VALUE" `
     inferenceNodeSelectorValue="$env:AZURE_INFERENCE_NODE_SELECTOR_VALUE" `
-    inferenceAgentEnabled=$inferenceAgentEnabled
+    inferenceAgentEnabled=$inferenceAgentEnabled `
+    mediaStreamerEnabled=$mediaStreamerEnabled
 Log-Success "Video Indexer Arc extension deployed"
 
 
@@ -326,13 +331,20 @@ elseif (-not $accountResourceId) {
     Log-Error "Video Indexer account resource ID not found. Cannot assign permissions."
 }
 else {
+    # TODO: Replace 'Contributor' with a purpose-built least-privilege role (e.g. 'Video Indexer Contributor')
+    # when one becomes available. Currently scoped to the VI account resource only.
     Log-Info "Adding Role Assignment for principal '$principalId'..."
     az role assignment create `
         --assignee-object-id $principalId `
         --assignee-principal-type ServicePrincipal `
         --role Contributor `
-        --scope $accountResourceId
-    Log-Success "Permissions assigned to Arc extension managed identity"
+        --scope $accountResourceId 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        Log-Warning "Role assignment may already exist (non-fatal)."
+    }
+    else {
+        Log-Success "Permissions assigned to Arc extension managed identity"
+    }
 }
 
 
@@ -343,146 +355,158 @@ $viAccessToken = $null
 $viApiBase = $null
 $viHeaders = $null
 
-$extensionId = (az k8s-extension show `
-        --resource-group "$env:AZURE_RESOURCE_GROUP" `
-        --cluster-name "$ARC_CLUSTER_NAME" `
-        --cluster-type connectedClusters `
-        --name videoindexer `
-        --query "id" -o tsv 2>$null)
-
-if (-not $extensionId) {
-    Log-Warning "Failed to retrieve VI extension ID. Skipping camera and agent job setup."
+if ($mediaStreamerEnabled -eq 'false') {
+    Log-Info "Media streamer disabled (MEDIA_STREAMER_ENABLED=false). Skipping token acquisition, camera, and agent job setup."
 }
 else {
-    $armToken = (az account get-access-token --resource https://management.azure.com/ --query "accessToken" -o tsv 2>$null)
-    if (-not $armToken) {
-        Log-Warning "Failed to get ARM access token. Skipping camera and agent job setup."
+    $extensionId = (az k8s-extension show `
+            --resource-group "$env:AZURE_RESOURCE_GROUP" `
+            --cluster-name "$ARC_CLUSTER_NAME" `
+            --cluster-type connectedClusters `
+            --name videoindexer `
+            --query "id" -o tsv 2>$null)
+
+    if (-not $extensionId) {
+        Log-Warning "Failed to retrieve VI extension ID. Skipping camera and agent job setup."
     }
     else {
-        Log-Info "Generating VI extension access token..."
-        $tokenUrl = "https://management.azure.com$($env:AZURE_VIDEO_INDEXER_ACCOUNT_RESOURCE_ID)/generateExtensionAccessToken?api-version=2023-06-02-preview"
-        $tokenBody = @{
-            permissionType = "Contributor"
-            scope          = "Account"
-            extensionId    = $extensionId
-        } | ConvertTo-Json
+        $armToken = (az account get-access-token --resource https://management.azure.com/ --query "accessToken" -o tsv 2>$null)
+        if (-not $armToken) {
+            Log-Warning "Failed to get ARM access token. Skipping camera and agent job setup."
+        }
+        else {
+            Log-Info "Generating VI extension access token..."
+            $tokenUrl = "https://management.azure.com$($env:AZURE_VIDEO_INDEXER_ACCOUNT_RESOURCE_ID)/generateExtensionAccessToken?api-version=2023-06-02-preview"
+            $tokenBody = @{
+                permissionType = "Contributor"
+                scope          = "Account"
+                extensionId    = $extensionId
+            } | ConvertTo-Json
 
-        try {
-            $tokenResponse = Invoke-RestMethod -Method Post -Uri $tokenUrl `
-                -Headers @{
-                    "Authorization" = "Bearer $armToken"
+            try {
+                $tokenResponse = Invoke-RestMethod -Method Post -Uri $tokenUrl `
+                    -Headers @{
+                        "Authorization" = "Bearer $armToken"
+                        "Content-Type"  = "application/json"
+                    } `
+                    -Body $tokenBody
+                $viAccessToken = $tokenResponse.accessToken
+            }
+            catch {
+                Log-Warning "Failed to generate VI extension access token: $($_.Exception.Message)"
+            }
+
+            if ($viAccessToken) {
+                Log-Success "VI extension access token obtained"
+                $viApiBase = "$VIDEO_INDEXER_ENDPOINT_URI/Accounts/$env:AZURE_VIDEO_INDEXER_ACCOUNT_ID"
+                $viHeaders = @{
+                    "Authorization" = "Bearer $viAccessToken"
                     "Content-Type"  = "application/json"
-                } `
-                -Body $tokenBody
-            $viAccessToken = $tokenResponse.accessToken
-        }
-        catch {
-            Log-Warning "Failed to generate VI extension access token: $($_.Exception.Message)"
-        }
-
-        if ($viAccessToken) {
-            Log-Success "VI extension access token obtained"
-            $viApiBase = "$VIDEO_INDEXER_ENDPOINT_URI/Accounts/$env:AZURE_VIDEO_INDEXER_ACCOUNT_ID"
-            $viHeaders = @{
-                "Authorization" = "Bearer $viAccessToken"
-                "Content-Type"  = "application/json"
+                }
+                # TODO: Remove -SkipCertificateCheck once TLS is wired up (see plan item 1.5).
+                # This flag is only needed because the endpoint currently uses HTTP.
+                $viSkipCert = $VIDEO_INDEXER_ENDPOINT_URI.StartsWith("http://")
             }
         }
     }
-}
 
-# =====================================================
-# Step 10: Create Sample Camera
-# =====================================================
-Log-Step -Number 10 -Total $totalSteps -Title "Creating Sample Camera"
+    # =====================================================
+    # Step 10: Create Sample Camera
+    # =====================================================
+    Log-Step -Number 10 -Total $totalSteps -Title "Creating Sample Camera"
 
-$cameraName = "flags"
-$cameraRtspUrl = "rtsp://media-server.video-indexer:8554/$cameraName"
-$cameraId = $null
+    $cameraName = "flags"
+    $cameraRtspUrl = "rtsp://media-server.video-indexer:8554/$cameraName"
+    $cameraId = $null
 
-if (-not $viAccessToken) {
-    Log-Warning "No VI access token available. Skipping camera creation."
-}
-else {
-    Log-Info "Creating camera '$cameraName'..."
-    $cameraBody = @{
-        Name                       = $cameraName
-        Description                = $cameraName
-        RtspUrl                    = $cameraRtspUrl
-        LiveStreamingEnabled       = $true
-        RecordingEnabled           = $true
-        IsPinned                   = $true
-        RecordingsRetentionInHours = 72
-        UseCameraNtp               = $false
-    } | ConvertTo-Json -Depth 3
-
-    try {
-        $cameraResponse = Invoke-RestMethod -Method Post -Uri "$viApiBase/cameras" `
-            -Headers $viHeaders -Body $cameraBody -SkipCertificateCheck
-        $cameraId = $cameraResponse.id
-        Log-Success "Camera '$cameraName' created"
-        Write-KeyValue "Camera ID" $cameraId
-    }
-    catch {
-        Log-Warning "Failed to create camera: $($_.Exception.Message)"
-    }
-}
-
-# =====================================================
-# Step 11: Create Agent Job
-# =====================================================
-Log-Step -Number 11 -Total $totalSteps -Title "Creating Agent Job"
-
-if (-not $viAccessToken) {
-    Log-Warning "No VI access token available. Skipping agent job creation."
-}
-elseif (-not $cameraId) {
-    Log-Warning "No camera available. Skipping agent job creation."
-}
-else {
-    # Get the first available agent
-    $agentId = $null
-    try {
-        $agentsResponse = Invoke-RestMethod -Method Get -Uri "$viApiBase/agents" `
-            -Headers $viHeaders -SkipCertificateCheck
-        $agent = $agentsResponse.results | Select-Object -First 1
-        if ($agent) {
-            $agentId = $agent.agentId
-            Write-KeyValue "Agent" $agent.name
-        }
-    }
-    catch {
-        Log-Warning "Failed to query agents: $($_.Exception.Message)"
-    }
-
-    if (-not $agentId) {
-        Log-Warning "No agents found. Skipping agent job creation."
+    if (-not $viAccessToken) {
+        Log-Warning "No VI access token available. Skipping camera creation."
     }
     else {
-        Log-Info "Creating agent job..."
-        $agentJobBody = @{
-            agentId            = $agentId
-            cameraId           = $cameraId
-            name               = "sample-agent-job"
-            description        = "Sample agent job created during provisioning"
-            eventName          = "sample-event"
-            enabled            = $true
-            prompt             = 'In the current frame, is there a flag of a country? Answer shortly in a JSON format: {"isDetected": true if a flag was detected or false if not, "answer": a full frame and flag textual description}'
-            callbackUrl        = ""
-            intervalInSeconds  = 20
-            retentionInSeconds = 86400
+        Log-Info "Creating camera '$cameraName'..."
+        $cameraBody = @{
+            Name                       = $cameraName
+            Description                = $cameraName
+            RtspUrl                    = $cameraRtspUrl
+            LiveStreamingEnabled       = $true
+            RecordingEnabled           = $true
+            IsPinned                   = $true
+            RecordingsRetentionInHours = 72
+            UseCameraNtp               = $false
         } | ConvertTo-Json -Depth 3
 
         try {
-            $jobResponse = Invoke-RestMethod -Method Post -Uri "$viApiBase/AgentJobs" `
-                -Headers $viHeaders -Body $agentJobBody -SkipCertificateCheck
-            Log-Success "Agent job created"
-            Write-KeyValue "Job ID" $jobResponse.id
+            $invokeParams = @{ Method = 'Post'; Uri = "$viApiBase/cameras"; Headers = $viHeaders; Body = $cameraBody }
+            if ($viSkipCert) { $invokeParams['SkipCertificateCheck'] = $true }
+            $cameraResponse = Invoke-RestMethod @invokeParams
+            $cameraId = $cameraResponse.id
+            Log-Success "Camera '$cameraName' created"
+            Write-KeyValue "Camera ID" $cameraId
         }
         catch {
-            Log-Warning "Failed to create agent job: $($_.Exception.Message)"
+            Log-Warning "Failed to create camera: $($_.Exception.Message)"
         }
     }
+
+    # =====================================================
+    # Step 11: Create Agent Job
+    # =====================================================
+    Log-Step -Number 11 -Total $totalSteps -Title "Creating Agent Job"
+
+    if (-not $viAccessToken) {
+        Log-Warning "No VI access token available. Skipping agent job creation."
+    }
+    elseif (-not $cameraId) {
+        Log-Warning "No camera available. Skipping agent job creation."
+    }
+    else {
+        # Get the first available agent
+        $agentId = $null
+        try {
+            $invokeParams = @{ Method = 'Get'; Uri = "$viApiBase/agents"; Headers = $viHeaders }
+            if ($viSkipCert) { $invokeParams['SkipCertificateCheck'] = $true }
+            $agentsResponse = Invoke-RestMethod @invokeParams
+            $agent = $agentsResponse.results | Select-Object -First 1
+            if ($agent) {
+                $agentId = $agent.agentId
+                Write-KeyValue "Agent" $agent.name
+            }
+        }
+        catch {
+            Log-Warning "Failed to query agents: $($_.Exception.Message)"
+        }
+
+        if (-not $agentId) {
+            Log-Warning "No agents found. Skipping agent job creation."
+        }
+        else {
+            Log-Info "Creating agent job..."
+            $agentJobBody = @{
+                agentId            = $agentId
+                cameraId           = $cameraId
+                name               = "sample-agent-job"
+                description        = "Sample agent job created during provisioning"
+                eventName          = "sample-event"
+                enabled            = $true
+                prompt             = 'In the current frame, is there a flag of a country? Answer shortly in a JSON format: {"isDetected": true if a flag was detected or false if not, "answer": a full frame and flag textual description}'
+                callbackUrl        = ""
+                intervalInSeconds  = 20
+                retentionInSeconds = 86400
+            } | ConvertTo-Json -Depth 3
+
+            try {
+                $invokeParams = @{ Method = 'Post'; Uri = "$viApiBase/AgentJobs"; Headers = $viHeaders; Body = $agentJobBody }
+                if ($viSkipCert) { $invokeParams['SkipCertificateCheck'] = $true }
+                $jobResponse = Invoke-RestMethod @invokeParams
+                Log-Success "Agent job created"
+                Write-KeyValue "Job ID" $jobResponse.id
+            }
+            catch {
+                Log-Warning "Failed to create agent job: $($_.Exception.Message)"
+            }
+        }
+    }
+
 }
 
 # =====================================================
@@ -529,6 +553,3 @@ if ($env:AI_FOUNDRY_ACCOUNT_NAME) {
 }
 
 Write-Host ""
-$portalUrl = "https://www.videoindexer.ai/accounts/$env:AZURE_VIDEO_INDEXER_ACCOUNT_ID/extensions/$principalId"
-Log-Success "Video Indexer portal: $portalUrl"
-Start-Process $portalUrl
