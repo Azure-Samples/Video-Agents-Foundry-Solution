@@ -15,8 +15,8 @@ param containerName string = 'vi-arc-container'
   'Standard_ZRS'
   'Standard_GRS'
 ])
-@description('Storage account SKU (ZRS recommended for zone-redundant video data)')
-param skuName string = 'Standard_ZRS'
+@description('Storage account SKU. Use Standard_ZRS for zone redundancy where supported, or Standard_LRS for broadest region compatibility.')
+param skuName string = 'Standard_LRS'
 
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   name: name

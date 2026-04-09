@@ -25,7 +25,7 @@ param createRoleForUser bool
 @description('Whether to create a Foundry project and link it to the VI extension')
 param createFoundryProject bool
 
-@description('Model name to deploy in AI Foundry (e.g. gpt-4o-mini)')
+@description('Model name to deploy in AI Foundry')
 param aiModelName string
 
 @description('Model version to deploy (e.g. 2024-07-18)')
@@ -54,6 +54,14 @@ param deepstreamGpuMaxNodeCount int
 
 @description('Whether to enable the media streamer (RTSP camera + agent jobs in post-provision)')
 param mediaStreamerEnabled bool
+
+@allowed([
+  'Standard_LRS'
+  'Standard_ZRS'
+  'Standard_GRS'
+])
+@description('Storage account SKU. Use Standard_ZRS for zone redundancy where supported.')
+param storageSkuName string
 
 // =====================================================
 // Variables
@@ -93,6 +101,7 @@ module storage 'modules/storage.bicep' = {
     name: '${resourceToken}${abbrs.storageAccount}'
     location: location
     tags: tags
+    skuName: storageSkuName
   }
 }
 

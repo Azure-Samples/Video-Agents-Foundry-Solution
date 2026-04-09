@@ -69,6 +69,30 @@ foreach ($var in $preProvisionVars) {
 # Use the shared assertion for the actual error check
 Assert-EnvVars $preProvisionVars
 
+# Validate STORAGE_SKU_NAME against region capabilities if ZRS is requested
+$storageSku = if ($env:STORAGE_SKU_NAME) { $env:STORAGE_SKU_NAME } else { 'Standard_LRS' }
+if ($storageSku -eq 'Standard_ZRS') {
+    Log-Info "Checking ZRS availability in $($env:AZURE_LOCATION)..."
+    $zrsAvailable = $false
+    try {
+        $skuInfo = (az provider show --namespace Microsoft.Storage `
+                --query "resourceTypes[?resourceType=='storageAccounts'].zoneMappings[?contains(location, '$($env:AZURE_LOCATION)')].location | [0][0]" `
+                -o tsv 2>$null)
+        if ($skuInfo) { $zrsAvailable = $true }
+    }
+    catch { }
+    if (-not $zrsAvailable) {
+        Log-Warning "Standard_ZRS may not be available in '$($env:AZURE_LOCATION)'."
+        Log-Warning "Falling back to Standard_LRS to avoid deployment failure."
+        azd env set STORAGE_SKU_NAME Standard_LRS 2>$null
+        $storageSku = 'Standard_LRS'
+    }
+    else {
+        Log-Success "ZRS is available in $($env:AZURE_LOCATION)"
+    }
+}
+Write-KeyValue "Storage SKU" $storageSku
+
 # =====================================================
 # Step 4: Select VM sizes for AKS node pools
 #         (includes region availability + GPU quota checks)

@@ -48,6 +48,10 @@ Test-EnvVarFormat -VarName "CREATE_FOUNDRY_PROJECT" -Pattern $boolPattern -Examp
 Test-EnvVarFormat -VarName "CREATE_ROLE_FOR_USER" -Pattern $boolPattern -Example "true or false"
 Test-EnvVarFormat -VarName "MEDIA_STREAMER_ENABLED" -Pattern $boolPattern -Example "true or false"
 
+# ── Storage SKU ────────────────────────────────────────────────────────────
+$skuPattern = '^Standard_(LRS|ZRS|GRS)$'
+Test-EnvVarFormat -VarName "STORAGE_SKU_NAME" -Pattern $skuPattern -Example "Standard_LRS, Standard_ZRS, or Standard_GRS"
+
 # ── Location must be non-empty if set ──────────────────────────────────────
 $locationPattern = '^[a-z0-9]+$'
 Test-EnvVarFormat -VarName "AZURE_LOCATION" -Pattern $locationPattern -Example "eastus2"

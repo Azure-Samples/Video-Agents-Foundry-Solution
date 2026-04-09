@@ -118,3 +118,5 @@ All configurable parameters with their defaults:
 | `AI_MODEL_VERSION` | `2025-12-11` | AI model version |
 | `AI_MODEL_CAPACITY` | `1` | Model deployment capacity |
 | `CREATE_ROLE_FOR_USER` | `true` | Create RBAC role assignments |
+| `MEDIA_STREAMER_ENABLED` | `true` | Enable media streamer (RTSP camera + sample agent job in post-provision) |
+| `STORAGE_SKU_NAME` | `Standard_LRS` | Storage account SKU (`Standard_LRS`, `Standard_ZRS`, `Standard_GRS`). ZRS availability is checked during preprovision. |

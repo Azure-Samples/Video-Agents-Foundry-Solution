@@ -2,7 +2,7 @@
 // AI Foundry — AI Services Account + Project + Model Deployment
 // ============================================================
 // Creates an Azure AI Services account (hub) with project management,
-// an AI project under it, and a model deployment (e.g. gpt-4o-mini).
+// an AI project under it, and a model deployment.
 // Used when createFoundryProject=true.
 // ============================================================
 
@@ -15,7 +15,7 @@ param location string
 @description('Resource tags')
 param tags object = {}
 
-@description('Model name to deploy (e.g. gpt-4o-mini)')
+@description('Model name to deploy')
 param modelName string
 
 @description('Model version (e.g. 2024-07-18)')

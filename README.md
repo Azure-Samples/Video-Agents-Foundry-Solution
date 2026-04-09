@@ -6,7 +6,7 @@ The Video-Agents-Foundry-Solution allows users to process and analyze live and r
 
 > **_Note_:** In order to successfully deploy the VI Extension, you **must first** submit your subscription for approval and be approved. Please use this application link. [this form](https://aka.ms/vi-register).
 
-> Deploying this solution can take approximately 45-60 minutes.
+> Deploying this solution can take approximately **45-60 minutes** end-to-end (15-25 minutes for `azd up` to complete, plus 20-35 minutes for GPU drivers and VI extension pods to fully initialize).
 During deployment, the Azure Portal may show some resources as "Failed" or "Unavailable". This is expected behavior as some resources may take longer to provision or initialize. Please allow up to an hour for all resources to be fully deployed and operational. If you continue to see issues after this time, please refer to the troubleshooting guide in the documentation.
 
 **Comprehensive Guides**
@@ -32,7 +32,7 @@ Solution overview
 The solution leverages Azure Arc Service to extend Azure Video Indexer capabilities to edge environments running on Kubernetes clusters.
 By deploying the Video Indexer Arc extension on an Arc-enabled AKS cluster with GPU support (NVIDIA), the solution enables real-time video processing close to the data source — reducing latency and ensuring data sovereignty. AI agents built on Azure OpenAI orchestrate the video analysis pipeline, automating tasks such as content moderation, safety monitoring, and business intelligence extraction from video feeds. The agentic architecture allows multiple specialized agents to collaborate on complex video analysis tasks, with each agent handling a specific domain such as speech analysis, visual recognition, or compliance checking.
 
-This solution creates an Microsoft Foundry project and Foundry Tools. More details about the resources can be found in the [resources](#resources) documentation.
+This solution optionally creates a Microsoft Foundry project and Foundry Tools (enabled by default; set `CREATE_FOUNDRY_PROJECT=false` to skip). More details about the resources can be found in the [resources](#resources) documentation.
 
 ### Solution architecture
 |![image](./docs/images/readme/architecture.png)|
@@ -40,12 +40,12 @@ This solution creates an Microsoft Foundry project and Foundry Tools. More detai
 
 ### Resources
 
-This template creates everything you need to get started with Microsoft Foundry:
+This template creates everything you need to get started with Microsoft Foundry (when `CREATE_FOUNDRY_PROJECT=true`, the default):
 
 | Resource | Description |
 |----------|-------------|
-| [Azure AI Project](https://learn.microsoft.com/azure/ai-studio/how-to/create-projects) | Provides a collaborative workspace for AI development with access to models, data, and compute resources |
-| [Azure OpenAI Service](https://learn.microsoft.com/azure/ai-services/openai/) | Powers the AI model. Default models deployed are gpt-5.2, but any Azure AI models that supports tool calling can be specified per the [documentation](docs/deploy_customization.md#customizing-model-deployments) |
+| [Azure AI Project](https://learn.microsoft.com/azure/ai-studio/how-to/create-projects) | *Optional* - Provides a collaborative workspace for AI development with access to models, data, and compute resources |
+| [Azure OpenAI Service](https://learn.microsoft.com/azure/ai-services/openai/) | *Optional* - Powers the AI model. Default model deployed is gpt-5.2, but any Azure AI model that supports tool calling can be specified per the [documentation](docs/deploy_customization.md#customizing-model-deployments) |
 | [Storage Account](https://learn.microsoft.com/azure/storage/blobs/) | Provides blob storage for application data and file uploads |
 | [Application Insights](https://learn.microsoft.com/azure/azure-monitor/app/app-insights-overview) | *Optional* - Provides application performance monitoring, logging, and telemetry for debugging and optimization |
 | [Log Analytics Workspace](https://learn.microsoft.com/azure/azure-monitor/logs/log-analytics-workspace-overview) | *Optional* - Collects and analyzes telemetry data for monitoring and troubleshooting |

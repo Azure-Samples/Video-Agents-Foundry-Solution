@@ -15,7 +15,8 @@ param inferenceGpuVmSize = readEnvironmentVariable('INFERENCE_GPU_VM_SIZE', 'Sta
 
 param deepstreamGpuMaxNodeCount = int(readEnvironmentVariable('DEEPSTREAM_GPU_MAX_NODE_COUNT', '1'))
 param createFoundryProject = bool(readEnvironmentVariable('CREATE_FOUNDRY_PROJECT', 'true'))
-param aiModelName = readEnvironmentVariable('AI_MODEL_NAME', 'gpt-4o-mini')
-param aiModelVersion = readEnvironmentVariable('AI_MODEL_VERSION', '2024-07-18')
+param aiModelName = readEnvironmentVariable('AI_MODEL_NAME', 'gpt-5.2')
+param aiModelVersion = readEnvironmentVariable('AI_MODEL_VERSION', '2025-12-11')
 param aiModelCapacity = int(readEnvironmentVariable('AI_MODEL_CAPACITY', '1'))
 param mediaStreamerEnabled = bool(readEnvironmentVariable('MEDIA_STREAMER_ENABLED', 'true'))
+param storageSkuName = readEnvironmentVariable('STORAGE_SKU_NAME', 'Standard_LRS')

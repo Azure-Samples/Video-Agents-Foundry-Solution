@@ -169,7 +169,6 @@ write_key_value "Static IP" "$STATIC_IP"
 
 VIDEO_INDEXER_ENDPOINT_URI="https://${DNS_LABEL}.${AZURE_LOCATION}.cloudapp.azure.com"
 write_key_value "Endpoint URI" "$VIDEO_INDEXER_ENDPOINT_URI"
-log_warning "Using HTTP. To enable HTTPS, configure SSL/TLS on the Nginx Ingress Controller."
 
 # Persist to azd env
 azd env set AZURE_DNS_LABEL "${DNS_LABEL}"
@@ -300,14 +299,28 @@ else
     # TODO: Replace 'Contributor' with a purpose-built least-privilege role (e.g. 'Video Indexer Contributor')
     # when one becomes available. Currently scoped to the VI account resource only.
     log_info "Adding Role Assignment for principal '$PRINCIPAL_ID'..."
-    if az role assignment create \
-        --assignee-object-id "$PRINCIPAL_ID" \
-        --assignee-principal-type ServicePrincipal \
+
+    # Check if the role assignment already exists before attempting to create
+    EXISTING_ASSIGNMENT=$(az role assignment list \
+        --assignee "$PRINCIPAL_ID" \
         --role Contributor \
-        --scope "$ACCOUNT_RESOURCE_ID" 2>/dev/null; then
-        log_success "Permissions assigned to Arc extension managed identity"
+        --scope "$ACCOUNT_RESOURCE_ID" \
+        --query "[0].id" -o tsv 2>/dev/null || true)
+
+    if [ -n "$EXISTING_ASSIGNMENT" ]; then
+        log_success "Role assignment already exists. Skipping."
     else
-        log_warning "Role assignment may already exist (non-fatal)."
+        ROLE_ERR=$(az role assignment create \
+            --assignee-object-id "$PRINCIPAL_ID" \
+            --assignee-principal-type ServicePrincipal \
+            --role Contributor \
+            --scope "$ACCOUNT_RESOURCE_ID" 2>&1)
+        if [ $? -ne 0 ]; then
+            log_error "Failed to create role assignment: $ROLE_ERR"
+            log_error "The VI extension may not function correctly without this permission."
+        else
+            log_success "Permissions assigned to Arc extension managed identity"
+        fi
     fi
 fi
 

@@ -50,6 +50,10 @@ validate_env_var "CREATE_FOUNDRY_PROJECT" "$bool_pattern" "true or false"
 validate_env_var "CREATE_ROLE_FOR_USER" "$bool_pattern" "true or false"
 validate_env_var "MEDIA_STREAMER_ENABLED" "$bool_pattern" "true or false"
 
+# ── Storage SKU ────────────────────────────────────────────────────────────
+sku_pattern='^Standard_(LRS|ZRS|GRS)$'
+validate_env_var "STORAGE_SKU_NAME" "$sku_pattern" "Standard_LRS, Standard_ZRS, or Standard_GRS"
+
 # ── Location must be non-empty lowercase alphanumeric if set ───────────────
 location_pattern='^[a-z0-9]+$'
 validate_env_var "AZURE_LOCATION" "$location_pattern" "eastus2"

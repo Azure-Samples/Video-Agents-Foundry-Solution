@@ -190,7 +190,6 @@ Write-KeyValue "Static IP" $STATIC_IP
 
 $VIDEO_INDEXER_ENDPOINT_URI = "https://${DNS_LABEL}.$($env:AZURE_LOCATION).cloudapp.azure.com"
 Write-KeyValue "Endpoint URI" $VIDEO_INDEXER_ENDPOINT_URI
-Log-Warning "Using HTTP. To enable HTTPS, configure SSL/TLS on the Nginx Ingress Controller."
 
 # Persist to azd env
 azd env set AZURE_DNS_LABEL "$DNS_LABEL"
@@ -334,16 +333,33 @@ else {
     # TODO: Replace 'Contributor' with a purpose-built least-privilege role (e.g. 'Video Indexer Contributor')
     # when one becomes available. Currently scoped to the VI account resource only.
     Log-Info "Adding Role Assignment for principal '$principalId'..."
-    az role assignment create `
-        --assignee-object-id $principalId `
-        --assignee-principal-type ServicePrincipal `
-        --role Contributor `
-        --scope $accountResourceId 2>$null
-    if ($LASTEXITCODE -ne 0) {
-        Log-Warning "Role assignment may already exist (non-fatal)."
+
+    # Check if the role assignment already exists before attempting to create
+    $existingAssignment = (az role assignment list `
+            --assignee $principalId `
+            --role Contributor `
+            --scope $accountResourceId `
+            --query "[0].id" -o tsv 2>$null)
+
+    if ($existingAssignment) {
+        Log-Success "Role assignment already exists. Skipping."
     }
     else {
-        Log-Success "Permissions assigned to Arc extension managed identity"
+        $roleErr = $null
+        az role assignment create `
+            --assignee-object-id $principalId `
+            --assignee-principal-type ServicePrincipal `
+            --role Contributor `
+            --scope $accountResourceId 2>&1 | ForEach-Object {
+                if ($_ -match 'ERROR|WARN') { $roleErr = $_ }
+            }
+        if ($LASTEXITCODE -ne 0) {
+            Log-Error "Failed to create role assignment: $roleErr"
+            Log-Error "The VI extension may not function correctly without this permission."
+        }
+        else {
+            Log-Success "Permissions assigned to Arc extension managed identity"
+        }
     }
 }
 

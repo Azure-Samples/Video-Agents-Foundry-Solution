@@ -156,7 +156,7 @@ Once you've opened the project in [Codespaces](#github-codespaces), [Dev Contain
    - **Deploy** Video Indexer Arc Extension
    - **Run** a health check dashboard showing pod status across namespaces
 
-   This process typically takes 15-25 minutes.
+   This process typically takes 15-25 minutes. After `azd up` completes, allow an additional 20-35 minutes for GPU drivers and VI extension pods to fully initialize (45-60 minutes total).
 
 5. After deployment completes, the health dashboard will show the status of all components:
    - `gpu-operator` namespace (NVIDIA GPU Operator)
