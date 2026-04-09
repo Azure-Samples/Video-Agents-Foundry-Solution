@@ -73,44 +73,66 @@ CURRENT_WORKLOAD_VM="${WORKLOAD_VM_SIZE:-$DEFAULT_WORKLOAD_VM_SIZE}"
 CURRENT_DEEPSTREAM_VM="${DEEPSTREAM_GPU_VM_SIZE:-$DEFAULT_DEEPSTREAM_GPU_SIZE}"
 CURRENT_INFERENCE_VM="${INFERENCE_GPU_VM_SIZE:-$DEFAULT_INFERENCE_GPU_SIZE}"
 
-# Fetch full lists
-log_info "Querying available VM SKUs in ${AZURE_LOCATION}..."
-mapfile -t ALL_CPU_VMS < <(get_filtered_vm_sizes "$AZURE_LOCATION" "${CPU_VM_PREFIXES[@]}")
-mapfile -t ALL_GPU_VMS < <(get_filtered_vm_sizes "$AZURE_LOCATION" "${GPU_VM_PREFIXES[@]}")
-log_success "Found VM SKUs in ${AZURE_LOCATION}"
+# ── Non-interactive mode: skip menus when all VM sizes are explicitly set ──
+# When all 4 VM size env vars are set (via 'azd env set' or export), skip the
+# interactive selection menus and use those values directly. This enables:
+#   azd env set SYSTEM_VM_SIZE Standard_D4a_v4
+#   azd env set WORKLOAD_VM_SIZE Standard_D32a_v4
+#   azd env set DEEPSTREAM_GPU_VM_SIZE Standard_NC24ads_A100_v4
+#   azd env set INFERENCE_GPU_VM_SIZE Standard_NC24ads_A100_v4
+#   azd provision --no-prompt
+if [ -n "${SYSTEM_VM_SIZE:-}" ] && [ -n "${WORKLOAD_VM_SIZE:-}" ] && \
+   [ -n "${DEEPSTREAM_GPU_VM_SIZE:-}" ] && [ -n "${INFERENCE_GPU_VM_SIZE:-}" ]; then
 
-log_info "${#ALL_CPU_VMS[@]} CPU + ${#ALL_GPU_VMS[@]} GPU sizes available"
+    log_info "All VM sizes pre-configured via environment variables — skipping interactive selection."
+    write_key_value "System CPU"     "$SYSTEM_VM_SIZE"
+    write_key_value "Workload CPU"   "$WORKLOAD_VM_SIZE"
+    write_key_value "Deepstream GPU" "$DEEPSTREAM_GPU_VM_SIZE"
+    write_key_value "Inference GPU"  "$INFERENCE_GPU_VM_SIZE"
 
-select_vm_sizes_for_menu ALL_CPU_VMS SYSTEM_VMS   SYSTEM_RECOMMENDED_FAMILIES   "$CURRENT_SYSTEM_VM"     "$SIZES_PER_FAMILY" 0 "$SYSTEM_MAX_CORES"
-select_vm_sizes_for_menu ALL_CPU_VMS WORKLOAD_VMS WORKLOAD_RECOMMENDED_FAMILIES "$CURRENT_WORKLOAD_VM"   "$SIZES_PER_FAMILY" "$WORKLOAD_MIN_CORES"
-select_vm_sizes_for_menu ALL_GPU_VMS GPU_VMS      GPU_RECOMMENDED_FAMILIES      "$CURRENT_DEEPSTREAM_VM" "$SIZES_PER_FAMILY"
+    SYSTEM_SKU="$SYSTEM_VM_SIZE"
+    WORKLOAD_SKU="$WORKLOAD_VM_SIZE"
+    # DEEPSTREAM_GPU_VM_SIZE and INFERENCE_GPU_VM_SIZE already set from env
+else
+    # Fetch full lists
+    log_info "Querying available VM SKUs in ${AZURE_LOCATION}..."
+    mapfile -t ALL_CPU_VMS < <(get_filtered_vm_sizes "$AZURE_LOCATION" "${CPU_VM_PREFIXES[@]}")
+    mapfile -t ALL_GPU_VMS < <(get_filtered_vm_sizes "$AZURE_LOCATION" "${GPU_VM_PREFIXES[@]}")
+    log_success "Found VM SKUs in ${AZURE_LOCATION}"
 
-# Resolve defaults — if the configured default isn't available, pick the closest match
-CURRENT_SYSTEM_VM=$(resolve_default_sku "$CURRENT_SYSTEM_VM" SYSTEM_VMS 4)
-CURRENT_WORKLOAD_VM=$(resolve_default_sku "$CURRENT_WORKLOAD_VM" WORKLOAD_VMS 32)
-CURRENT_DEEPSTREAM_VM=$(resolve_default_sku "$CURRENT_DEEPSTREAM_VM" GPU_VMS 24)
-CURRENT_INFERENCE_VM=$(resolve_default_sku "$CURRENT_INFERENCE_VM" GPU_VMS 24)
+    log_info "${#ALL_CPU_VMS[@]} CPU + ${#ALL_GPU_VMS[@]} GPU sizes available"
 
-write_key_value "System pool"   "${#SYSTEM_VMS[@]} sizes"
-write_key_value "Workload pool" "${#WORKLOAD_VMS[@]} sizes"
-write_key_value "GPU pool"      "${#GPU_VMS[@]} sizes"
+    select_vm_sizes_for_menu ALL_CPU_VMS SYSTEM_VMS   SYSTEM_RECOMMENDED_FAMILIES   "$CURRENT_SYSTEM_VM"     "$SIZES_PER_FAMILY" 0 "$SYSTEM_MAX_CORES"
+    select_vm_sizes_for_menu ALL_CPU_VMS WORKLOAD_VMS WORKLOAD_RECOMMENDED_FAMILIES "$CURRENT_WORKLOAD_VM"   "$SIZES_PER_FAMILY" "$WORKLOAD_MIN_CORES"
+    select_vm_sizes_for_menu ALL_GPU_VMS GPU_VMS      GPU_RECOMMENDED_FAMILIES      "$CURRENT_DEEPSTREAM_VM" "$SIZES_PER_FAMILY"
 
-write_section "Choose a VM SKU for each AKS node pool"
-log_info "The default is highlighted. Press Enter to accept, C for custom."
+    # Resolve defaults — if the configured default isn't available, pick the closest match
+    CURRENT_SYSTEM_VM=$(resolve_default_sku "$CURRENT_SYSTEM_VM" SYSTEM_VMS 4)
+    CURRENT_WORKLOAD_VM=$(resolve_default_sku "$CURRENT_WORKLOAD_VM" WORKLOAD_VMS 32)
+    CURRENT_DEEPSTREAM_VM=$(resolve_default_sku "$CURRENT_DEEPSTREAM_VM" GPU_VMS 24)
+    CURRENT_INFERENCE_VM=$(resolve_default_sku "$CURRENT_INFERENCE_VM" GPU_VMS 24)
 
-# CPU pools (separate lists for system vs workload)
-show_vm_selection_menu "System (CPU)"   "SYSTEM_VM_SIZE"   SYSTEM_VMS   "$CURRENT_SYSTEM_VM"   "$AZURE_LOCATION"
-SYSTEM_SKU="$SELECTED_VM_SKU"
+    write_key_value "System pool"   "${#SYSTEM_VMS[@]} sizes"
+    write_key_value "Workload pool" "${#WORKLOAD_VMS[@]} sizes"
+    write_key_value "GPU pool"      "${#GPU_VMS[@]} sizes"
 
-show_vm_selection_menu "Workload (CPU)" "WORKLOAD_VM_SIZE" WORKLOAD_VMS "$CURRENT_WORKLOAD_VM" "$AZURE_LOCATION"
-WORKLOAD_SKU="$SELECTED_VM_SKU"
+    write_section "Choose a VM SKU for each AKS node pool"
+    log_info "The default is highlighted. Press Enter to accept, C for custom."
 
-# GPU pools (quota validated inline, node count determines total cores checked)
-show_vm_selection_menu "Deepstream (GPU)" "DEEPSTREAM_GPU_VM_SIZE" GPU_VMS "$CURRENT_DEEPSTREAM_VM" "$AZURE_LOCATION" "$DEEPSTREAM_GPU_MAX_NODE_COUNT" "gpu"
-DEEPSTREAM_GPU_VM_SIZE="$SELECTED_VM_SKU"
+    # CPU pools (separate lists for system vs workload)
+    show_vm_selection_menu "System (CPU)"   "SYSTEM_VM_SIZE"   SYSTEM_VMS   "$CURRENT_SYSTEM_VM"   "$AZURE_LOCATION"
+    SYSTEM_SKU="$SELECTED_VM_SKU"
 
-show_vm_selection_menu "Inference (GPU)" "INFERENCE_GPU_VM_SIZE" GPU_VMS "$CURRENT_INFERENCE_VM" "$AZURE_LOCATION" "$INFERENCE_GPU_MAX_NODE_COUNT" "gpu"
-INFERENCE_GPU_VM_SIZE="$SELECTED_VM_SKU"
+    show_vm_selection_menu "Workload (CPU)" "WORKLOAD_VM_SIZE" WORKLOAD_VMS "$CURRENT_WORKLOAD_VM" "$AZURE_LOCATION"
+    WORKLOAD_SKU="$SELECTED_VM_SKU"
+
+    # GPU pools (quota validated inline, node count determines total cores checked)
+    show_vm_selection_menu "Deepstream (GPU)" "DEEPSTREAM_GPU_VM_SIZE" GPU_VMS "$CURRENT_DEEPSTREAM_VM" "$AZURE_LOCATION" "$DEEPSTREAM_GPU_MAX_NODE_COUNT" "gpu"
+    DEEPSTREAM_GPU_VM_SIZE="$SELECTED_VM_SKU"
+
+    show_vm_selection_menu "Inference (GPU)" "INFERENCE_GPU_VM_SIZE" GPU_VMS "$CURRENT_INFERENCE_VM" "$AZURE_LOCATION" "$INFERENCE_GPU_MAX_NODE_COUNT" "gpu"
+    INFERENCE_GPU_VM_SIZE="$SELECTED_VM_SKU"
+fi
 
 # =====================================================
 # Step 5: Register required Azure resource providers
