@@ -42,7 +42,7 @@ param mediaStreamerEnabled bool = true
 param mediaStreamerImage string = 'mcr.microsoft.com/vi-arc/media-streamer'
 
 @description('Media streamer image tag')
-param mediaStreamerTag string = '1.17.0-ft'
+param mediaStreamerTag string = '1.17.0-2026.04.09.3'
 
 @description('Enable agents')
 param agentsEnabled bool = true
