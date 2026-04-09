@@ -1,20 +1,24 @@
 using './main.bicep'
 
+// =====================================================
+// azd-managed parameters (auto-populated by azd)
+// =====================================================
 param environmentName = readEnvironmentVariable('AZURE_ENV_NAME', 'azd-foundry-solution')
 param resourceGroupName = readEnvironmentVariable('AZURE_RESOURCE_GROUP', '')
 param location = readEnvironmentVariable('AZURE_LOCATION', 'eastus2')
 param principalId = readEnvironmentVariable('AZURE_PRINCIPAL_ID', '')
-param createRoleForUser = bool(readEnvironmentVariable('CREATE_ROLE_FOR_USER', 'true'))
-param kubernetesVersion = readEnvironmentVariable('KUBERNETES_VERSION', '1.32')
 
-// VM_SIZES
-param systemVmSize = readEnvironmentVariable('SYSTEM_VM_SIZE', '')
-param workloadVmSize = readEnvironmentVariable('WORKLOAD_VM_SIZE', '')
-param deepstreamGpuVmSize = readEnvironmentVariable('DEEPSTREAM_GPU_VM_SIZE', '')
-param inferenceGpuVmSize = readEnvironmentVariable('INFERENCE_GPU_VM_SIZE', '')
-
-param deepstreamGpuMaxNodeCount = int(readEnvironmentVariable('DEEPSTREAM_GPU_MAX_NODE_COUNT', '1'))
-param createFoundryProject = bool(readEnvironmentVariable('CREATE_FOUNDRY_PROJECT', 'false'))
-param aiModelName = readEnvironmentVariable('AI_MODEL_NAME', 'gpt-4o-mini')
-param aiModelVersion = readEnvironmentVariable('AI_MODEL_VERSION', '2024-07-18')
-param aiModelCapacity = int(readEnvironmentVariable('AI_MODEL_CAPACITY', '1'))
+// =====================================================
+// Custom parameters — handled by azd native prompting
+// =====================================================
+// The following parameters are NOT set here via readEnvironmentVariable().
+// Instead, azd will prompt the user interactively using @allowed / @description
+// decorators defined in main.bicep.
+//
+// To pre-set values and skip prompts, use:
+//   azd env config set infra.parameters.<paramName> <value>
+//
+// Examples:
+//   azd env config set infra.parameters.systemVmSize Standard_D4a_v4
+//   azd env config set infra.parameters.kubernetesVersion 1.32
+//   azd env config set infra.parameters.createFoundryProject true

@@ -22,10 +22,12 @@ param principalId string = ''
 @description('Whether to create role assignments for the deploying user')
 param createRoleForUser bool = true
 
+@allowed(['true', 'false'])
 @description('Whether to create a Foundry project and link it to the VI extension')
-param createFoundryProject bool = true
+param createFoundryProject string = 'false'
 
 @description('Model name to deploy in AI Foundry (e.g. gpt-4o-mini)')
+@allowed(['gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini', 'gpt-4.1'])
 param aiModelName string = 'gpt-4o-mini'
 
 @description('Model version to deploy (e.g. 2024-07-18)')
@@ -35,29 +37,73 @@ param aiModelVersion string = '2024-07-18'
 param aiModelCapacity int = 1
 
 @description('Kubernetes version for the AKS cluster')
+@allowed(['1.30', '1.31', '1.32'])
 param kubernetesVersion string
 
-@description('VM size for system node pool')
+@description('VM size for system node pool — azd will show a selection list')
+@allowed([
+  'Standard_D4a_v4'
+  'Standard_D8a_v4'
+  'Standard_D4as_v5'
+  'Standard_D8as_v5'
+  'Standard_D4ds_v5'
+  'Standard_D8ds_v5'
+  'Standard_D16a_v4'
+])
 param systemVmSize string
 
-@description('VM size for workload node pool')
+@description('VM size for workload node pool — azd will show a selection list')
+@allowed([
+  'Standard_D32a_v4'
+  'Standard_D48a_v4'
+  'Standard_D64a_v4'
+  'Standard_D96a_v4'
+  'Standard_D32as_v5'
+  'Standard_D48as_v5'
+  'Standard_D64as_v5'
+])
 param workloadVmSize string
 
-@description('VM size for the GPU deepstream workload node pool')
+@description('VM size for the GPU deepstream workload node pool — azd will show a selection list')
+@allowed([
+  'Standard_NC24ads_A100_v4'
+  'Standard_NC48ads_A100_v4'
+  'Standard_NC96ads_A100_v4'
+  'Standard_NC40ads_H100_v5'
+  'Standard_NC6s_v3'
+  'Standard_NC12s_v3'
+  'Standard_NC24s_v3'
+  'Standard_NV6ads_A10_v5'
+  'Standard_NV18ads_A10_v5'
+  'Standard_NV36ads_A10_v5'
+])
 param deepstreamGpuVmSize string
 
-@description('VM size for the GPU inference workload node pool')
+@description('VM size for the GPU inference workload node pool — azd will show a selection list')
+@allowed([
+  'Standard_NC24ads_A100_v4'
+  'Standard_NC48ads_A100_v4'
+  'Standard_NC96ads_A100_v4'
+  'Standard_NC40ads_H100_v5'
+  'Standard_NC6s_v3'
+  'Standard_NC12s_v3'
+  'Standard_NC24s_v3'
+  'Standard_NV6ads_A10_v5'
+  'Standard_NV18ads_A10_v5'
+  'Standard_NV36ads_A10_v5'
+])
 param inferenceGpuVmSize string
 
 @description('Maximum number of deepstream GPU nodes')
-param deepstreamGpuMaxNodeCount int
+param deepstreamGpuMaxNodeCount int = 1
 
 // =====================================================
 // Variables
 // =====================================================
 
 // Inference GPU node count: 1 node when Foundry handles model serving, 2 otherwise
-var inferenceGpuMaxNodeCount = createFoundryProject ? 1 : 2
+var _createFoundryProject = createFoundryProject == 'true'
+var inferenceGpuMaxNodeCount = _createFoundryProject ? 1 : 2
 
 var abbrs = loadJsonContent('abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
@@ -150,7 +196,7 @@ module videoIndexer 'modules/vi-account.bicep' = {
 // Module: AI Foundry (Hub + Project + Model Deployment)
 // =====================================================
 
-module aiFoundry 'modules/ai-foundry.bicep' = if (createFoundryProject) {
+module aiFoundry 'modules/ai-foundry.bicep' = if (_createFoundryProject) {
   name: 'ai-foundry-deployment'
   scope: rg
   params: {
@@ -184,8 +230,8 @@ output AZURE_PRINCIPAL_ID string = principalId
 output CREATE_ROLE_FOR_USER bool = createRoleForUser
 output AZURE_DEEPSTREAM_NODE_SELECTOR_VALUE string = aks.outputs.deepstreamWorkloadLabelValue
 output AZURE_INFERENCE_NODE_SELECTOR_VALUE string = aks.outputs.inferenceWorkloadLabelValue
-output AI_FOUNDRY_ENDPOINT string = createFoundryProject ? aiFoundry.outputs.endpoint : ''
-output AI_FOUNDRY_AI_SERVICES_ENDPOINT string = createFoundryProject ? aiFoundry.outputs.aiServicesEndpoint : ''
-output AI_FOUNDRY_MODEL_DEPLOYMENT string = createFoundryProject ? aiFoundry.outputs.modelDeploymentName : ''
-output AI_FOUNDRY_ACCOUNT_NAME string = createFoundryProject ? aiFoundry.outputs.accountName : ''
-output AI_FOUNDRY_PROJECT_NAME string = createFoundryProject ? aiFoundry.outputs.projectName : ''
+output AI_FOUNDRY_ENDPOINT string = _createFoundryProject ? aiFoundry.outputs.endpoint : ''
+output AI_FOUNDRY_AI_SERVICES_ENDPOINT string = _createFoundryProject ? aiFoundry.outputs.aiServicesEndpoint : ''
+output AI_FOUNDRY_MODEL_DEPLOYMENT string = _createFoundryProject ? aiFoundry.outputs.modelDeploymentName : ''
+output AI_FOUNDRY_ACCOUNT_NAME string = _createFoundryProject ? aiFoundry.outputs.accountName : ''
+output AI_FOUNDRY_PROJECT_NAME string = _createFoundryProject ? aiFoundry.outputs.projectName : ''
