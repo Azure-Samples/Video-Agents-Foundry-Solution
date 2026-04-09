@@ -419,9 +419,10 @@ else {
                     "Authorization" = "Bearer $viAccessToken"
                     "Content-Type"  = "application/json"
                 }
-                # TODO: Remove -SkipCertificateCheck once TLS is wired up (see plan item 1.5).
-                # This flag is only needed because the endpoint currently uses HTTP.
-                $viSkipCert = $VIDEO_INDEXER_ENDPOINT_URI.StartsWith("http://")
+                # TODO: Remove -SkipCertificateCheck once a valid TLS certificate is configured
+                # on the Nginx Ingress Controller (e.g. via cert-manager ClusterIssuer).
+                # The endpoint uses HTTPS but the ingress does not yet have a trusted certificate.
+                $viSkipCert = $true
             }
         }
     }

@@ -69,7 +69,7 @@ For solutions to common deployment, container app, and agent issues, see the [Tr
 
 - **Edge-Deployed Video Analysis** — Run Azure Video Indexer on Arc-enabled Kubernetes clusters at the edge, bringing AI-powered video analysis closer to data sources for low-latency processing.
 - **Real-Time & Batch Video Processing** — Support for both live video pipeline ingestion (RTSP streams) and batch processing of recorded video files.
-• **[Customizable AI Model Deployment](./docs/deploy_customization.md#customizing-model-deployments)**: The solution allows users to configure and deploy AI models, such as gpt-5.2, with options to adjust model capacity, deployment configurations, and knowledge retrieval methods.
+- **[Customizable AI Model Deployment](./docs/deploy_customization.md#customizing-model-deployments)**: The solution allows users to configure and deploy AI models, such as gpt-5.2, with options to adjust model capacity, deployment configurations, and knowledge retrieval methods.
 - **Multimodal AI Insights** — Extract rich insights from video content including speech transcription, OCR, face detection, object tracking, scene detection, and action recognition.
 - **AI Agent–Based Automation** — Leverage intelligent agents powered by Azure OpenAI to automate complex video analysis workflows, enabling automated decision-making and action triggering.
 - **Cloud-Managed Edge Deployments** — Manage and monitor edge deployments centrally through Azure Arc while processing video data locally.
@@ -166,7 +166,7 @@ Supporting documentation
 
 This template also uses [Managed Identity](https://learn.microsoft.com/entra/identity/managed-identities-azure-resources/overview) for local development and deployment.
 
-To ensure continued best practices in your own repository, we recommend that anyone creating solutions based on our templates ensure that the [Github secret scanning](https://docs.github.com/code-security/secret-scanning/about-secret-scanning) setting is enabled.
+To ensure continued best practices in your own repository, we recommend that anyone creating solutions based on our templates ensure that the [GitHub secret scanning](https://docs.github.com/code-security/secret-scanning/about-secret-scanning) setting is enabled.
 
 You may want to consider additional security measures, such as:
 

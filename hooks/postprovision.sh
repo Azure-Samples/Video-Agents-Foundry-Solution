@@ -310,16 +310,16 @@ else
     if [ -n "$EXISTING_ASSIGNMENT" ]; then
         log_success "Role assignment already exists. Skipping."
     else
-        ROLE_ERR=$(az role assignment create \
+        ROLE_ERR=""
+        if ROLE_ERR=$(az role assignment create \
             --assignee-object-id "$PRINCIPAL_ID" \
             --assignee-principal-type ServicePrincipal \
             --role Contributor \
-            --scope "$ACCOUNT_RESOURCE_ID" 2>&1)
-        if [ $? -ne 0 ]; then
+            --scope "$ACCOUNT_RESOURCE_ID" 2>&1); then
+            log_success "Permissions assigned to Arc extension managed identity"
+        else
             log_error "Failed to create role assignment: $ROLE_ERR"
             log_error "The VI extension may not function correctly without this permission."
-        else
-            log_success "Permissions assigned to Arc extension managed identity"
         fi
     fi
 fi
@@ -356,10 +356,10 @@ else
         else
             log_success "VI extension access token obtained"
             VI_API_BASE="${VIDEO_INDEXER_ENDPOINT_URI}/Accounts/${AZURE_VIDEO_INDEXER_ACCOUNT_ID}"
-            # TODO: Remove -k (insecure) flag once TLS is wired up (see plan item 1.5).
-            # This flag is only needed because the endpoint currently uses HTTP.
-            CURL_INSECURE_FLAG=""
-            case "$VIDEO_INDEXER_ENDPOINT_URI" in http://*) CURL_INSECURE_FLAG="-k" ;; esac
+            # TODO: Remove -k once a valid TLS certificate is configured
+            # on the Nginx Ingress Controller (e.g. via cert-manager ClusterIssuer).
+            # The endpoint uses HTTPS but the ingress does not yet have a trusted certificate.
+            CURL_INSECURE_FLAG="-k"
         fi
     fi
 
