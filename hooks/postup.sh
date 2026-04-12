@@ -236,8 +236,8 @@ fi
 write_section "Next Steps"
 echo ""
 
-if [ -n "${AZURE_VIDEO_INDEXER_ACCOUNT_ID:-}" ]; then
-    PORTAL_URL="https://www.videoindexer.ai/accounts/${AZURE_VIDEO_INDEXER_ACCOUNT_ID}"
+if [ -n "${AZURE_VI_PORTAL_URL:-}" ]; then
+    PORTAL_URL="$AZURE_VI_PORTAL_URL"
     log_success "Video Indexer portal: $PORTAL_URL"
     write_key_value "1. Access portal" "$PORTAL_URL"
     case "$(uname)" in
@@ -247,15 +247,9 @@ if [ -n "${AZURE_VIDEO_INDEXER_ACCOUNT_ID:-}" ]; then
         *) true ;;
     esac
 fi
-write_key_value "2. Test indexing"    "Upload a video to verify end-to-end"
-write_key_value "3. Monitor GPUs"    "kubectl top nodes"
-write_key_value "4. View VI logs"    "kubectl logs -n ${NS_VIDEO_INDEXER} -l app=videoindexer --tail=100"
-write_key_value "5. Tear down"       "azd down"
+Write-write_key_value "2. Test chat" "Chat with video agent"
+Write-write_key_value "3. Add camera"        "add custom cameras from RTSP streams"
+Write-write_key_value "4. Tear down"         "azd down"
 
-write_section "Useful Commands"
-echo ""
-write_key_value "All pods"         "kubectl get pods -A"
-write_key_value "Node details"     "kubectl get nodes -o wide"
-write_key_value "Arc status"       "az connectedk8s show -g ${AZURE_RESOURCE_GROUP:-RG} -n ${AZURE_ARC_CLUSTER_NAME:-ARC}"
 
 echo ""

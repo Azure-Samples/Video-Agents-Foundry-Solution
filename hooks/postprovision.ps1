@@ -365,13 +365,33 @@ else {
 
 
 # =====================================================
+# Verify VI Extension reached Succeeded state
+# =====================================================
+$viExtState = $null
+try {
+    $viExtState = (az k8s-extension show `
+            --resource-group "$env:AZURE_RESOURCE_GROUP" `
+            --cluster-name "$ARC_CLUSTER_NAME" `
+            --cluster-type connectedClusters `
+            --name videoindexer `
+            --query "provisioningState" -o tsv 2>$null)
+}
+catch {
+    $viExtState = "Unknown"
+}
+
+# =====================================================
 # Acquire VI Extension Access Token (used by Steps 10-11)
 # =====================================================
 $viAccessToken = $null
 $viApiBase = $null
 $viHeaders = $null
 
-if ($mediaStreamerEnabled -eq 'false') {
+if ($viExtState -ne 'Succeeded') {
+    Log-Warning "VI extension provisioningState is '$viExtState' (expected 'Succeeded')."
+    Log-Warning "Skipping camera and agent job setup. Run 'azd hooks run postprovision' to retry after the extension is ready."
+}
+elseif ($mediaStreamerEnabled -eq 'false') {
     Log-Info "Media streamer disabled (MEDIA_STREAMER_ENABLED=false). Skipping token acquisition, camera, and agent job setup."
 }
 else {
@@ -567,6 +587,11 @@ if ($env:AI_FOUNDRY_ACCOUNT_NAME) {
     Write-KeyValue "AI Foundry Hub"   $env:AI_FOUNDRY_ACCOUNT_NAME
     Write-KeyValue "AI Foundry Model" $env:AI_FOUNDRY_MODEL_DEPLOYMENT
     Write-KeyValue "AI Endpoint"      $env:AI_FOUNDRY_AI_SERVICES_ENDPOINT
+}
+if ($principalId -and $cameraId) {
+    $portalUrl = "https://www.videoindexer.ai/accounts/$env:AZURE_VIDEO_INDEXER_ACCOUNT_ID/extensions/$principalId/cameras/$cameraId/live-stream?feature.VideoAssistant=true&feature.LiveActivity=true"
+    Write-KeyValue "VI Portal"        $portalUrl
+    try { azd env set AZURE_VI_PORTAL_URL "$portalUrl" 2>$null } catch {}
 }
 
 Write-Host ""
