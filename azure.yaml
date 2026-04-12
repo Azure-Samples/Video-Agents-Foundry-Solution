@@ -3,6 +3,8 @@
 name: video-agents-foundry-solution
 metadata:
   template: video-agents-foundry-solution@1.0.0
+requiredVersions:
+  azd: ">=1.14.0"
 workflows:
   up:
     steps:
@@ -55,3 +57,20 @@ hooks:
     posix:
       shell: sh
       run: ./hooks/predown.sh
+pipeline:
+  variables:
+    - AZURE_RESOURCE_GROUP
+    - AZURE_PRINCIPAL_ID
+    - CREATE_ROLE_FOR_USER
+    - KUBERNETES_VERSION
+    - SYSTEM_VM_SIZE
+    - WORKLOAD_VM_SIZE
+    - DEEPSTREAM_GPU_VM_SIZE
+    - INFERENCE_GPU_VM_SIZE
+    - DEEPSTREAM_GPU_MAX_NODE_COUNT
+    - CREATE_FOUNDRY_PROJECT
+    - AI_MODEL_NAME
+    - AI_MODEL_VERSION
+    - AI_MODEL_CAPACITY
+    - MEDIA_STREAMER_ENABLED
+    - STORAGE_SKU_NAME

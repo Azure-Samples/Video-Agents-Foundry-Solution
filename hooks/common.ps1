@@ -366,23 +366,6 @@ function Assert-VmQuota {
 # ── AI Model Quota Check ──────────────────────────────────────────────────
 
 function Resolve-ModelQuota {
-    <#
-    .SYNOPSIS
-        Checks AI model deployment quota via az cognitiveservices usage list.
-        If insufficient, prompts the user to reduce capacity or fails.
-    .PARAMETER Location
-        Azure region to check quota in.
-    .PARAMETER Model
-        Model name (e.g. gpt-5.2).
-    .PARAMETER Format
-        Model format (default: OpenAI). Must match ai-foundry.bicep.
-    .PARAMETER DeploymentType
-        Deployment SKU type (default: GlobalStandard). Must match ai-foundry.bicep.
-    .PARAMETER CapacityEnvVarName
-        azd env var name to update if capacity is adjusted.
-    .PARAMETER Capacity
-        Requested capacity in TPM thousands.
-    #>
     param(
         [string]$Location,
         [string]$Model,
