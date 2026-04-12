@@ -222,11 +222,6 @@ write_key_value "AKS Cluster"    "${AZURE_AKS_CLUSTER_NAME:-n/a}"
 write_key_value "Arc Cluster"    "${AZURE_ARC_CLUSTER_NAME:-n/a}"
 write_key_value "Location"       "${AZURE_LOCATION:-n/a}"
 
-ENDPOINT_URI="${AZURE_VIDEO_INDEXER_ENDPOINT_URI:-}"
-if [ -n "$ENDPOINT_URI" ]; then
-    write_key_value "Video Indexer" "$ENDPOINT_URI"
-fi
-
 write_summary_block "$HEALTH_PASSED" "$HEALTH_FAILED" "$HEALTH_WARNINGS" "$HEALTH_TOTAL"
 
 if [ "$HEALTH_FAILED" -gt 0 ]; then
@@ -241,8 +236,16 @@ fi
 write_section "Next Steps"
 echo ""
 
-if [ -n "$ENDPOINT_URI" ]; then
-    write_key_value "1. Access portal" "$ENDPOINT_URI"
+if [ -n "${AZURE_VIDEO_INDEXER_ACCOUNT_ID:-}" ]; then
+    PORTAL_URL="https://www.videoindexer.ai/accounts/${AZURE_VIDEO_INDEXER_ACCOUNT_ID}"
+    log_success "Video Indexer portal: $PORTAL_URL"
+    write_key_value "1. Access portal" "$PORTAL_URL"
+    case "$(uname)" in
+        Darwin*) open "$PORTAL_URL" ;;
+        Linux*) xdg-open "$PORTAL_URL" 2>/dev/null || true ;;
+        MINGW*|MSYS*|CYGWIN*) start "$PORTAL_URL" 2>/dev/null || true ;;
+        *) true ;;
+    esac
 fi
 write_key_value "2. Test indexing"    "Upload a video to verify end-to-end"
 write_key_value "3. Monitor GPUs"    "kubectl top nodes"

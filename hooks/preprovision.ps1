@@ -6,7 +6,7 @@ $ErrorActionPreference = "Stop"
 
 . "$PSScriptRoot/common.ps1"
 
-$totalSteps = 5
+$totalSteps = 6
 
 Write-FoundryBanner -Phase "Pre-Provision Validation"
 
@@ -69,11 +69,52 @@ foreach ($var in $preProvisionVars) {
 # Use the shared assertion for the actual error check
 Assert-EnvVars $preProvisionVars
 
+# Validate STORAGE_SKU_NAME against region capabilities if ZRS is requested
+$storageSku = if ($env:STORAGE_SKU_NAME) { $env:STORAGE_SKU_NAME } else { 'Standard_LRS' }
+if ($storageSku -eq 'Standard_ZRS') {
+    Log-Info "Checking ZRS availability in $($env:AZURE_LOCATION)..."
+    $zrsAvailable = $false
+    try {
+        $skuInfo = (az provider show --namespace Microsoft.Storage `
+                --query "resourceTypes[?resourceType=='storageAccounts'].zoneMappings[?contains(location, '$($env:AZURE_LOCATION)')].location | [0][0]" `
+                -o tsv 2>$null)
+        if ($skuInfo) { $zrsAvailable = $true }
+    }
+    catch { }
+    if (-not $zrsAvailable) {
+        Log-Warning "Standard_ZRS may not be available in '$($env:AZURE_LOCATION)'."
+        Log-Warning "Falling back to Standard_LRS to avoid deployment failure."
+        azd env set STORAGE_SKU_NAME Standard_LRS 2>$null
+        $storageSku = 'Standard_LRS'
+    }
+    else {
+        Log-Success "ZRS is available in $($env:AZURE_LOCATION)"
+    }
+}
+Write-KeyValue "Storage SKU" $storageSku
+
 # =====================================================
-# Step 4: Select VM sizes for AKS node pools
+# Step 4: Resolve AI Model Quota (if Foundry enabled)
+# =====================================================
+Log-Step -Number 4 -Total $totalSteps -Title "Checking AI Model Quota"
+
+if ($env:CREATE_FOUNDRY_PROJECT -eq 'false') {
+    Log-Info "AI Foundry disabled (CREATE_FOUNDRY_PROJECT=false). Skipping model quota check."
+}
+else {
+    $modelName     = if ($env:AI_MODEL_NAME)     { $env:AI_MODEL_NAME }     else { $DEFAULT_AI_MODEL_NAME }
+    $modelCapacity = if ($env:AI_MODEL_CAPACITY)  { [int]$env:AI_MODEL_CAPACITY } else { 1 }
+
+    Resolve-ModelQuota -Location $env:AZURE_LOCATION `
+        -Model $modelName `
+        -Capacity $modelCapacity
+}
+
+# =====================================================
+# Step 5: Select VM sizes for AKS node pools
 #         (includes region availability + GPU quota checks)
 # =====================================================
-Log-Step -Number 4 -Total $totalSteps -Title "Selecting VM Sizes for AKS Node Pools"
+Log-Step -Number 5 -Total $totalSteps -Title "Selecting VM Sizes for AKS Node Pools"
 
 Log-Info "Querying available VM SKUs in $($env:AZURE_LOCATION)..."
 $allVmSizes = Get-AzVmSizesForRegion -Location $env:AZURE_LOCATION
@@ -126,9 +167,9 @@ $DEEPSTREAM_GPU_VM_SIZE = $selectedDeepstream.Sku
 $INFERENCE_GPU_VM_SIZE  = $selectedInference.Sku
 
 # =====================================================
-# Step 5: Register required Azure resource providers
+# Step 6: Register required Azure resource providers
 # =====================================================
-Log-Step -Number 5 -Total $totalSteps -Title "Checking Azure Resource Provider Registrations"
+Log-Step -Number 6 -Total $totalSteps -Title "Checking Azure Resource Provider Registrations"
 
 $null = Register-RequiredProviders
 
@@ -146,6 +187,9 @@ Write-KeyValue "System CPU"     $selectedSystem.Sku
 Write-KeyValue "Workload CPU"   $selectedWorkload.Sku
 Write-KeyValue "Deepstream GPU" "$DEEPSTREAM_GPU_VM_SIZE ($DEEPSTREAM_GPU_MAX_NODE_COUNT node(s))"
 Write-KeyValue "Inference GPU"  "$INFERENCE_GPU_VM_SIZE ($INFERENCE_GPU_MAX_NODE_COUNT node(s))"
+if ($env:CREATE_FOUNDRY_PROJECT -ne 'false') {
+    Write-KeyValue "AI Model"       "$modelName (capacity: $modelCapacity)"
+}
 Write-KeyValue "Providers"      "all registered"
 Write-KeyValue "Tools"          "all present"
 

@@ -326,6 +326,76 @@ assert_vm_quota() {
     ASSERT_QUOTA_RESULT="ok"; return 0
 }
 
+# ── AI Model Quota Check ──────────────────────────────────────────────────
+
+resolve_model_quota() {
+    # Usage: resolve_model_quota <location> <model> <capacity> [format] [deployment_type] [capacity_env_var]
+    # Checks AI model deployment quota via az cognitiveservices usage list.
+    # If insufficient, prompts the user to reduce capacity or exits.
+    local location="$1"
+    local model="$2"
+    local capacity="$3"
+    local format="${4:-$DEFAULT_AI_MODEL_FORMAT}"
+    local deployment_type="${5:-$DEFAULT_AI_MODEL_DEPLOYMENT_TYPE}"
+    local capacity_env_var="${6:-AI_MODEL_CAPACITY}"
+
+    local model_type="${format}.${deployment_type}.${model}"
+    log_info "Checking quota for $model_type in $location..."
+
+    local model_info
+    model_info=$(az cognitiveservices usage list --location "$location" \
+        --query "[?name.value=='$model_type']" --output json 2>/dev/null | tr '[:upper:]' '[:lower:]')
+
+    if [ -z "$model_info" ] || [ "$model_info" = "[]" ]; then
+        log_warning "No quota info found for '$model_type' in '$location'. Skipping quota check."
+        log_info "The model may not be available in this region. Bicep will report a clearer error if so."
+        return 0
+    fi
+
+    local current_value limit
+    current_value=$(echo "$model_info" | awk -F': ' '/"currentvalue"/ {print $2}' | tr -d ',' | tr -d ' ')
+    limit=$(echo "$model_info" | awk -F': ' '/"limit"/ {print $2}' | tr -d ',' | tr -d ' ')
+    current_value=$(echo "${current_value:-0}" | cut -d'.' -f1)
+    limit=$(echo "${limit:-0}" | cut -d'.' -f1)
+    local available=$((limit - current_value))
+
+    write_key_value "Model" "$model_type"
+    write_key_value "Quota" "$available available ($current_value used / $limit limit)"
+
+    if [ "$available" -ge "$capacity" ]; then
+        log_success "Sufficient quota: $available available, need $capacity"
+        return 0
+    fi
+
+    if [ "$available" -ge 1 ]; then
+        log_warning "Insufficient quota: $available available (in thousands of TPM), need $capacity."
+        local valid_input=false
+        while [ "$valid_input" = false ]; do
+            printf "   Enter a new capacity between 1 and %d (or 'q' to abort): " "$available"
+            read -r user_input
+            if [ "$user_input" = "q" ]; then
+                log_error "Aborted by user."
+                exit 1
+            fi
+            if echo "$user_input" | grep -qE '^[0-9]+$'; then
+                if [ "$user_input" -ge 1 ] && [ "$user_input" -le "$available" ]; then
+                    valid_input=true
+                else
+                    log_warning "Invalid input. '$user_input' is not between 1 and $available."
+                fi
+            else
+                log_warning "Invalid input: '$user_input' is not a valid integer."
+            fi
+        done
+        azd env set "$capacity_env_var" "$user_input" 2>/dev/null || true
+        log_success "Capacity adjusted to $user_input (saved to $capacity_env_var)"
+    else
+        log_error "Zero quota available for '$model_type' in '$location'."
+        log_info "Request quota at: $AI_QUOTA_URL"
+        exit 1
+    fi
+}
+
 # ── Interactive VM Selection Menu ─────────────────────────────────────────
 # NOTE: This function uses low-level terminal manipulation for interactive
 # arrow-key menus. Its internal styling is intentionally left as-is.

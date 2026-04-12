@@ -20,39 +20,36 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
+      # ── Required Azure identity ─────────────────────────────
       AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
       AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
       AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AZURE_PRINCIPAL_ID: ${{ vars.AZURE_PRINCIPAL_ID }}
+
+      # ── azd environment ─────────────────────────────────────
       AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME }}
       AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
       AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
-      AZURE_AIHUB_NAME: ${{ vars.AZURE_AIHUB_NAME }}
-      AZURE_AIPROJECT_NAME: ${{ vars.AZURE_AIPROJECT_NAME }}
-      AZURE_AISERVICES_NAME: ${{ vars.AZURE_AISERVICES_NAME }}
-      AZURE_SEARCH_SERVICE_NAME: ${{ vars.AZURE_SEARCH_SERVICE_NAME }}
-      AZURE_APPLICATION_INSIGHTS_NAME: ${{ vars.AZURE_APPLICATION_INSIGHTS_NAME }}
-      AZURE_CONTAINER_REGISTRY_NAME: ${{ vars.AZURE_CONTAINER_REGISTRY_NAME }}
-      AZURE_KEYVAULT_NAME: ${{ vars.AZURE_KEYVAULT_NAME }}
-      AZURE_STORAGE_ACCOUNT_NAME: ${{ vars.AZURE_STORAGE_ACCOUNT_NAME }}
-      AZURE_LOG_ANALYTICS_WORKSPACE_NAME: ${{ vars.AZURE_LOG_ANALYTICS_WORKSPACE_NAME }}
-      USE_CONTAINER_REGISTRY: ${{ vars.USE_CONTAINER_REGISTRY }}
-      USE_APPLICATION_INSIGHTS: ${{ vars.USE_APPLICATION_INSIGHTS }}
-      USE_AZURE_AI_SEARCH_SERVICE: ${{ vars.USE_AZURE_AI_SEARCH_SERVICE }}
-      AZURE_AI_AGENT_NAME: ${{ vars.AZURE_AI_AGENT_NAME }}
-      AZURE_EXISTING_AGENT_ID: ${{ vars.AZURE_EXISTING_AGENT_ID }}
-      AZURE_AI_AGENT_DEPLOYMENT_NAME: ${{ vars.AZURE_AI_AGENT_DEPLOYMENT_NAME }}
-      AZURE_AI_AGENT_DEPLOYMENT_SKU: ${{ vars.AZURE_AI_AGENT_DEPLOYMENT_SKU }}
-      AZURE_AI_AGENT_DEPLOYMENT_CAPACITY: ${{ vars.AZURE_AI_AGENT_DEPLOYMENT_CAPACITY }}
-      AZURE_AI_AGENT_MODEL_NAME: ${{ vars.AZURE_AI_AGENT_MODEL_NAME }}
-      AZURE_AI_AGENT_MODEL_FORMAT: ${{ vars.AZURE_AI_AGENT_MODEL_FORMAT }}
-      AZURE_AI_AGENT_MODEL_VERSION: ${{ vars.AZURE_AI_AGENT_MODEL_VERSION }}
-      AZURE_AI_EMBED_DEPLOYMENT_NAME: ${{ vars.AZURE_AI_EMBED_DEPLOYMENT_NAME }}
-      AZURE_AI_EMBED_DEPLOYMENT_SKU: ${{ vars.AZURE_AI_EMBED_DEPLOYMENT_SKU }}
-      AZURE_AI_EMBED_DEPLOYMENT_CAPACITY: ${{ vars.AZURE_AI_EMBED_DEPLOYMENT_CAPACITY }}
-      AZURE_AI_EMBED_MODEL_NAME: ${{ vars.AZURE_AI_EMBED_MODEL_NAME }}
-      AZURE_AI_EMBED_MODEL_FORMAT: ${{ vars.AZURE_AI_EMBED_MODEL_FORMAT }}
-      AZURE_AI_EMBED_MODEL_VERSION: ${{ vars.AZURE_AI_EMBED_MODEL_VERSION }}
-      AZURE_EXISTING_AIPROJECT_RESOURCE_ID: ${{ vars.AZURE_EXISTING_AIPROJECT_RESOURCE_ID }}
+
+      # ── VM sizes (defaults in main.bicepparam if unset) ─────
+      SYSTEM_VM_SIZE: ${{ vars.SYSTEM_VM_SIZE }}
+      WORKLOAD_VM_SIZE: ${{ vars.WORKLOAD_VM_SIZE }}
+      DEEPSTREAM_GPU_VM_SIZE: ${{ vars.DEEPSTREAM_GPU_VM_SIZE }}
+      INFERENCE_GPU_VM_SIZE: ${{ vars.INFERENCE_GPU_VM_SIZE }}
+
+      # ── AI Foundry (optional) ───────────────────────────────
+      CREATE_FOUNDRY_PROJECT: ${{ vars.CREATE_FOUNDRY_PROJECT }}
+      AI_MODEL_NAME: ${{ vars.AI_MODEL_NAME }}
+      AI_MODEL_VERSION: ${{ vars.AI_MODEL_VERSION }}
+      AI_MODEL_CAPACITY: ${{ vars.AI_MODEL_CAPACITY }}
+
+      # ── Media streamer (optional, defaults to true) ─────────
+      MEDIA_STREAMER_ENABLED: ${{ vars.MEDIA_STREAMER_ENABLED }}
+
+      # ── Hook control ────────────────────────────────────────
+      # Skip interactive preprovision wizard in CI
+      CREATE_IN_LOCAL: "false"
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -66,11 +63,13 @@ jobs:
             --tenant-id "$Env:AZURE_TENANT_ID"
         shell: pwsh
 
-
       - name: Provision Infrastructure
         run: azd provision --no-prompt
         env:
           AZD_INITIAL_ENVIRONMENT_CONFIG: ${{ secrets.AZD_INITIAL_ENVIRONMENT_CONFIG }}
 
+      # NOTE: azure.yaml has no services: block, so azd deploy is a no-op.
+      # The postprovision hook handles all post-Bicep setup (Arc, GPU, VI extension).
+      # This step is kept for forward-compatibility if app services are added.
       - name: Deploy Application
         run: azd deploy --no-prompt

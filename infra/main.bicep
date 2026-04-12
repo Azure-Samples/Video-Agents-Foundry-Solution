@@ -14,25 +14,25 @@ param environmentName string
 param location string
 
 @description('Name of the resource group')
-param resourceGroupName string = ''
+param resourceGroupName string
 
 @description('ID of the principal (user) running the deployment')
-param principalId string = ''
+param principalId string
 
 @description('Whether to create role assignments for the deploying user')
-param createRoleForUser bool = true
+param createRoleForUser bool
 
 @description('Whether to create a Foundry project and link it to the VI extension')
-param createFoundryProject bool = true
+param createFoundryProject bool
 
-@description('Model name to deploy in AI Foundry (e.g. gpt-4o-mini)')
-param aiModelName string = 'gpt-4o-mini'
+@description('Model name to deploy in AI Foundry')
+param aiModelName string
 
 @description('Model version to deploy (e.g. 2024-07-18)')
-param aiModelVersion string = '2024-07-18'
+param aiModelVersion string
 
 @description('Model deployment capacity in TPM thousands')
-param aiModelCapacity int = 1
+param aiModelCapacity int
 
 @description('Kubernetes version for the AKS cluster')
 param kubernetesVersion string
@@ -51,6 +51,17 @@ param inferenceGpuVmSize string
 
 @description('Maximum number of deepstream GPU nodes')
 param deepstreamGpuMaxNodeCount int
+
+@description('Whether to enable the media streamer (RTSP camera + agent jobs in post-provision)')
+param mediaStreamerEnabled bool
+
+@allowed([
+  'Standard_LRS'
+  'Standard_ZRS'
+  'Standard_GRS'
+])
+@description('Storage account SKU. Use Standard_ZRS for zone redundancy where supported.')
+param storageSkuName string
 
 // =====================================================
 // Variables
@@ -90,6 +101,7 @@ module storage 'modules/storage.bicep' = {
     name: '${resourceToken}${abbrs.storageAccount}'
     location: location
     tags: tags
+    skuName: storageSkuName
   }
 }
 
@@ -189,3 +201,4 @@ output AI_FOUNDRY_AI_SERVICES_ENDPOINT string = createFoundryProject ? aiFoundry
 output AI_FOUNDRY_MODEL_DEPLOYMENT string = createFoundryProject ? aiFoundry.outputs.modelDeploymentName : ''
 output AI_FOUNDRY_ACCOUNT_NAME string = createFoundryProject ? aiFoundry.outputs.accountName : ''
 output AI_FOUNDRY_PROJECT_NAME string = createFoundryProject ? aiFoundry.outputs.projectName : ''
+output MEDIA_STREAMER_ENABLED bool = mediaStreamerEnabled

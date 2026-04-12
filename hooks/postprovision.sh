@@ -8,7 +8,7 @@ set -e
 
 source "$(dirname "$0")/common.sh"
 
-TOTAL_STEPS=10
+TOTAL_STEPS=12
 
 write_foundry_banner "Post-Provision Setup"
 
@@ -90,6 +90,10 @@ log_success "NVIDIA GPU Operator installed"
 # Step 3: Connect AKS to Azure Arc
 # =====================================================
 ARC_CLUSTER_NAME="${ARC_CLUSTER_PREFIX}${AZURE_AKS_CLUSTER_NAME}"
+# Defensive clamp: Azure Arc cluster names must be <= 63 chars
+if [ ${#ARC_CLUSTER_NAME} -gt 63 ]; then
+    ARC_CLUSTER_NAME=$(echo "${ARC_CLUSTER_NAME:0:63}" | sed 's/-$//')
+fi
 log_step 3 $TOTAL_STEPS "Connecting AKS to Azure Arc"
 
 write_key_value "Arc cluster name" "$ARC_CLUSTER_NAME"
@@ -163,10 +167,8 @@ STATIC_IP=$(az network public-ip show \
 
 write_key_value "Static IP" "$STATIC_IP"
 
-# Construct endpoint URI (HTTP by default)
-VIDEO_INDEXER_ENDPOINT_URI="http://${DNS_LABEL}.${AZURE_LOCATION}.cloudapp.azure.com"
+VIDEO_INDEXER_ENDPOINT_URI="https://${DNS_LABEL}.${AZURE_LOCATION}.cloudapp.azure.com"
 write_key_value "Endpoint URI" "$VIDEO_INDEXER_ENDPOINT_URI"
-log_warning "Using HTTP. To enable HTTPS, configure SSL/TLS on the Nginx Ingress Controller."
 
 # Persist to azd env
 azd env set AZURE_DNS_LABEL "${DNS_LABEL}"
@@ -262,6 +264,8 @@ else
     INFERENCE_AGENT_ENABLED="true"
 fi
 
+MEDIA_STREAMER_ENABLED="${MEDIA_STREAMER_ENABLED:-true}"
+
 log_info "Deploying VI Arc extension (this may take several minutes)..."
 az deployment group create \
     --resource-group "$AZURE_RESOURCE_GROUP" \
@@ -273,13 +277,171 @@ az deployment group create \
         videoIndexerEndpointUri="$VIDEO_INDEXER_ENDPOINT_URI" \
         deepstreamNodeSelectorValue="$AZURE_DEEPSTREAM_NODE_SELECTOR_VALUE" \
         inferenceNodeSelectorValue="$AZURE_INFERENCE_NODE_SELECTOR_VALUE" \
-        inferenceAgentEnabled=$INFERENCE_AGENT_ENABLED
+        inferenceAgentEnabled=$INFERENCE_AGENT_ENABLED \
+        mediaStreamerEnabled=$MEDIA_STREAMER_ENABLED
 log_success "Video Indexer Arc extension deployed"
 
+log_info "Assigning permissions to Arc extension managed identity..."
+PRINCIPAL_ID=$(az k8s-extension show \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
+    --cluster-name "$ARC_CLUSTER_NAME" \
+    --cluster-type connectedClusters \
+    --name videoindexer \
+    --query "identity.principalId" -o tsv 2>/dev/null || true)
+
+ACCOUNT_RESOURCE_ID="$AZURE_VIDEO_INDEXER_ACCOUNT_RESOURCE_ID"
+
+if [ -z "$PRINCIPAL_ID" ]; then
+    log_error "Extension managed identity principalId not found. Cannot assign permissions."
+elif [ -z "$ACCOUNT_RESOURCE_ID" ]; then
+    log_error "Video Indexer account resource ID not found. Cannot assign permissions."
+else
+    # TODO: Replace 'Contributor' with a purpose-built least-privilege role (e.g. 'Video Indexer Contributor')
+    # when one becomes available. Currently scoped to the VI account resource only.
+    log_info "Adding Role Assignment for principal '$PRINCIPAL_ID'..."
+
+    # Check if the role assignment already exists before attempting to create
+    EXISTING_ASSIGNMENT=$(az role assignment list \
+        --assignee "$PRINCIPAL_ID" \
+        --role Contributor \
+        --scope "$ACCOUNT_RESOURCE_ID" \
+        --query "[0].id" -o tsv 2>/dev/null || true)
+
+    if [ -n "$EXISTING_ASSIGNMENT" ]; then
+        log_success "Role assignment already exists. Skipping."
+    else
+        ROLE_ERR=""
+        if ROLE_ERR=$(az role assignment create \
+            --assignee-object-id "$PRINCIPAL_ID" \
+            --assignee-principal-type ServicePrincipal \
+            --role Contributor \
+            --scope "$ACCOUNT_RESOURCE_ID" 2>&1); then
+            log_success "Permissions assigned to Arc extension managed identity"
+        else
+            log_error "Failed to create role assignment: $ROLE_ERR"
+            log_error "The VI extension may not function correctly without this permission."
+        fi
+    fi
+fi
+
 # =====================================================
-# Step 10: Post-deployment health checks
+# Acquire VI Extension Access Token (used by Steps 10-11)
 # =====================================================
-log_step 10 $TOTAL_STEPS "Running Post-Deployment Health Checks"
+VI_ACCESS_TOKEN=""
+VI_API_BASE=""
+
+if [ "$MEDIA_STREAMER_ENABLED" = "false" ]; then
+    log_info "Media streamer disabled (MEDIA_STREAMER_ENABLED=false). Skipping token acquisition, camera, and agent job setup."
+else
+    EXTENSION_ID=$(az k8s-extension show \
+        --resource-group "$AZURE_RESOURCE_GROUP" \
+        --cluster-name "$ARC_CLUSTER_NAME" \
+        --cluster-type connectedClusters \
+        --name videoindexer \
+        --query "id" -o tsv 2>/dev/null || true)
+
+    if [ -z "$EXTENSION_ID" ]; then
+        log_warning "Failed to retrieve VI extension ID. Skipping camera and agent job setup."
+    else
+        log_info "Generating VI extension access token..."
+        TOKEN_URL="https://management.azure.com${AZURE_VIDEO_INDEXER_ACCOUNT_RESOURCE_ID}/generateExtensionAccessToken?api-version=2023-06-02-preview"
+        TOKEN_BODY="{\"permissionType\":\"Contributor\",\"scope\":\"Account\",\"extensionId\":\"${EXTENSION_ID}\"}"
+
+        VI_ACCESS_TOKEN=$(az rest --method post --url "$TOKEN_URL" \
+            --body "$TOKEN_BODY" \
+            --query "accessToken" -o tsv 2>/dev/null || true)
+
+        if [ -z "$VI_ACCESS_TOKEN" ]; then
+            log_warning "Failed to generate VI extension access token. Skipping camera and agent job setup."
+        else
+            log_success "VI extension access token obtained"
+            VI_API_BASE="${VIDEO_INDEXER_ENDPOINT_URI}/Accounts/${AZURE_VIDEO_INDEXER_ACCOUNT_ID}"
+            # TODO: Remove -k once a valid TLS certificate is configured
+            # on the Nginx Ingress Controller (e.g. via cert-manager ClusterIssuer).
+            # The endpoint uses HTTPS but the ingress does not yet have a trusted certificate.
+            CURL_INSECURE_FLAG="-k"
+        fi
+    fi
+
+    # =====================================================
+    # Step 10: Create Sample Camera
+    # =====================================================
+    log_step 10 $TOTAL_STEPS "Creating Sample Camera"
+
+    CAMERA_NAME="flags"
+    CAMERA_RTSP_URL="rtsp://media-server.video-indexer:8554/${CAMERA_NAME}"
+    CAMERA_ID=""
+
+    if [ -z "$VI_ACCESS_TOKEN" ]; then
+        log_warning "No VI access token available. Skipping camera creation."
+    else
+        log_info "Creating camera '$CAMERA_NAME'..."
+
+        CAMERA_BODY="{\"Name\":\"${CAMERA_NAME}\",\"Description\":\"${CAMERA_NAME}\",\"RtspUrl\":\"${CAMERA_RTSP_URL}\",\"LiveStreamingEnabled\":true,\"RecordingEnabled\":true,\"IsPinned\":true,\"RecordingsRetentionInHours\":72,\"UseCameraNtp\":false}"
+
+        CAMERA_RESPONSE=$(curl -s $CURL_INSECURE_FLAG -X POST "${VI_API_BASE}/cameras" \
+            -H "Authorization: Bearer $VI_ACCESS_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$CAMERA_BODY" 2>/dev/null || true)
+
+        CAMERA_ID=$(echo "$CAMERA_RESPONSE" | jq -r '.id // empty' 2>/dev/null || true)
+
+        if [ -n "$CAMERA_ID" ]; then
+            log_success "Camera '$CAMERA_NAME' created"
+            write_key_value "Camera ID" "$CAMERA_ID"
+        else
+            log_warning "Failed to create camera: $CAMERA_RESPONSE"
+        fi
+    fi
+
+    # =====================================================
+    # Step 11: Create Agent Job
+    # =====================================================
+    log_step 11 $TOTAL_STEPS "Creating Agent Job"
+
+    if [ -z "$VI_ACCESS_TOKEN" ]; then
+        log_warning "No VI access token available. Skipping agent job creation."
+    elif [ -z "$CAMERA_ID" ]; then
+        log_warning "No camera available. Skipping agent job creation."
+    else
+        # Get the first available agent
+        AGENT_ID=""
+        AGENTS_RESPONSE=$(curl -s $CURL_INSECURE_FLAG -X GET "${VI_API_BASE}/agents" \
+            -H "Authorization: Bearer $VI_ACCESS_TOKEN" 2>/dev/null || true)
+
+        AGENT_ID=$(echo "$AGENTS_RESPONSE" | jq -r '.results[0].agentId // empty' 2>/dev/null || true)
+
+        if [ -z "$AGENT_ID" ]; then
+            log_warning "No agents found. Skipping agent job creation."
+        else
+            AGENT_NAME=$(echo "$AGENTS_RESPONSE" | jq -r '.results[0].name // empty' 2>/dev/null || true)
+            write_key_value "Agent" "$AGENT_NAME"
+
+            log_info "Creating agent job..."
+            JOB_PROMPT='In the current frame, is there a flag of a country? Answer shortly in a JSON format: {\"isDetected\": true if a flag was detected or false if not, \"answer\": a full frame and flag textual description}'
+            JOB_BODY="{\"agentId\":\"${AGENT_ID}\",\"cameraId\":\"${CAMERA_ID}\",\"name\":\"sample-agent-job\",\"description\":\"Sample agent job created during provisioning\",\"eventName\":\"sample-event\",\"enabled\":true,\"prompt\":\"${JOB_PROMPT}\",\"callbackUrl\":\"\",\"intervalInSeconds\":20,\"retentionInSeconds\":86400}"
+
+            JOB_RESPONSE=$(curl -s $CURL_INSECURE_FLAG -X POST "${VI_API_BASE}/AgentJobs" \
+                -H "Authorization: Bearer $VI_ACCESS_TOKEN" \
+                -H "Content-Type: application/json" \
+                -d "$JOB_BODY" 2>/dev/null || true)
+
+            JOB_ID=$(echo "$JOB_RESPONSE" | jq -r '.id // empty' 2>/dev/null || true)
+
+            if [ -n "$JOB_ID" ]; then
+                log_success "Agent job created"
+                write_key_value "Job ID" "$JOB_ID"
+            else
+                log_warning "Failed to create agent job: $JOB_RESPONSE"
+            fi
+        fi
+    fi
+fi
+
+# =====================================================
+# Step 12: Post-deployment health checks
+# =====================================================
+log_step 12 $TOTAL_STEPS "Running Post-Deployment Health Checks"
 
 ARC_STATUS=$(az connectedk8s show \
     --name "$ARC_CLUSTER_NAME" \
@@ -314,9 +476,3 @@ if [ -n "${AI_FOUNDRY_ACCOUNT_NAME:-}" ]; then
 fi
 
 echo ""
-log_success "Video Indexer portal: $VIDEO_INDEXER_ENDPOINT_URI"
-case "$(uname)" in
-    Darwin*) open "$VIDEO_INDEXER_ENDPOINT_URI" ;;
-    Linux*) xdg-open "$VIDEO_INDEXER_ENDPOINT_URI" 2>/dev/null || true ;;
-    *) true ;;
-esac

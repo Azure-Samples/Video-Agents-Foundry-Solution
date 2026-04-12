@@ -1,10 +1,13 @@
 # Video-Agents-Foundry-Solution
 
 Welcome to the *Video-Agents-Foundry-Solution*, designed to help businesses leverage AI agents for automating complex video analysts tasks.
-This solution provides **end-to-end framework** for deploying AI-powered video analysis at the edge using Azure Video Indexer enabled by Azure Arc, combined with intelligent AI agents for automated decision-making and real-time video insights.  
+This solution provides **end-to-end framework** for deploying AI-powered video analysis at the edge using Azure Video Indexer enabled by Azure Arc, combined with intelligent AI agents for automated decision-making and real-time video insights.
 The Video-Agents-Foundry-Solution allows users to process and analyze live and recorded video streams at the edge, extract AI insights, including speech transcription, OCR, face detection, object tracking, and action recognition and leverage **AI agents** to automate complex video analysis workflows with low latency and full data sovereignty.
 
 > **_Note_:** In order to successfully deploy the VI Extension, you **must first** submit your subscription for approval and be approved. Please use this application link. [this form](https://aka.ms/vi-register).
+
+> Deploying this solution can take approximately **45-60 minutes** end-to-end (15-25 minutes for `azd up` to complete, plus 20-35 minutes for GPU drivers and VI extension pods to fully initialize).
+During deployment, the Azure Portal may show some resources as "Failed" or "Unavailable". This is expected behavior as some resources may take longer to provision or initialize. Please allow up to an hour for all resources to be fully deployed and operational. If you continue to see issues after this time, please refer to the troubleshooting guide in the documentation.
 
 **Comprehensive Guides**
 
@@ -13,17 +16,14 @@ For a detailed, step-by-step guide on creating an AKS cluster with GPU support a
 - **[create-aks-cluster.sh](https://github.com/Azure-Samples/azure-video-indexer-samples/blob/master/VideoIndexerEnabledByArc/aks/create-aks-cluster.sh)** - Automated deployment script
 > The guide includes GPU quota checking, troubleshooting tips, and support for live video processing.
 
-<br/>
-
 <div align="center">
 
 [**SOLUTION OVERVIEW**](#solution-overview) \| [**QUICK DEPLOY**](#quick-deploy) \| [**BUSINESS SCENARIO**](#business-scenario) \| [**SUPPORTING DOCUMENTATION**](#supporting-documentation)
 
 </div>
-<br/>
+
 
 **Note:** With any AI solutions you create using these templates, you are responsible for assessing all associated risks and for complying with all applicable laws and safety standards. Learn more in the transparency documents for [Agent Service](https://learn.microsoft.com/en-us/azure/ai-foundry/responsible-ai/agents/transparency-note) and [Agent Framework](https://github.com/microsoft/agent-framework/blob/main/TRANSPARENCY_FAQ.md).
-<br/>
 
 <h2><img src="./docs/images/readme/solution-overview.png" width="48" />
 Solution overview
@@ -32,22 +32,25 @@ Solution overview
 The solution leverages Azure Arc Service to extend Azure Video Indexer capabilities to edge environments running on Kubernetes clusters.
 By deploying the Video Indexer Arc extension on an Arc-enabled AKS cluster with GPU support (NVIDIA), the solution enables real-time video processing close to the data source — reducing latency and ensuring data sovereignty. AI agents built on Azure OpenAI orchestrate the video analysis pipeline, automating tasks such as content moderation, safety monitoring, and business intelligence extraction from video feeds. The agentic architecture allows multiple specialized agents to collaborate on complex video analysis tasks, with each agent handling a specific domain such as speech analysis, visual recognition, or compliance checking.
 
+This solution optionally creates a Microsoft Foundry project and Foundry Tools (enabled by default; set `CREATE_FOUNDRY_PROJECT=false` to skip). More details about the resources can be found in the [resources](#resources) documentation.
+
 ### Solution architecture
 |![image](./docs/images/readme/architecture.png)|
 |---|
 
-<br/>
-
 ### Resources
 
-This template creates everything you need to get started with Microsoft Foundry:
+This template creates everything you need to get started with Microsoft Foundry (when `CREATE_FOUNDRY_PROJECT=true`, the default):
 
 | Resource | Description |
 |----------|-------------|
-| [Azure AI Project](https://learn.microsoft.com/azure/ai-studio/how-to/create-projects) | Provides a collaborative workspace for AI development with access to models, data, and compute resources |
+| [Azure AI Project](https://learn.microsoft.com/azure/ai-studio/how-to/create-projects) | *Optional* - Provides a collaborative workspace for AI development with access to models, data, and compute resources |
+| [Azure OpenAI Service](https://learn.microsoft.com/azure/ai-services/openai/) | *Optional* - Powers the AI model. Default model deployed is gpt-5.2, but any Azure AI model that supports tool calling can be specified per the [documentation](docs/deploy_customization.md#customizing-model-deployments) |
 | [Storage Account](https://learn.microsoft.com/azure/storage/blobs/) | Provides blob storage for application data and file uploads |
 | [Application Insights](https://learn.microsoft.com/azure/azure-monitor/app/app-insights-overview) | *Optional* - Provides application performance monitoring, logging, and telemetry for debugging and optimization |
 | [Log Analytics Workspace](https://learn.microsoft.com/azure/azure-monitor/logs/log-analytics-workspace-overview) | *Optional* - Collects and analyzes telemetry data for monitoring and troubleshooting |
+
+> **_Note_:** You should validate model availability in your region before deployment. The default model deployed with this solution is gpt-5.2, but you can customize the model and deployment configurations as needed. For more information on available models and their capabilities, please refer to the Azure OpenAI Service documentation: [Foundry Models](https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure?tabs=global-standard-aoai%2Cglobal-standard&pivots=azure-openai)
 
 ### Additional resources
 - [Azure Video Indexer enabled by Arc — Ignite 2025 Preview Blog](https://techcommunity.microsoft.com/blog/AzureArcBlog/ignite-2025-preview---intelligent-real-time-video-insights-and-agents-with-azure/4470704)
@@ -56,24 +59,26 @@ This template creates everything you need to get started with Microsoft Foundry:
 - [AKS Cluster Setup for Video Indexer Arc Extension](https://github.com/Azure-Samples/azure-video-indexer-samples/blob/master/VideoIndexerEnabledByArc/aks/AKS-CLUSTER-SETUP.md)
 - [Azure Video Indexer Samples on GitHub](https://github.com/Azure-Samples/azure-video-indexer-samples)
 
-<br/>
+### Troubleshooting
+
+For solutions to common deployment, container app, and agent issues, see the [Troubleshooting Guide](./docs/troubleshooting.md).
 
 ### Key features
 <details open>
-  <summary>Click to learn more about the key features this solution enables</summary>
+  <summary>Learn more about the key features this solution enables</summary>
 
 - **Edge-Deployed Video Analysis** — Run Azure Video Indexer on Arc-enabled Kubernetes clusters at the edge, bringing AI-powered video analysis closer to data sources for low-latency processing.
 - **Real-Time & Batch Video Processing** — Support for both live video pipeline ingestion (RTSP streams) and batch processing of recorded video files.
+- **[Customizable AI Model Deployment](./docs/deploy_customization.md#customizing-model-deployments)**: The solution allows users to configure and deploy AI models, such as gpt-5.2, with options to adjust model capacity, deployment configurations, and knowledge retrieval methods.
 - **Multimodal AI Insights** — Extract rich insights from video content including speech transcription, OCR, face detection, object tracking, scene detection, and action recognition.
 - **AI Agent–Based Automation** — Leverage intelligent agents powered by Azure OpenAI to automate complex video analysis workflows, enabling automated decision-making and action triggering.
-- **GPU-Accelerated Processing** — Utilize NVIDIA T4 GPUs (Standard_NC4as_T4_v3 VMs) for high-performance video processing at the edge.
 - **Cloud-Managed Edge Deployments** — Manage and monitor edge deployments centrally through Azure Arc while processing video data locally.
 - **Data Sovereignty & Compliance** — Process sensitive video data on-premises or at the edge, ensuring data residency and compliance requirements are met.
 - **Extensible Agentic Architecture** — Build custom agent teams for domain-specific video analysis scenarios such as retail analytics, manufacturing quality control, or safety monitoring.
 
 </details>
 
-<br /><br />
+<br />
 <h2><img src="./docs/images/readme/quick-deploy.png" width="48" />
 Quick deploy
 </h2>
@@ -83,18 +88,16 @@ Follow the quick deploy steps on the deployment guide to deploy this solution to
 
 > **Note:** This solution accelerator requires **Azure Developer CLI (azd) version 1.18.0 or higher**. Please ensure you have the latest version installed before proceeding with deployment. [Download azd here](https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/install-azd).
 
-[Click here to launch the deployment guide](./docs/DeploymentGuide.md)
-<br/><br/>
+[Click here to launch the deployment guide](./docs/deployment.md)
+<br/>
 
 | [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/microsoft/Video-Agents-Foundry-Solution) | [![Open in Dev Containers](https://img.shields.io/static/v1?style=for-the-badge&label=Dev%20Containers&message=Open&color=blue&logo=visualstudiocode)](https://vscode.dev/redirect?url=vscode://ms-vscode-remote.remote-containers/cloneInVolume?url=https://github.com/Azure-Samples/Video-Agents-Foundry-Solution) | [![Open in Visual Studio Code Web](https://img.shields.io/static/v1?style=for-the-badge&label=Visual%20Studio%20Code%20(Web)&message=Open&color=blue&logo=visualstudiocode&logoColor=white)](https://vscode.dev/azure/?vscode-azure-exp=foundry&agentPayload=eyJiYXNlVXJsIjogImh0dHBzOi8vcmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbS9taWNyb3NvZnQvTXVsdGktQWdlbnQtQ3VzdG9tLUF1dG9tYXRpb24tRW5naW5lLVNvbHV0aW9uLUFjY2VsZXJhdG9yL3JlZnMvaGVhZHMvbWFpbi9pbmZyYS92c2NvZGVfd2ViIiwgImluZGV4VXJsIjogIi9pbmRleC5qc29uIiwgInZhcmlhYmxlcyI6IHsiYWdlbnRJZCI6ICIiLCAiY29ubmVjdGlvblN0cmluZyI6ICIiLCAidGhyZWFkSWQiOiAiIiwgInVzZXJNZXNzYWdlIjogIiIsICJwbGF5Z3JvdW5kTmFtZSI6ICIiLCAibG9jYXRpb24iOiAiIiwgInN1YnNjcmlwdGlvbklkIjogIiIsICJyZXNvdXJjZUlkIjogIiIsICJwcm9qZWN0UmVzb3VyY2VJZCI6ICIiLCAiZW5kcG9pbnQiOiAiIn0sICJjb2RlUm91dGUiOiBbImFpLXByb2plY3RzLXNkayIsICJweXRob24iLCAiZGVmYXVsdC1henVyZS1hdXRoIiwgImVuZHBvaW50Il19) |
 |---|---|---|
 
-<br/>
 
 > ⚠️ **Important: Check Azure OpenAI Quota Availability**
  <br/>To ensure sufficient quota is available in your subscription, please follow [quota check instructions guide](./docs/quota_check.md) before you deploy the solution.
 
-<br/>
 
 ### Prerequisites
 - **Azure Subscription** — An active Azure subscription. [Create one for free](https://azure.microsoft.com/free/).
@@ -106,6 +109,11 @@ Follow the quick deploy steps on the deployment guide to deploy this solution to
 - **Azure Developer CLI (azd)** — Version 1.18.0 or higher. [Install azd](https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/install-azd).
 
 ### Costs
+
+Pricing varies per region and usage, so it isn't possible to predict exact costs for your usage.
+The majority of the Azure resources used in this infrastructure are on usage-based pricing tiers.
+However, Azure Container Registry has a fixed cost per registry per day.
+
 Use the [Azure pricing calculator](https://azure.microsoft.com/en-us/pricing/calculator) to calculate the cost of this solution in your subscription. [Review a sample pricing sheet for the architecture](https://azure.com/e/86d0eefbe4dd4a23981c1d3d4f6fe7ed).
 | Product | Description | Cost |
 |---|---|---|
@@ -114,25 +122,20 @@ Use the [Azure pricing calculator](https://azure.microsoft.com/en-us/pricing/cal
 | [Azure Cosmos DB](https://learn.microsoft.com/azure/cosmos-db/) | Stores metadata and processing results | [Pricing](https://azure.microsoft.com/pricing/details/cosmos-db/) |
 | [Azure Container Registry](https://learn.microsoft.com/azure/container-registry/) | Stores container images for deployment | [Pricing](https://azure.microsoft.com/pricing/details/container-registry/) |
 
-<br/>
 
 >⚠️ **Important:** To avoid unnecessary costs, remember to take down your app if it's no longer in use,
 either by deleting the resource group in the Portal or running `azd down`.
 
-<br /><br />
 <h2><img src="./docs/images/readme/business-scenario.png" width="48" />
 Business Scenario
 </h2>
 
-|![image](./docs/images/readme/application.png)|
+|![image](./docs/images/readme/agent_experience.png)|
 |---|
 
-<br/>
-
-
 ### Business value
-<details>
-  <summary>Click to learn more about what value this solution provides</summary>
+<details open>
+  <summary>Learn more about what value this solution provides</summary>
 
   - **Real-Time Decision Making** — Enable immediate, automated responses to events captured in video feeds, reducing the time from observation to action from hours or days to seconds.
   - **Reduced Operational Costs** — Automate video monitoring and analysis tasks that previously required dedicated staff for manual review, significantly lowering labor costs.
@@ -143,8 +146,8 @@ Business Scenario
 </details>
 
 ### Use Case
-<details>
-  <summary>Click to learn more about what use cases this solution provides</summary>
+<details open>
+  <summary>Learn more about what use cases this solution provides</summary>
 
 | Use Case | Persona   | Challenges | Summary/Approach |
 |----------|-----------|------------|------------------|
@@ -155,38 +158,33 @@ Business Scenario
 
 </details>
 
-<br /><br />
-
 <h2><img src="./docs/images/readme/supporting-documentation.png" width="48" />
 Supporting documentation
 </h2>
 
 ### Security guidelines
 
+This template also uses [Managed Identity](https://learn.microsoft.com/entra/identity/managed-identities-azure-resources/overview) for local development and deployment.
 
-<br/>
+To ensure continued best practices in your own repository, we recommend that anyone creating solutions based on our templates ensure that the [GitHub secret scanning](https://docs.github.com/code-security/secret-scanning/about-secret-scanning) setting is enabled.
 
-### Cross references
-Check out similar solution accelerators
+You may want to consider additional security measures, such as:
 
-| Solution Accelerator | Description |
-|---|---|
-| [Document Knowledge Mining](https://github.com/microsoft/Document-Knowledge-Mining-Solution-Accelerator) | Extract structured information from unstructured documents using AI |
-| [Modernize your Code](https://github.com/microsoft/Modernize-your-Code-Solution-Accelerator) | Automate the translation of SQL queries between different dialects |
-| [Conversation Knowledge Mining](https://github.com/microsoft/Conversation-Knowledge-Mining-Solution-Accelerator) | Enable organizations to derive insights from volumes of conversational data using generative AI |
+- Enabling Microsoft Defender for Cloud to [secure your Azure resources](https://learn.microsoft.com/azure/defender-for-cloud/).
+- Protecting the Azure Container Apps instance with a [firewall](https://learn.microsoft.com/azure/container-apps/waf-app-gateway) and/or [Virtual Network](https://learn.microsoft.com/azure/container-apps/networking?tabs=workload-profiles-env%2Cazure-cli).
 
-<br/>
+> **Important Security Notice** <br/>
+This template, the application code and configuration it contains, has been built to showcase Microsoft Azure specific services and tools. We strongly advise our customers not to make this code part of their production environments without implementing or enabling additional security features.  <br/><br/>
+For a more comprehensive list of best practices and security recommendations for Intelligent Applications, [visit our official documentation](https://learn.microsoft.com/azure/ai-foundry/).
+
 
 ## Provide feedback
 
 Have questions, find a bug, or want to request a feature? [Submit a new issue](https://github.com/Azure-Samples/Video-Agents-Foundry-Solution/issues) on this repo and we'll connect.
 
-<br/>
 
 ## Responsible AI Transparency FAQ
 Please refer to [Transparency FAQ](./docs/TRANSPARENCY_FAQ.md) for responsible AI transparency details of this solution accelerator.
-
-<br/>
 
 ## Disclaimers
 This release is an artificial intelligence (AI) system that generates text based on user input. The text generated by this system may include ungrounded content, meaning that it is not verified by any reliable source or based on any factual data. The data included in this release is synthetic, meaning that it is artificially created by the system and may contain factual errors or inconsistencies. Users of this release are responsible for determining the accuracy, validity, and suitability of any content generated by the system for their intended purposes. Users should not rely on the system output as a source of truth or as a substitute for human judgment or expertise.

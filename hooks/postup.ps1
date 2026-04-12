@@ -315,10 +315,6 @@ Write-KeyValue "AKS Cluster"    "$(if ($env:AZURE_AKS_CLUSTER_NAME) { $env:AZURE
 Write-KeyValue "Arc Cluster"    "$(if ($env:AZURE_ARC_CLUSTER_NAME) { $env:AZURE_ARC_CLUSTER_NAME } else { 'n/a' })"
 Write-KeyValue "Location"       "$(if ($env:AZURE_LOCATION) { $env:AZURE_LOCATION } else { 'n/a' })"
 
-if ($env:AZURE_VIDEO_INDEXER_ENDPOINT_URI) {
-    Write-KeyValue "Video Indexer"   $env:AZURE_VIDEO_INDEXER_ENDPOINT_URI
-}
-
 Write-SummaryBlock -Passed $passed -Failed $failed -Warnings $warnings -Total $total
 
 if ($failed -gt 0) {
@@ -333,8 +329,11 @@ if ($failed -gt 0) {
 Write-Section "Next Steps"
 Write-Host ""
 
-if ($env:AZURE_VIDEO_INDEXER_ENDPOINT_URI) {
-    Write-KeyValue "1. Access portal" $env:AZURE_VIDEO_INDEXER_ENDPOINT_URI
+if ($env:AZURE_VIDEO_INDEXER_ACCOUNT_ID) {
+    $portalUrl = "https://www.videoindexer.ai/accounts/$env:AZURE_VIDEO_INDEXER_ACCOUNT_ID"
+    Log-Success "Video Indexer portal: $portalUrl"
+    Write-KeyValue "1. Access portal" $portalUrl
+    Start-Process $portalUrl
 }
 Write-KeyValue "2. Test indexing"    "Upload a video to verify end-to-end"
 Write-KeyValue "3. Monitor GPUs"    "kubectl top nodes"

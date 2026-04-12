@@ -8,7 +8,7 @@ set -e
 
 source "$(dirname "$0")/common.sh"
 
-TOTAL_STEPS=5
+TOTAL_STEPS=6
 
 write_foundry_banner "Pre-Provision Validation"
 
@@ -61,11 +61,43 @@ done
 # Use the shared assertion for the actual error check
 assert_env_vars AZURE_SUBSCRIPTION_ID AZURE_LOCATION AZURE_ENV_NAME
 
+# Validate STORAGE_SKU_NAME against region capabilities if ZRS is requested
+STORAGE_SKU="${STORAGE_SKU_NAME:-Standard_LRS}"
+if [ "$STORAGE_SKU" = "Standard_ZRS" ]; then
+    log_info "Checking ZRS availability in ${AZURE_LOCATION}..."
+    ZRS_AVAILABLE=$(az provider show --namespace Microsoft.Storage \
+        --query "resourceTypes[?resourceType=='storageAccounts'].zoneMappings[?contains(location, '${AZURE_LOCATION}')].location | [0][0]" \
+        -o tsv 2>/dev/null || true)
+    if [ -z "$ZRS_AVAILABLE" ]; then
+        log_warning "Standard_ZRS may not be available in '${AZURE_LOCATION}'."
+        log_warning "Falling back to Standard_LRS to avoid deployment failure."
+        azd env set STORAGE_SKU_NAME Standard_LRS 2>/dev/null || true
+        STORAGE_SKU="Standard_LRS"
+    else
+        log_success "ZRS is available in ${AZURE_LOCATION}"
+    fi
+fi
+write_key_value "Storage SKU" "$STORAGE_SKU"
+
 # =====================================================
-# Step 4: Select VM sizes for AKS node pools
+# Step 4: Resolve AI Model Quota (if Foundry enabled)
+# =====================================================
+log_step 4 $TOTAL_STEPS "Checking AI Model Quota"
+
+if [ "$CREATE_FOUNDRY_PROJECT" = "false" ]; then
+    log_info "AI Foundry disabled (CREATE_FOUNDRY_PROJECT=false). Skipping model quota check."
+else
+    AI_MODEL_NAME="${AI_MODEL_NAME:-$DEFAULT_AI_MODEL_NAME}"
+    AI_MODEL_CAPACITY="${AI_MODEL_CAPACITY:-1}"
+
+    resolve_model_quota "$AZURE_LOCATION" "$AI_MODEL_NAME" "$AI_MODEL_CAPACITY"
+fi
+
+# =====================================================
+# Step 5: Select VM sizes for AKS node pools
 #         (includes region availability + GPU quota checks)
 # =====================================================
-log_step 4 $TOTAL_STEPS "Selecting VM Sizes for AKS Node Pools"
+log_step 5 $TOTAL_STEPS "Selecting VM Sizes for AKS Node Pools"
 
 # Determine current/default values
 CURRENT_SYSTEM_VM="${SYSTEM_VM_SIZE:-$DEFAULT_SYSTEM_VM_SIZE}"
@@ -113,9 +145,9 @@ show_vm_selection_menu "Inference (GPU)" "INFERENCE_GPU_VM_SIZE" GPU_VMS "$CURRE
 INFERENCE_GPU_VM_SIZE="$SELECTED_VM_SKU"
 
 # =====================================================
-# Step 5: Register required Azure resource providers
+# Step 6: Register required Azure resource providers
 # =====================================================
-log_step 5 $TOTAL_STEPS "Checking Azure Resource Provider Registrations"
+log_step 6 $TOTAL_STEPS "Checking Azure Resource Provider Registrations"
 
 register_required_providers || true
 
@@ -133,6 +165,9 @@ write_key_value "System CPU"     "$SYSTEM_SKU"
 write_key_value "Workload CPU"   "$WORKLOAD_SKU"
 write_key_value "Deepstream GPU" "${DEEPSTREAM_GPU_VM_SIZE} (${DEEPSTREAM_GPU_MAX_NODE_COUNT} node(s))"
 write_key_value "Inference GPU"  "${INFERENCE_GPU_VM_SIZE} (${INFERENCE_GPU_MAX_NODE_COUNT} node(s))"
+if [ "$CREATE_FOUNDRY_PROJECT" != "false" ]; then
+    write_key_value "AI Model"       "${AI_MODEL_NAME} (capacity: ${AI_MODEL_CAPACITY})"
+fi
 write_key_value "Providers"      "all registered"
 write_key_value "Tools"          "all present"
 

@@ -3,11 +3,28 @@
 name: video-agents-foundry-solution
 metadata:
   template: video-agents-foundry-solution@1.0.0
+requiredVersions:
+  azd: ">=1.14.0"
 workflows:
   up:
     steps:
       - azd: provision
+infra:
+  provider: bicep
+  path: infra
+  module: main
 hooks:
+  preup:
+    windows:
+      shell: pwsh
+      run: ./hooks/validate-env.ps1
+      interactive: true
+      continueOnError: false
+    posix:
+      shell: sh
+      run: ./hooks/validate-env.sh
+      interactive: true
+      continueOnError: false
   preprovision:
     windows:
       shell: pwsh
@@ -33,3 +50,27 @@ hooks:
       shell: sh
       run: ./hooks/postup.sh
       interactive: true
+  predown:
+    windows:
+      shell: pwsh
+      run: ./hooks/predown.ps1
+    posix:
+      shell: sh
+      run: ./hooks/predown.sh
+pipeline:
+  variables:
+    - AZURE_RESOURCE_GROUP
+    - AZURE_PRINCIPAL_ID
+    - CREATE_ROLE_FOR_USER
+    - KUBERNETES_VERSION
+    - SYSTEM_VM_SIZE
+    - WORKLOAD_VM_SIZE
+    - DEEPSTREAM_GPU_VM_SIZE
+    - INFERENCE_GPU_VM_SIZE
+    - DEEPSTREAM_GPU_MAX_NODE_COUNT
+    - CREATE_FOUNDRY_PROJECT
+    - AI_MODEL_NAME
+    - AI_MODEL_VERSION
+    - AI_MODEL_CAPACITY
+    - MEDIA_STREAMER_ENABLED
+    - STORAGE_SKU_NAME
