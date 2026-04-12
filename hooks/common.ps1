@@ -363,6 +363,91 @@ function Assert-VmQuota {
     return "ok"
 }
 
+# ── AI Model Quota Check ──────────────────────────────────────────────────
+
+function Resolve-ModelQuota {
+    <#
+    .SYNOPSIS
+        Checks AI model deployment quota via az cognitiveservices usage list.
+        If insufficient, prompts the user to reduce capacity or fails.
+    .PARAMETER Location
+        Azure region to check quota in.
+    .PARAMETER Model
+        Model name (e.g. gpt-5.2).
+    .PARAMETER Format
+        Model format (default: OpenAI). Must match ai-foundry.bicep.
+    .PARAMETER DeploymentType
+        Deployment SKU type (default: GlobalStandard). Must match ai-foundry.bicep.
+    .PARAMETER CapacityEnvVarName
+        azd env var name to update if capacity is adjusted.
+    .PARAMETER Capacity
+        Requested capacity in TPM thousands.
+    #>
+    param(
+        [string]$Location,
+        [string]$Model,
+        [string]$Format = $DEFAULT_AI_MODEL_FORMAT,
+        [string]$DeploymentType = $DEFAULT_AI_MODEL_DEPLOYMENT_TYPE,
+        [string]$CapacityEnvVarName = 'AI_MODEL_CAPACITY',
+        [int]$Capacity
+    )
+
+    $modelType = "$Format.$DeploymentType.$Model"
+    Log-Info "Checking quota for $modelType in $Location..."
+
+    $modelInfo = $null
+    try {
+        $modelInfo = (az cognitiveservices usage list --location $Location `
+                --query "[?name.value=='$modelType'] | [0]" -o json 2>$null) | ConvertFrom-Json
+    }
+    catch { }
+
+    if (-not $modelInfo) {
+        Log-Warning "No quota info found for '$modelType' in '$Location'. Skipping quota check."
+        Log-Info "The model may not be available in this region. Bicep will report a clearer error if so."
+        return
+    }
+
+    $currentValue = [int]($modelInfo.currentValue -replace '\.0+$', '')
+    $limit = [int]($modelInfo.limit -replace '\.0+$', '')
+    $available = $limit - $currentValue
+
+    Write-KeyValue "Model" $modelType
+    Write-KeyValue "Quota" "$available available ($currentValue used / $limit limit)"
+
+    if ($available -ge $Capacity) {
+        Log-Success "Sufficient quota: $available available, need $Capacity"
+        return
+    }
+
+    if ($available -ge 1) {
+        Log-Warning "Insufficient quota: $available available (in thousands of TPM), need $Capacity."
+        $validInput = $false
+        do {
+            $userInput = Read-Host "Enter a new capacity between 1 and $available (or 'q' to abort)"
+            if ($userInput -eq 'q') {
+                Log-Error "Aborted by user."
+                exit 1
+            }
+            $parsed = 0
+            if ([int]::TryParse($userInput, [ref]$parsed) -and $parsed -ge 1 -and $parsed -le $available) {
+                $validInput = $true
+            }
+            else {
+                Log-Warning "Invalid input. Enter an integer between 1 and $available."
+            }
+        } while (-not $validInput)
+
+        azd env set $CapacityEnvVarName $parsed 2>$null
+        Log-Success "Capacity adjusted to $parsed (saved to $CapacityEnvVarName)"
+    }
+    else {
+        Log-Error "Zero quota available for '$modelType' in '$Location'."
+        Log-Info "Request quota at: $AI_QUOTA_URL"
+        exit 1
+    }
+}
+
 # ── Interactive VM Selection Menu ─────────────────────────────────────────
 # NOTE: This function uses low-level [Console] manipulation for interactive
 # arrow-key menus. Its internal styling is intentionally left as-is.

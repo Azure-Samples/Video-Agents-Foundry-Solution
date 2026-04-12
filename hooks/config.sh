@@ -125,3 +125,11 @@ REQUIRED_PROVIDERS=(
     "Microsoft.KubernetesConfiguration"
     "Microsoft.ExtendedLocation"
 )
+
+# ── AI Model Defaults ──────────────────────────────────────────────────────
+# Used by the model quota check in preprovision.
+# Must match ai-foundry.bicep: format='OpenAI', sku.name='GlobalStandard'
+DEFAULT_AI_MODEL_NAME="gpt-5.2"
+DEFAULT_AI_MODEL_FORMAT="OpenAI"
+DEFAULT_AI_MODEL_DEPLOYMENT_TYPE="GlobalStandard"
+AI_QUOTA_URL="https://ai.azure.com/managementCenter/quota"

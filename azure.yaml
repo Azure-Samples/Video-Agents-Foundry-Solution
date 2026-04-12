@@ -7,6 +7,10 @@ workflows:
   up:
     steps:
       - azd: provision
+infra:
+  provider: bicep
+  path: infra
+  module: main
 hooks:
   preup:
     windows:
