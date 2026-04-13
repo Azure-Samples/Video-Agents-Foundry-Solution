@@ -593,5 +593,9 @@ if ($principalId -and $cameraId) {
     Write-KeyValue "VI Portal"        $portalUrl
     try { azd env set AZURE_VI_PORTAL_URL "$portalUrl" 2>$null } catch {}
 }
+elseif ($env:AZURE_VIDEO_INDEXER_ACCOUNT_ID) {
+    $portalUrl = "https://www.videoindexer.ai/accounts/$env:AZURE_VIDEO_INDEXER_ACCOUNT_ID"
+    Write-KeyValue "VI Portal"        $portalUrl
+}
 
 Write-Host ""

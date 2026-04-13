@@ -491,6 +491,9 @@ if [ -n "${PRINCIPAL_ID:-}" ] && [ -n "${CAMERA_ID:-}" ]; then
     PORTAL_URL="https://www.videoindexer.ai/accounts/${AZURE_VIDEO_INDEXER_ACCOUNT_ID}/extensions/${PRINCIPAL_ID}/cameras/${CAMERA_ID}/live-stream?feature.VideoAssistant=true&feature.LiveActivity=true"
     write_key_value "VI Portal" "$PORTAL_URL"
     azd env set AZURE_VI_PORTAL_URL "$PORTAL_URL" 2>/dev/null || true
+elif [ -n "${AZURE_VIDEO_INDEXER_ACCOUNT_ID:-}" ]; then
+    PORTAL_URL="https://www.videoindexer.ai/accounts/${AZURE_VIDEO_INDEXER_ACCOUNT_ID}"
+    write_key_value "VI Portal" "$PORTAL_URL"
 fi
 
 echo ""

@@ -24,7 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: microsoft/template-validation-action@Latest
+      - uses: microsoft/template-validation-action@v0.4.3
         id: validation
         with:
           useDevContainer: false

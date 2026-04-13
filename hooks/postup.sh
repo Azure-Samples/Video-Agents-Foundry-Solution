@@ -247,9 +247,9 @@ if [ -n "${AZURE_VI_PORTAL_URL:-}" ]; then
         *) true ;;
     esac
 fi
-Write-write_key_value "2. Test chat" "Chat with video agent"
-Write-write_key_value "3. Add camera"        "add custom cameras from RTSP streams"
-Write-write_key_value "4. Tear down"         "azd down"
+write_key_value "2. Test chat" "Chat with video agent"
+write_key_value "3. Add camera"        "add custom cameras from RTSP streams"
+write_key_value "4. Tear down"         "azd down"
 
 
 echo ""
