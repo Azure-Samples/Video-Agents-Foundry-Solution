@@ -3,16 +3,10 @@
   "contentVersion": "1.0.0.0",
   "parameters": {
     "environmentName": {
-      "value": "${AZURE_ENV_NAME=azd-foundry-solution}"
-    },
-    "resourceGroupName": {
-      "value": "${AZURE_RESOURCE_GROUP=}"
+      "value": "${AZURE_ENV_NAME}"
     },
     "location": {
-      "value": "${AZURE_LOCATION=eastus2}"
-    },
-    "principalId": {
-      "value": "${AZURE_PRINCIPAL_ID=}"
+      "value": "${AZURE_LOCATION}"
     },
     "createRoleForUser": {
       "value": "${CREATE_ROLE_FOR_USER=true}"
