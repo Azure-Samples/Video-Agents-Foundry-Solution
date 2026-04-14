@@ -325,12 +325,25 @@ else
 fi
 
 # =====================================================
+# Verify VI Extension reached Succeeded state
+# =====================================================
+VI_EXT_STATE=$(az k8s-extension show \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
+    --cluster-name "$ARC_CLUSTER_NAME" \
+    --cluster-type connectedClusters \
+    --name videoindexer \
+    --query "provisioningState" -o tsv 2>/dev/null || echo "Unknown")
+
+# =====================================================
 # Acquire VI Extension Access Token (used by Steps 10-11)
 # =====================================================
 VI_ACCESS_TOKEN=""
 VI_API_BASE=""
 
-if [ "$MEDIA_STREAMER_ENABLED" = "false" ]; then
+if [ "$VI_EXT_STATE" != "Succeeded" ]; then
+    log_warning "VI extension provisioningState is '$VI_EXT_STATE' (expected 'Succeeded')."
+    log_warning "Skipping camera and agent job setup. Run 'azd hooks run postprovision' to retry after the extension is ready."
+elif [ "$MEDIA_STREAMER_ENABLED" = "false" ]; then
     log_info "Media streamer disabled (MEDIA_STREAMER_ENABLED=false). Skipping token acquisition, camera, and agent job setup."
 else
     EXTENSION_ID=$(az k8s-extension show \
@@ -473,6 +486,15 @@ if [ -n "${AI_FOUNDRY_ACCOUNT_NAME:-}" ]; then
     write_key_value "AI Foundry Hub"   "$AI_FOUNDRY_ACCOUNT_NAME"
     write_key_value "AI Foundry Model" "${AI_FOUNDRY_MODEL_DEPLOYMENT:-n/a}"
     write_key_value "AI Endpoint"      "${AI_FOUNDRY_AI_SERVICES_ENDPOINT:-n/a}"
+fi
+if [ -n "${PRINCIPAL_ID:-}" ] && [ -n "${CAMERA_ID:-}" ]; then
+    PORTAL_URL="https://www.videoindexer.ai/accounts/${AZURE_VIDEO_INDEXER_ACCOUNT_ID}/extensions/${PRINCIPAL_ID}/cameras/${CAMERA_ID}/live-stream?feature.VideoAssistant=true&feature.LiveActivity=true"
+    write_key_value "VI Portal" "$PORTAL_URL"
+    azd env set AZURE_VI_PORTAL_URL "$PORTAL_URL" 2>/dev/null || true
+elif [ -n "${AZURE_VIDEO_INDEXER_ACCOUNT_ID:-}" ]; then
+    PORTAL_URL="https://www.videoindexer.ai/accounts/${AZURE_VIDEO_INDEXER_ACCOUNT_ID}"
+    write_key_value "VI Portal" "$PORTAL_URL"
+    azd env set AZURE_VI_PORTAL_URL "$PORTAL_URL" 2>/dev/null || true
 fi
 
 echo ""

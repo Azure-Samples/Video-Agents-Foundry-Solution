@@ -329,21 +329,14 @@ if ($failed -gt 0) {
 Write-Section "Next Steps"
 Write-Host ""
 
-if ($env:AZURE_VIDEO_INDEXER_ACCOUNT_ID) {
-    $portalUrl = "https://www.videoindexer.ai/accounts/$env:AZURE_VIDEO_INDEXER_ACCOUNT_ID"
+if ($env:AZURE_VI_PORTAL_URL) {
+    $portalUrl = $env:AZURE_VI_PORTAL_URL
     Log-Success "Video Indexer portal: $portalUrl"
     Write-KeyValue "1. Access portal" $portalUrl
     Start-Process $portalUrl
 }
-Write-KeyValue "2. Test indexing"    "Upload a video to verify end-to-end"
-Write-KeyValue "3. Monitor GPUs"    "kubectl top nodes"
-Write-KeyValue "4. View VI logs"    "kubectl logs -n $NS_VIDEO_INDEXER -l app=videoindexer --tail=100"
-Write-KeyValue "5. Tear down"       "azd down"
-
-Write-Section "Useful Commands"
-Write-Host ""
-Write-KeyValue "All pods"         "kubectl get pods -A"
-Write-KeyValue "Node details"     "kubectl get nodes -o wide"
-Write-KeyValue "Arc status"       "az connectedk8s show -g $($env:AZURE_RESOURCE_GROUP) -n $($env:AZURE_ARC_CLUSTER_NAME)"
+Write-KeyValue "2. Test chat" "Chat with video agent"
+Write-KeyValue "3. Add camera"        "add custom cameras from RTSP streams"
+Write-KeyValue "4. Tear down"         "azd down"
 
 Write-Host ""

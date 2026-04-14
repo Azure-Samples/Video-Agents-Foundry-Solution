@@ -1,3 +1,13 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+# Validates the repository against AI Gallery template Definition of Done (DoD) requirements
+# using the microsoft/template-validation-action.
+#
+# Prerequisites:
+#   Run `azd pipeline config` to configure the GitHub repository with the required
+#   variables, secrets, and federated credentials for OIDC authentication.
+
 name: Template Validation
 on:
   workflow_dispatch:
@@ -14,9 +24,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: microsoft/template-validation-action@v0.3.2
+      - uses: microsoft/template-validation-action@v0.4.3
         id: validation
+        with:
+          useDevContainer: false
         env:
+          PYTHONUTF8: "1"
           TEMPLATE_VALIDATION_MODE: true
           AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
           AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
@@ -44,4 +57,5 @@ jobs:
           CREATE_IN_LOCAL: "false"
 
       - name: print result
+        shell: bash
         run: cat ${{ steps.validation.outputs.resultFile }}

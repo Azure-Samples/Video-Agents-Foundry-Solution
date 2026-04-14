@@ -1,0 +1,57 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environmentName": {
+      "value": "${AZURE_ENV_NAME}"
+    },
+    "location": {
+      "value": "${AZURE_LOCATION}"
+    },
+    "resourceGroupName": {
+      "value": "${AZURE_RESOURCE_GROUP=}"
+    },
+    "principalId": {
+      "value": "${AZURE_PRINCIPAL_ID=}"
+    },
+    "createRoleForUser": {
+      "value": "${CREATE_ROLE_FOR_USER=true}"
+    },
+    "kubernetesVersion": {
+      "value": "${KUBERNETES_VERSION=1.32}"
+    },
+    "systemVmSize": {
+      "value": "${SYSTEM_VM_SIZE=Standard_D4a_v4}"
+    },
+    "workloadVmSize": {
+      "value": "${WORKLOAD_VM_SIZE=Standard_D32a_v4}"
+    },
+    "deepstreamGpuVmSize": {
+      "value": "${DEEPSTREAM_GPU_VM_SIZE=Standard_NC24ads_A100_v4}"
+    },
+    "inferenceGpuVmSize": {
+      "value": "${INFERENCE_GPU_VM_SIZE=Standard_NC24ads_A100_v4}"
+    },
+    "deepstreamGpuMaxNodeCount": {
+      "value": "${DEEPSTREAM_GPU_MAX_NODE_COUNT=1}"
+    },
+    "createFoundryProject": {
+      "value": "${CREATE_FOUNDRY_PROJECT=true}"
+    },
+    "aiModelName": {
+      "value": "${AI_MODEL_NAME=gpt-5.2}"
+    },
+    "aiModelVersion": {
+      "value": "${AI_MODEL_VERSION=2025-12-11}"
+    },
+    "aiModelCapacity": {
+      "value": "${AI_MODEL_CAPACITY=1}"
+    },
+    "mediaStreamerEnabled": {
+      "value": "${MEDIA_STREAMER_ENABLED=true}"
+    },
+    "storageSkuName": {
+      "value": "${STORAGE_SKU_NAME=Standard_LRS}"
+    }
+  }
+}

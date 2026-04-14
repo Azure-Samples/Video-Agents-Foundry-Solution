@@ -1,4 +1,4 @@
-# Video-Agents-Foundry-Solution
+# Video Agents Foundry Solution
 
 Welcome to the *Video-Agents-Foundry-Solution*, designed to help businesses leverage AI agents for automating complex video analysts tasks.
 This solution provides **end-to-end framework** for deploying AI-powered video analysis at the edge using Azure Video Indexer enabled by Azure Arc, combined with intelligent AI agents for automated decision-making and real-time video insights.

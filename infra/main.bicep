@@ -14,10 +14,10 @@ param environmentName string
 param location string
 
 @description('Name of the resource group')
-param resourceGroupName string
+param resourceGroupName string = ''
 
 @description('ID of the principal (user) running the deployment')
-param principalId string
+param principalId string = ''
 
 @description('Whether to create role assignments for the deploying user')
 param createRoleForUser bool
