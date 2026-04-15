@@ -1,27 +1,18 @@
 # Video Agents Foundry Solution
 
-Welcome to the *Video-Agents-Foundry-Solution*, designed to help businesses leverage AI agents for automating complex video analysts tasks.
-This solution provides **end-to-end framework** for deploying AI-powered video analysis at the edge using Azure Video Indexer enabled by Azure Arc, combined with intelligent AI agents for automated decision-making and real-time video insights.
-The Video-Agents-Foundry-Solution allows users to process and analyze live and recorded video streams at the edge, extract AI insights, including speech transcription, OCR, face detection, object tracking, and action recognition and leverage **AI agents** to automate complex video analysis workflows with low latency and full data sovereignty.
+Welcome to the *Video Agents Foundry Solution*, designed to help businesses use AI agents to automate complex video analysis tasks.
+It provides an **end-to-end framework** for deploying AI-powered video analysis at the edge using Azure Video Indexer with Azure Arc, combined with intelligent agents for real-time insights and automated decision-making.
+The solution enables processing of live and recorded video streams at the edge, extracting insights like face detection, object tracking, and action recognition, while using **AI agents** to automate workflows with low latency and full data sovereignty.
 
-> **_Note_:** In order to successfully deploy the VI Extension, you **must first** submit your subscription for approval and be approved. Please use this application link. [this form](https://aka.ms/vi-register).
+> In order to successfully deploy the VI Extension, you **must first** submit your subscription for approval and be approved. Please use this application link. [this form](https://aka.ms/vi-register).
 
-> Deploying this solution can take approximately **45-60 minutes** end-to-end (15-25 minutes for `azd up` to complete, plus 20-35 minutes for GPU drivers and VI extension pods to fully initialize).
-During deployment, the Azure Portal may show some resources as "Failed" or "Unavailable". This is expected behavior as some resources may take longer to provision or initialize. Please allow up to an hour for all resources to be fully deployed and operational. If you continue to see issues after this time, please refer to the troubleshooting guide in the documentation.
-
-**Comprehensive Guides**
-
-For a detailed, step-by-step guide on creating an AKS cluster with GPU support and deploying the Video Indexer Arc extension, see:
-- **[AKS-CLUSTER-SETUP.md](https://github.com/Azure-Samples/azure-video-indexer-samples/blob/master/VideoIndexerEnabledByArc/aks/AKS-CLUSTER-SETUP.md)** - Complete setup guide with output examples
-- **[create-aks-cluster.sh](https://github.com/Azure-Samples/azure-video-indexer-samples/blob/master/VideoIndexerEnabledByArc/aks/create-aks-cluster.sh)** - Automated deployment script
-> The guide includes GPU quota checking, troubleshooting tips, and support for live video processing.
+> Deployment typically takes **45-60 minutes** end-to-end (`azd up`). During this time, some resources in the Azure Portal may appear as "Failed" or "Unavailable"—this is expected as certain services take longer to initialize. Please allow up to an hour for everything to become fully operational. If issues persist, refer to the troubleshooting guide.
 
 <div align="center">
 
-[**SOLUTION OVERVIEW**](#solution-overview) \| [**QUICK DEPLOY**](#quick-deploy) \| [**BUSINESS SCENARIO**](#business-scenario) \| [**SUPPORTING DOCUMENTATION**](#supporting-documentation)
+[**SOLUTION OVERVIEW**](#solution-overview) \| [**QUICK DEPLOY**](#quick-deploy) \| [**RESOURCE CLEAN-UP**](#resource-clean-up) \| [**BUSINESS SCENARIO**](#business-scenario) \| [**SUPPORTING DOCUMENTATION**](#supporting-documentation) \| [**TROUBLESHOOTING**](./docs/troubleshooting.md)
 
 </div>
-
 
 **Note:** With any AI solutions you create using these templates, you are responsible for assessing all associated risks and for complying with all applicable laws and safety standards. Learn more in the transparency documents for [Agent Service](https://learn.microsoft.com/en-us/azure/ai-foundry/responsible-ai/agents/transparency-note) and [Agent Framework](https://github.com/microsoft/agent-framework/blob/main/TRANSPARENCY_FAQ.md).
 
@@ -44,13 +35,37 @@ This template creates everything you need to get started with Microsoft Foundry 
 
 | Resource | Description |
 |----------|-------------|
-| [Azure AI Project](https://learn.microsoft.com/azure/ai-studio/how-to/create-projects) | *Optional* - Provides a collaborative workspace for AI development with access to models, data, and compute resources |
-| [Azure OpenAI Service](https://learn.microsoft.com/azure/ai-services/openai/) | *Optional* - Powers the AI model. Default model deployed is gpt-5.2, but any Azure AI model that supports tool calling can be specified per the [documentation](docs/deploy_customization.md#customizing-model-deployments) |
+| [Azure AKS](https://learn.microsoft.com/azure/aks/) | Provides the Kubernetes cluster infrastructure with GPU support for running edge video processing workloads |
+| [Video Indexer Account](https://learn.microsoft.com/azure/azure-video-indexer/) | Azure Video Indexer account for AI-powered video analysis, extracting insights such as speech transcription, OCR, face detection, and object tracking |
+| [Video Indexer Enabled by Arc](https://learn.microsoft.com/azure/azure-video-indexer/azure-video-indexer-enabled-by-arc-overview) | Extends Azure Video Indexer capabilities to edge environments via Azure Arc, enabling real-time video processing on Arc-enabled Kubernetes clusters |
+| [Azure AI Project](https://learn.microsoft.com/azure/ai-studio/how-to/create-projects) | Provides a collaborative workspace for AI development with access to models, data, and compute resources |
+| [Azure OpenAI Service](https://learn.microsoft.com/azure/ai-services/openai/) | Powers the AI model. Supports only gpt-5.2 |
 | [Storage Account](https://learn.microsoft.com/azure/storage/blobs/) | Provides blob storage for application data and file uploads |
 | [Application Insights](https://learn.microsoft.com/azure/azure-monitor/app/app-insights-overview) | *Optional* - Provides application performance monitoring, logging, and telemetry for debugging and optimization |
 | [Log Analytics Workspace](https://learn.microsoft.com/azure/azure-monitor/logs/log-analytics-workspace-overview) | *Optional* - Collects and analyzes telemetry data for monitoring and troubleshooting |
 
 > **_Note_:** You should validate model availability in your region before deployment. The default model deployed with this solution is gpt-5.2, but you can customize the model and deployment configurations as needed. For more information on available models and their capabilities, please refer to the Azure OpenAI Service documentation: [Foundry Models](https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure?tabs=global-standard-aoai%2Cglobal-standard&pivots=azure-openai)
+
+
+## Resource Clean-up
+
+To prevent incurring unnecessary charges, it's important to clean up your Azure resources after completing your work with the application.
+
+- **When to Clean Up:**
+  - After you have finished testing or demonstrating the application.
+  - If the application is no longer needed or you have transitioned to a different project or environment.
+  - When you have completed development and are ready to decommission the application.
+
+- **Deleting Resources:**
+  To delete all associated resources and shut down the application, execute the following command:
+
+    ```bash
+    azd down
+    ```
+
+    Please note that this process may take up to 20 minutes to complete.
+
+⚠️ Alternatively, you can delete the resource group directly from the Azure Portal to clean up resources.
 
 ### Additional resources
 - [Azure Video Indexer enabled by Arc — Ignite 2025 Preview Blog](https://techcommunity.microsoft.com/blog/AzureArcBlog/ignite-2025-preview---intelligent-real-time-video-insights-and-agents-with-azure/4470704)
@@ -59,17 +74,12 @@ This template creates everything you need to get started with Microsoft Foundry 
 - [AKS Cluster Setup for Video Indexer Arc Extension](https://github.com/Azure-Samples/azure-video-indexer-samples/blob/master/VideoIndexerEnabledByArc/aks/AKS-CLUSTER-SETUP.md)
 - [Azure Video Indexer Samples on GitHub](https://github.com/Azure-Samples/azure-video-indexer-samples)
 
-### Troubleshooting
-
-For solutions to common deployment, container app, and agent issues, see the [Troubleshooting Guide](./docs/troubleshooting.md).
-
 ### Key features
 <details open>
   <summary>Learn more about the key features this solution enables</summary>
 
 - **Edge-Deployed Video Analysis** — Run Azure Video Indexer on Arc-enabled Kubernetes clusters at the edge, bringing AI-powered video analysis closer to data sources for low-latency processing.
 - **Real-Time & Batch Video Processing** — Support for both live video pipeline ingestion (RTSP streams) and batch processing of recorded video files.
-- **[Customizable AI Model Deployment](./docs/deploy_customization.md#customizing-model-deployments)**: The solution allows users to configure and deploy AI models, such as gpt-5.2, with options to adjust model capacity, deployment configurations, and knowledge retrieval methods.
 - **Multimodal AI Insights** — Extract rich insights from video content including speech transcription, OCR, face detection, object tracking, scene detection, and action recognition.
 - **AI Agent–Based Automation** — Leverage intelligent agents powered by Azure OpenAI to automate complex video analysis workflows, enabling automated decision-making and action triggering.
 - **Cloud-Managed Edge Deployments** — Manage and monitor edge deployments centrally through Azure Arc while processing video data locally.
@@ -112,15 +122,12 @@ Follow the quick deploy steps on the deployment guide to deploy this solution to
 
 Pricing varies per region and usage, so it isn't possible to predict exact costs for your usage.
 The majority of the Azure resources used in this infrastructure are on usage-based pricing tiers.
-However, Azure Container Registry has a fixed cost per registry per day.
 
-Use the [Azure pricing calculator](https://azure.microsoft.com/en-us/pricing/calculator) to calculate the cost of this solution in your subscription. [Review a sample pricing sheet for the architecture](https://azure.com/e/86d0eefbe4dd4a23981c1d3d4f6fe7ed).
-| Product | Description | Cost |
-|---|---|---|
-| [Azure OpenAI Service](https://learn.microsoft.com/azure/ai-services/openai/) | Powers the AI agents for task automation | [Pricing](https://azure.microsoft.com/pricing/details/cognitive-services/openai-service/) |
-| [Azure Container Apps](https://learn.microsoft.com/azure/container-apps/) | Hosts the web application frontend | [Pricing](https://azure.microsoft.com/pricing/details/container-apps/) |
-| [Azure Cosmos DB](https://learn.microsoft.com/azure/cosmos-db/) | Stores metadata and processing results | [Pricing](https://azure.microsoft.com/pricing/details/cosmos-db/) |
-| [Azure Container Registry](https://learn.microsoft.com/azure/container-registry/) | Stores container images for deployment | [Pricing](https://azure.microsoft.com/pricing/details/container-registry/) |
+You can try the [Azure pricing calculator](https://azure.microsoft.com/pricing/calculator) for the resources:
+
+- **Microsoft Foundry**: Free tier. [Pricing](https://azure.microsoft.com/pricing/details/ai-studio/)
+- **Azure Storage Account**: Standard tier, LRS. Pricing is based on storage and operations. [Pricing](https://azure.microsoft.com/pricing/details/storage/blobs/)
+- **Foundry Tools**: S0 tier, supports only gpt-5.2. Pricing is based on token count. [Pricing](https://azure.microsoft.com/pricing/details/cognitive-services/)
 
 
 >⚠️ **Important:** To avoid unnecessary costs, remember to take down your app if it's no longer in use,
