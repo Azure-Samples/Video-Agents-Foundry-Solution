@@ -126,8 +126,13 @@ log_step() {
     local total="$2"
     local title="$3"
 
+    # Divider length matches the title line above (min 40)
+    local header_text="${SYM_STEP}  [${number}/${total}]  ${title}"
+    local divider_len=${#header_text}
+    [ "$divider_len" -lt 40 ] && divider_len=40
+
     local rule=""
-    for ((i=0; i<60; i++)); do rule="${rule}${SYM_HLINE}"; done
+    for ((i=0; i<divider_len; i++)); do rule="${rule}${SYM_HLINE}"; done
 
     printf "\n  %b%s%b  %b[%s/%s]%b  %b%s%b\n" \
         "$C_ACCENT_BOLD" "$SYM_STEP" "$C_RESET" \

@@ -163,9 +163,12 @@ function Log-Step {
     )
     $counter = "$($script:C.Muted)[$Number/$Total]$($script:C.Reset)"
     $sym     = "$($script:C.AccentBold)$($script:Sym.Step)$($script:C.Reset)"
+    # Divider length matches the title line above (min 40)
+    $headerText = "$($script:Sym.Step)  [$Number/$Total]  $Title"
+    $dividerLen = [math]::Max(40, $headerText.Length)
     Write-Host ""
     Write-Host "  $sym  $counter  $($script:C.BoldWhite)$Title$($script:C.Reset)"
-    Write-Host "  $($script:C.Muted)$([string]$script:Sym.HLine * 60)$($script:C.Reset)"
+    Write-Host "  $($script:C.Muted)$([string]$script:Sym.HLine * $dividerLen)$($script:C.Reset)"
 }
 
 # ── Banner & Box Drawing ───────────────────────────────────────────────────
