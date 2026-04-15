@@ -134,3 +134,10 @@ If you continue to experience issues after trying these solutions:
 3. Consult the [Azure Arc documentation](https://learn.microsoft.com/azure/azure-arc/)
 4. Review the [Azure Developer CLI reference](https://learn.microsoft.com/azure/developer/azure-developer-cli/reference)
 5. [Submit an issue](https://github.com/Azure-Samples/Video-Agents-Foundry-Solution/issues/new) on this repository
+
+## Comprehensive Guides
+
+For a detailed, step-by-step guide on creating an AKS cluster with GPU support and deploying the Video Indexer Arc extension, see:
+- **[AKS-CLUSTER-SETUP.md](https://github.com/Azure-Samples/azure-video-indexer-samples/blob/master/VideoIndexerEnabledByArc/aks/AKS-CLUSTER-SETUP.md)** - Complete setup guide with output examples
+- **[create-aks-cluster.sh](https://github.com/Azure-Samples/azure-video-indexer-samples/blob/master/VideoIndexerEnabledByArc/aks/create-aks-cluster.sh)** - Automated deployment script
+> The guide includes GPU quota checking, troubleshooting tips, and support for live video processing.
