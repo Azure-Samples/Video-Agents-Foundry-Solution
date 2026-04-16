@@ -65,13 +65,18 @@ jobs:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      - name: Log to AZD
+      - name: Login to AZD
+        shell: bash
         run: |
-          azd auth login `
-            --client-id "$Env:AZURE_CLIENT_ID" `
-            --federated-credential-provider "github" `
+          azd auth login \
+            --client-id "$Env:AZURE_CLIENT_ID" \
+            --federated-credential-provider "github" \
             --tenant-id "$Env:AZURE_TENANT_ID"
-        shell: pwsh
-
       - name: Provision
-        run: azd up --no-prompt
+        shell: bash
+        run: |
+          if ! azd env select "$AZURE_ENV_NAME"; then
+            azd env new "$AZURE_ENV_NAME" --subscription "$AZURE_SUBSCRIPTION_ID" --location "$AZURE_LOCATION" --no-prompt
+          fi
+          azd config set defaults.subscription "$AZURE_SUBSCRIPTION_ID"
+          azd up --no-prompt
