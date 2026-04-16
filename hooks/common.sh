@@ -155,16 +155,20 @@ test_namespace_exists() {
 get_filtered_vm_sizes() {
     local location="$1"; shift
     local -a prefixes=("$@")
-    local filter=""
-    for p in "${prefixes[@]}"; do
-        [ -n "$filter" ] && filter="${filter} || "
-        filter="${filter}starts_with(name, '${p}')"
-    done
+
+    # Simple query — matches PS1 Get-AzVmSizesForRegion approach.
+    # Filter unrestricted SKUs, extract name/vCPUs/memGB.
+    local query='[?restrictions[?type==`Location`]|length(@)==`0`].{n:name, c:capabilities[?name==`vCPUs`].value|[0], m:capabilities[?name==`MemoryGB`].value|[0]}'
     az vm list-skus --location "$location" --resource-type virtualMachines \
-        --query "sort_by([?restrictions[?type=='Location']|length(@)==\`0\` && (${filter})], &to_number(capabilities[?name=='vCPUs'].value|[0]))[].{n:name, c:capabilities[?name=='vCPUs'].value|[0], m:capabilities[?name=='MemoryGB'].value|[0]}" \
-        -o tsv 2>/dev/null | while IFS=$'\t' read -r name cores memGB; do
-        echo "${name}|${cores}|${memGB}"
-    done
+        --query "$query" -o tsv 2>/dev/null | while IFS=$'\t' read -r name cores memGB; do
+        # Filter by prefix in bash (more robust than JMESPath starts_with)
+        for p in "${prefixes[@]}"; do
+            if [[ "$name" == ${p}* ]]; then
+                echo "${name}|${cores}|${memGB}"
+                break
+            fi
+        done
+    done | sort -t'|' -k2 -n
 }
 
 # Checks if a default SKU is available; if not, picks the closest by core count.
