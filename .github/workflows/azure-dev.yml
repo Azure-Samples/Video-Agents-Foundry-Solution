@@ -59,7 +59,13 @@ jobs:
         uses: azure/setup-kubectl@v3
       - name: Install helm
         uses: azure/setup-helm@v4
-      - name: Log in with Azure (Federated Credentials)
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Log to AZD
         run: |
           azd auth login `
             --client-id "$Env:AZURE_CLIENT_ID" `
@@ -67,13 +73,5 @@ jobs:
             --tenant-id "$Env:AZURE_TENANT_ID"
         shell: pwsh
 
-      - name: Provision Infrastructure
-        run: azd provision --no-prompt
-        env:
-          AZD_INITIAL_ENVIRONMENT_CONFIG: ${{ secrets.AZD_INITIAL_ENVIRONMENT_CONFIG }}
-
-      # NOTE: azure.yaml has no services: block, so azd deploy is a no-op.
-      # The postprovision hook handles all post-Bicep setup (Arc, GPU, VI extension).
-      # This step is kept for forward-compatibility if app services are added.
-      - name: Deploy Application
-        run: azd deploy --no-prompt
+      - name: Provision
+        run: azd up --no-prompt
