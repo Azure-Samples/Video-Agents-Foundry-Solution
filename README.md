@@ -25,11 +25,11 @@ By deploying the Video Indexer Arc extension on an Arc-enabled AKS cluster with 
 
 This solution optionally creates a Microsoft Foundry project and Foundry Tools (enabled by default; set `CREATE_FOUNDRY_PROJECT=false` to skip). More details about the resources can be found in the [resources](#resources) documentation.
 
-### Solution architecture
+## Solution architecture
 |![image](./docs/images/readme/architecture.png)|
 |---|
 
-### Key features
+## Features
 <details open>
   <summary>Learn more about the key features this solution enables</summary>
 
@@ -44,9 +44,10 @@ This solution optionally creates a Microsoft Foundry project and Foundry Tools (
 </details>
 
 <h2><img src="./docs/images/readme/quick-deploy.png" width="48" />
-Getting Started
+Quick Deploy
 </h2>
 
+## Getting Started
 Follow the quick deploy steps on the deployment guide to deploy this solution to your own Azure subscription.
 
 > **Note:** This solution accelerator requires **Azure Developer CLI (azd) version 1.18.0 or higher**. Please ensure you have the latest version installed before proceeding with deployment. [Download azd here](https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/install-azd).

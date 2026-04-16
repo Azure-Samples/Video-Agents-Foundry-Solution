@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   template_validation_job:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     name: template validation
     steps:
       - uses: actions/checkout@v4
