@@ -144,7 +144,7 @@ output modelDeploymentName string = modelDeployment.name
 output accountId string = aiAccount.id
 
 @description('Azure OpenAI base URL for agents runtime')
-output agentsRuntimeAzureOpenAIBaseUrl string = 'https://${name}.openai.azure.com/openai/v1/'
+output agentsRuntimeAzureOpenAIBaseUrl string = 'https://${name}.cognitiveservices.azure.com/'
 
 @description('Azure OpenAI model for agents runtime')
 output agentsRuntimeAzureOpenAIModel string = modelName
