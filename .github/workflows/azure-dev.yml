@@ -69,9 +69,9 @@ jobs:
         shell: bash
         run: |
           azd auth login \
-            --client-id "$Env:AZURE_CLIENT_ID" \
+            --client-id "$AZURE_CLIENT_ID" \
             --federated-credential-provider "github" \
-            --tenant-id "$Env:AZURE_TENANT_ID"
+            --tenant-id "$AZURE_TENANT_ID"
       - name: Provision
         shell: bash
         run: |
