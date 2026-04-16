@@ -18,7 +18,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     env:
       # ── Required Azure identity ─────────────────────────────
       AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
