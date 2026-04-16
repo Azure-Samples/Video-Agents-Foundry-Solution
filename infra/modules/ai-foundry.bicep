@@ -142,3 +142,9 @@ output modelDeploymentName string = modelDeployment.name
 
 @description('AI Services account resource ID')
 output accountId string = aiAccount.id
+
+@description('Azure OpenAI base URL for agents runtime')
+output agentsRuntimeAzureOpenAIBaseUrl string = 'https://${name}.openai.azure.com/openai/v1/'
+
+@description('Azure OpenAI model for agents runtime')
+output agentsRuntimeAzureOpenAIModel string = modelName

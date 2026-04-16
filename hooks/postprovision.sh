@@ -278,7 +278,9 @@ az deployment group create \
         deepstreamNodeSelectorValue="$AZURE_DEEPSTREAM_NODE_SELECTOR_VALUE" \
         inferenceNodeSelectorValue="$AZURE_INFERENCE_NODE_SELECTOR_VALUE" \
         inferenceAgentEnabled=$INFERENCE_AGENT_ENABLED \
-        mediaStreamerEnabled=$MEDIA_STREAMER_ENABLED
+        mediaStreamerEnabled=$MEDIA_STREAMER_ENABLED \
+        agentsRuntimeAzureOpenAIBaseUrl="$AGENTS_RUNTIME_AZURE_OPENAI_BASE_URL" \
+        agentsRuntimeAzureOpenAIModel="$AGENTS_RUNTIME_AZURE_OPENAI_MODEL"
 log_success "Video Indexer Arc extension deployed"
 
 log_info "Assigning permissions to Arc extension managed identity..."

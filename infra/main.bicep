@@ -201,4 +201,6 @@ output AI_FOUNDRY_AI_SERVICES_ENDPOINT string = createFoundryProject ? aiFoundry
 output AI_FOUNDRY_MODEL_DEPLOYMENT string = createFoundryProject ? aiFoundry.outputs.modelDeploymentName : ''
 output AI_FOUNDRY_ACCOUNT_NAME string = createFoundryProject ? aiFoundry.outputs.accountName : ''
 output AI_FOUNDRY_PROJECT_NAME string = createFoundryProject ? aiFoundry.outputs.projectName : ''
+output AGENTS_RUNTIME_AZURE_OPENAI_BASE_URL string = createFoundryProject ? aiFoundry.outputs.agentsRuntimeAzureOpenAIBaseUrl : ''
+output AGENTS_RUNTIME_AZURE_OPENAI_MODEL string = createFoundryProject ? aiFoundry.outputs.agentsRuntimeAzureOpenAIModel : ''
 output MEDIA_STREAMER_ENABLED bool = mediaStreamerEnabled

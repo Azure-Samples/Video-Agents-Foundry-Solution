@@ -309,7 +309,9 @@ az deployment group create `
     deepstreamNodeSelectorValue="$env:AZURE_DEEPSTREAM_NODE_SELECTOR_VALUE" `
     inferenceNodeSelectorValue="$env:AZURE_INFERENCE_NODE_SELECTOR_VALUE" `
     inferenceAgentEnabled=$inferenceAgentEnabled `
-    mediaStreamerEnabled=$mediaStreamerEnabled
+    mediaStreamerEnabled=$mediaStreamerEnabled `
+    agentsRuntimeAzureOpenAIBaseUrl="$env:AGENTS_RUNTIME_AZURE_OPENAI_BASE_URL" `
+    agentsRuntimeAzureOpenAIModel="$env:AGENTS_RUNTIME_AZURE_OPENAI_MODEL"
 Log-Success "Video Indexer Arc extension deployed"
 
 
