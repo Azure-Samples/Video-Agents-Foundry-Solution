@@ -186,14 +186,15 @@ function Get-AzVmSizesForRegion {
         Queries az vm list-skus for a region and returns an array of hashtables.
         Uses list-skus (not list-sizes) to respect subscription restrictions —
         only SKUs the subscription is allowed to use are returned.
-        Each entry: @{ Name; Cores; MemoryGB }
+        Each entry: @{ Name; Cores; MemoryGB; Family }
+        Family is the quota family name (matches az vm list-usage name.value).
     #>
     param([string]$Location)
-    $query = "[?restrictions[?type=='Location']|length(@)==``0``].{name:name, vCPUs:capabilities[?name=='vCPUs'].value|[0], memGB:capabilities[?name=='MemoryGB'].value|[0]}"
+    $query = "[?restrictions[?type=='Location']|length(@)==``0``].{name:name, family:family, vCPUs:capabilities[?name=='vCPUs'].value|[0], memGB:capabilities[?name=='MemoryGB'].value|[0]}"
     $raw = (az vm list-skus --location $Location --resource-type virtualMachines --query $query -o json 2>$null) | ConvertFrom-Json
     if (-not $raw) { return @() }
     return $raw | ForEach-Object {
-        @{ Name = $_.name; Cores = [int]$_.vCPUs; MemoryGB = [int]$_.memGB }
+        @{ Name = $_.name; Cores = [int]$_.vCPUs; MemoryGB = [int]$_.memGB; Family = $_.family }
     }
 }
 
@@ -238,6 +239,11 @@ function Select-VmSizesForMenu {
         For each family, matches VM names that contain the family pattern,
         filters by core range, takes up to $SizesPerFamily sorted by cores.
         The default SKU is always included. Result is sorted by cores.
+
+        When QuotaData is supplied, each entry is annotated with quota info
+        (AvailableQuota, QuotaLimit, QuotaFamily, HasEnoughQuota). SKUs whose
+        family has too little quota to run $MaxNodes of that size are dropped,
+        except the default SKU which is kept (annotated) so the user sees it.
     #>
     param(
         [array]$AllSizes,
@@ -246,7 +252,9 @@ function Select-VmSizesForMenu {
         [string]$DefaultSku,
         [int]$SizesPerFamily = 3,
         [int]$MinCores = 0,
-        [int]$MaxCores = [int]::MaxValue
+        [int]$MaxCores = [int]::MaxValue,
+        [hashtable]$QuotaData,
+        [int]$MaxNodes = 1
     )
 
     # Filter by broad prefix first (CPU vs GPU), then by core range
@@ -273,8 +281,48 @@ function Select-VmSizesForMenu {
         if ($defVm) { $selected[$defVm.Name] = $defVm }
     }
 
-    # Return sorted by cores
-    return $selected.Values | Sort-Object { $_.Cores }, { $_.Name }
+    $entries = $selected.Values | Sort-Object { $_.Cores }, { $_.Name }
+
+    # ── Annotate with quota + drop SKUs that cannot satisfy $MaxNodes ─────
+    if ($QuotaData -and $QuotaData.Count -gt 0) {
+        $annotated = @()
+        foreach ($vm in $entries) {
+            $fam = Get-QuotaFamilyForVm -VmSize $vm.Name -SkuFamily $vm.Family
+            $avail = $null; $limit = $null; $hasEnough = $true; $familyKnown = $false
+            if ($fam -and $QuotaData.ContainsKey($fam)) {
+                $familyKnown = $true
+                $avail = [int]$QuotaData[$fam].Available
+                $limit = [int]$QuotaData[$fam].Limit
+                $needed = [int]$vm.Cores * [math]::Max(1, [int]$MaxNodes)
+                $hasEnough = ($limit -gt 0) -and ($avail -ge $needed)
+            }
+            # Clone hashtable so we don't mutate the shared $AllSizes entries
+            $copy = @{}
+            foreach ($k in $vm.Keys) { $copy[$k] = $vm[$k] }
+            $copy.QuotaFamily     = $fam
+            $copy.QuotaFamilyKnown = $familyKnown
+            $copy.AvailableQuota  = $avail
+            $copy.QuotaLimit      = $limit
+            $copy.HasEnoughQuota  = $hasEnough
+            $annotated += ,$copy
+        }
+
+        # Keep only entries with a known quota family AND enough quota.
+        # The user-facing default is kept regardless so it's never silently
+        # hidden — the final quota check before submission still guards it.
+        $filtered = $annotated | Where-Object {
+            ($_.QuotaFamilyKnown -and $_.HasEnoughQuota) -or ($_.Name -eq $DefaultSku)
+        }
+
+        # Fallback: if quota would empty the list, return the unfiltered annotated
+        # set so the user can still pick something and be warned.
+        if (-not $filtered -or @($filtered).Count -eq 0) {
+            return $annotated
+        }
+        return @($filtered)
+    }
+
+    return $entries
 }
 
 function Get-AzVmQuotaForRegion {
@@ -300,14 +348,21 @@ function Get-AzVmQuotaForRegion {
 function Get-QuotaFamilyForVm {
     <#
     .SYNOPSIS
-        Resolves the quota family name for a GPU VM size using the
-        GPU_QUOTA_FAMILY_MAP regex lookup table. No API call needed.
-        Returns the family string, or $null if no pattern matches.
+        Resolves the quota family name for a VM size.
+        Prefers the family string reported by az vm list-skus (passed via
+        -SkuFamily) because it matches az vm list-usage's name.value directly.
+        Falls back to the GPU_QUOTA_FAMILY_MAP regex table for older SKUs where
+        the family field is empty.
+        Returns the family string, or $null if nothing matches.
     #>
     param(
         [string]$VmSize,
+        [string]$SkuFamily,
         [string]$Location   # kept for interface compat, not used
     )
+    if (-not [string]::IsNullOrWhiteSpace($SkuFamily)) {
+        return $SkuFamily
+    }
     foreach ($pattern in $GPU_QUOTA_FAMILY_MAP.Keys) {
         if ($VmSize -match $pattern) {
             return $GPU_QUOTA_FAMILY_MAP[$pattern]
@@ -502,8 +557,20 @@ function Show-VmSelectionMenu {
         $name  = $Entry.Name.PadRight(35)
         $cores = "$($Entry.Cores) vCPUs".PadRight(10)
         $mem   = "$($Entry.MemoryGB) GB".PadRight(8)
-        $tag   = if ($IsDefault) { " (default)" } else { "" }
-        return "${name} ${cores} ${mem}${tag}"
+
+        # Quota column (only when quota data was supplied)
+        $quotaCol = ""
+        if ($Entry.ContainsKey('QuotaFamilyKnown')) {
+            if ($Entry.QuotaFamilyKnown) {
+                $quotaCol = "$($Entry.AvailableQuota) free".PadRight(14)
+            }
+            else {
+                $quotaCol = "quota n/a".PadRight(14)
+            }
+        }
+
+        $tag = if ($IsDefault) { " (default)" } else { "" }
+        return "${name} ${cores} ${mem} ${quotaCol}${tag}"
     }
 
     # ── Redraw the visible viewport in-place ───────────────────────
@@ -577,6 +644,9 @@ function Show-VmSelectionMenu {
         Write-Host ""
         Write-Section "Select VM size for $PoolName ($($VmSizes.Count) sizes available)"
         Log-Info "Use $([char]0x2191)/$([char]0x2193) to move, Enter to select, C custom, Esc cancel"
+        if ($VmSizes.Count -gt 0 -and $VmSizes[0].ContainsKey('QuotaFamilyKnown')) {
+            Log-Info "Quota column shows cores free in this region (pool max nodes: $MaxNodes)."
+        }
         Write-Host ""
 
         # Reserve exactly $maxVisible blank lines (viewport size, not total items)
@@ -660,7 +730,10 @@ function Show-VmSelectionMenu {
         # ── GPU quota check ────────────────────────────────────────
         if ($IsGpu) {
             Write-LogMessage -Message "Resolving quota family..." -Symbol $script:Sym.Info -SymbolColor $script:C.Accent -NoNewline
-            $selectedFamily = Get-QuotaFamilyForVm -VmSize $selectedSku -Location $Location
+            $skuFamily = $null
+            $match = $VmSizes | Where-Object { $_.Name -eq $selectedSku } | Select-Object -First 1
+            if ($match -and $match.ContainsKey('Family')) { $skuFamily = $match.Family }
+            $selectedFamily = Get-QuotaFamilyForVm -VmSize $selectedSku -SkuFamily $skuFamily -Location $Location
             if ($selectedFamily) {
                 Write-Host " $($script:C.Muted)$selectedFamily$($script:C.Reset)"
                 $totalCoresNeeded = $selectedCores * $MaxNodes

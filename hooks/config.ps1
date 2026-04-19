@@ -44,6 +44,12 @@ $Script:WORKLOAD_RECOMMENDED_FAMILIES = @(
 )
 $Script:WORKLOAD_MIN_CORES = 16
 
+# Max node counts per pool (must match infra/modules/aks.bicep defaults).
+# Used to size the quota filter on the VM selection menu
+# (total cores needed = vmCores * maxNodes).
+$Script:SYSTEM_MAX_NODE_COUNT   = if ($env:SYSTEM_MAX_NODE_COUNT)   { [int]$env:SYSTEM_MAX_NODE_COUNT }   else { 2 }
+$Script:WORKLOAD_MAX_NODE_COUNT = if ($env:WORKLOAD_MAX_NODE_COUNT) { [int]$env:WORKLOAD_MAX_NODE_COUNT } else { 10 }
+
 # GPU pools: all GPU families
 $Script:GPU_RECOMMENDED_FAMILIES = @(
     'A100_v4$'         # A100: Standard_NC24ads_A100_v4, NC48ads, NC96ads

@@ -151,20 +151,22 @@ test_namespace_exists() {
 
 # Fetches VM sizes for a region, filtered by name prefixes, sorted by cores.
 # Uses az vm list-skus (not list-sizes) to respect subscription restrictions.
-# Output: pipe-delimited lines "name|cores|memGB" to stdout.
+# Output: pipe-delimited lines "name|cores|memGB|family" to stdout.
+# family is the az vm list-skus "family" field — matches az vm list-usage
+# name.value so we can look up quota directly.
 get_filtered_vm_sizes() {
     local location="$1"; shift
     local -a prefixes=("$@")
 
     # Simple query — matches PS1 Get-AzVmSizesForRegion approach.
-    # Filter unrestricted SKUs, extract name/vCPUs/memGB.
-    local query='[?restrictions[?type==`Location`]|length(@)==`0`].{n:name, c:capabilities[?name==`vCPUs`].value|[0], m:capabilities[?name==`MemoryGB`].value|[0]}'
+    # Filter unrestricted SKUs, extract name/vCPUs/memGB/family.
+    local query='[?restrictions[?type==`Location`]|length(@)==`0`].{n:name, c:capabilities[?name==`vCPUs`].value|[0], m:capabilities[?name==`MemoryGB`].value|[0], f:family}'
     az vm list-skus --location "$location" --resource-type virtualMachines \
-        --query "$query" -o tsv 2>/dev/null | while IFS=$'\t' read -r name cores memGB; do
+        --query "$query" -o tsv 2>/dev/null | while IFS=$'\t' read -r name cores memGB family; do
         # Filter by prefix in bash (more robust than JMESPath starts_with)
         for p in "${prefixes[@]}"; do
             if [[ "$name" == ${p}* ]]; then
-                echo "${name}|${cores}|${memGB}"
+                echo "${name}|${cores}|${memGB}|${family}"
                 break
             fi
         done
@@ -279,11 +281,19 @@ lookup_vm_quota() {
     return 0
 }
 
-# Resolves quota family for a GPU VM using the pattern lookup table.
+# Resolves quota family for a VM size.
+# Prefers the sku_family argument (from az vm list-skus "family" field, which
+# matches az vm list-usage name.value). Falls back to the regex table in
+# GPU_QUOTA_PATTERNS / GPU_QUOTA_FAMILIES for older SKUs with an empty family.
 GET_QUOTA_FAMILY_RESULT=""
 get_quota_family_for_vm() {
     local vm_size="$1"
+    local sku_family="${2:-}"
     GET_QUOTA_FAMILY_RESULT=""
+    if [ -n "$sku_family" ]; then
+        GET_QUOTA_FAMILY_RESULT="$sku_family"
+        return 0
+    fi
     for ((i=0; i<${#GPU_QUOTA_PATTERNS[@]}; i++)); do
         if echo "$vm_size" | grep -qE "${GPU_QUOTA_PATTERNS[$i]}"; then
             GET_QUOTA_FAMILY_RESULT="${GPU_QUOTA_FAMILIES[$i]}"
@@ -291,6 +301,87 @@ get_quota_family_for_vm() {
         fi
     done
     return 1
+}
+
+# Fetches full per-family quota map for a region in a single call.
+# Populates the global associative array VM_QUOTA_MAP[family]="avail|limit".
+declare -gA VM_QUOTA_MAP=()
+VM_QUOTA_MAP_COUNT=0
+fetch_vm_quota_map() {
+    local location="$1"
+    VM_QUOTA_MAP=()
+    VM_QUOTA_MAP_COUNT=0
+    local raw
+    raw=$(az vm list-usage --location "$location" \
+        --query "[].{n:name.value, l:limit, u:currentValue}" \
+        -o tsv 2>/dev/null || true)
+    [ -z "$raw" ] && return 1
+    while IFS=$'\t' read -r fam limit used; do
+        [ -z "$fam" ] && continue
+        local avail=$((limit - used))
+        VM_QUOTA_MAP["$fam"]="${avail}|${limit}"
+        VM_QUOTA_MAP_COUNT=$((VM_QUOTA_MAP_COUNT + 1))
+    done <<< "$raw"
+    return 0
+}
+
+# Annotates + filters a VM size array by quota.
+# Input entries: "name|cores|memGB|family" (from get_filtered_vm_sizes).
+# Output entries: "name|cores|memGB|family|avail|limit|hasEnough" where:
+#   - avail/limit are empty when family is unknown to the quota map
+#   - hasEnough is 1/0 (always 1 when family unknown, to avoid hiding SKUs)
+# SKUs that can't satisfy $max_nodes are dropped, except $default_sku which is
+# kept (annotated) so the user always sees it. If filtering would empty the
+# list, the unfiltered annotated set is returned instead.
+annotate_vm_sizes_with_quota() {
+    local -n _list=$1
+    local default_sku="${2:-}"
+    local max_nodes="${3:-1}"
+    [ "$max_nodes" -lt 1 ] && max_nodes=1
+
+    local -a annotated=() kept=()
+    local any_filtered=0
+
+    for entry in "${_list[@]}"; do
+        local name="${entry%%|*}"
+        local rest="${entry#*|}"
+        local cores="${rest%%|*}"; rest="${rest#*|}"
+        local mem="${rest%%|*}";   rest="${rest#*|}"
+        local family="${rest}"
+
+        get_quota_family_for_vm "$name" "$family" >/dev/null || true
+        local fam="$GET_QUOTA_FAMILY_RESULT"
+
+        local avail="" limit="" has_enough=1
+        if [ -n "$fam" ] && [ -n "${VM_QUOTA_MAP[$fam]+x}" ]; then
+            local qinfo="${VM_QUOTA_MAP[$fam]}"
+            avail="${qinfo%%|*}"
+            limit="${qinfo##*|}"
+            local needed=$((cores * max_nodes))
+            if [ "$limit" -le 0 ] || [ "$avail" -lt "$needed" ]; then
+                has_enough=0
+            fi
+        fi
+
+        local annotated_entry="${name}|${cores}|${mem}|${fam}|${avail}|${limit}|${has_enough}"
+        annotated+=("$annotated_entry")
+
+        if [ "$has_enough" = "1" ] && [ -n "$avail" ]; then
+            kept+=("$annotated_entry")
+        elif [ "$name" = "$default_sku" ]; then
+            kept+=("$annotated_entry")
+        else
+            any_filtered=1
+        fi
+    done
+
+    # Fall back to the unfiltered list if filtering emptied it
+    if [ "${#kept[@]}" -eq 0 ]; then
+        _list=("${annotated[@]}")
+    else
+        _list=("${kept[@]}")
+    fi
+    return 0
 }
 
 # Checks GPU quota, prints formatted status, sets ASSERT_QUOTA_RESULT.
@@ -428,13 +519,23 @@ show_vm_selection_menu() {
         exit 1
     fi
 
-    # Parse into parallel arrays for fast indexed access
-    local -a vm_names vm_cores vm_mem
+    # Parse into parallel arrays for fast indexed access.
+    # Entries are either "name|cores|memGB" (legacy), "name|cores|memGB|family",
+    # or quota-annotated "name|cores|memGB|family|avail|limit|hasEnough".
+    local -a vm_names vm_cores vm_mem vm_family vm_avail vm_limit vm_has_enough
+    local has_quota_info=0
     for entry in "${_vm_array[@]}"; do
-        vm_names+=("${entry%%|*}")
-        local rest="${entry#*|}"
-        vm_cores+=("${rest%%|*}")
-        vm_mem+=("${rest#*|}")
+        IFS='|' read -r -a _f <<< "$entry"
+        vm_names+=("${_f[0]}")
+        vm_cores+=("${_f[1]}")
+        vm_mem+=("${_f[2]}")
+        vm_family+=("${_f[3]:-}")
+        vm_avail+=("${_f[4]:-}")
+        vm_limit+=("${_f[5]:-}")
+        vm_has_enough+=("${_f[6]:-1}")
+        if [ -n "${_f[4]:-}" ] || [ -n "${_f[5]:-}" ]; then
+            has_quota_info=1
+        fi
     done
 
     # Find default index, set initial scroll
@@ -469,7 +570,18 @@ show_vm_selection_menu() {
                 [ "${vm_names[$idx]}" = "$default_sku" ] && is_def="1"
                 local text tag=""
                 [ "$is_def" = "1" ] && tag=" (default)"
-                text=$(printf "%-35s %-10s %-8s%s" "${vm_names[$idx]}" "${vm_cores[$idx]} vCPUs" "${vm_mem[$idx]} GB" "$tag")
+
+                # Quota column
+                local qcol=""
+                if [ "$has_quota_info" = "1" ]; then
+                    if [ -n "${vm_avail[$idx]}" ]; then
+                        qcol=$(printf "%-14s" "${vm_avail[$idx]} free")
+                    else
+                        qcol=$(printf "%-14s" "quota n/a")
+                    fi
+                fi
+
+                text=$(printf "%-35s %-10s %-8s %s%s" "${vm_names[$idx]}" "${vm_cores[$idx]} vCPUs" "${vm_mem[$idx]} GB" "$qcol" "$tag")
                 if [ "$idx" -eq "$selected" ]; then
                     printf "\033[K \033[30;46m > %s \033[0m\n" "$text"
                 elif [ "$is_def" = "1" ]; then
@@ -487,6 +599,9 @@ show_vm_selection_menu() {
         echo ""
         write_section "Select VM size for ${pool_name} (${vm_count} sizes available)"
         log_info "Use ↑/↓ to move, Enter to select, C custom, Esc cancel"
+        if [ "$has_quota_info" = "1" ]; then
+            log_info "Quota column shows cores free in this region (pool max nodes: ${max_nodes})."
+        fi
         echo ""
 
         # Get cursor row via ANSI DSR
@@ -561,7 +676,14 @@ show_vm_selection_menu() {
         # GPU quota check
         if [ "$is_gpu" = "gpu" ]; then
             _write_log_message "Resolving quota family..." "$SYM_INFO" "$C_ACCENT" "$C_TEXT" false true
-            get_quota_family_for_vm "$selected_sku" "$location"
+            local sku_family=""
+            for ((i=0; i<vm_count; i++)); do
+                if [ "${vm_names[$i]}" = "$selected_sku" ]; then
+                    sku_family="${vm_family[$i]:-}"
+                    break
+                fi
+            done
+            get_quota_family_for_vm "$selected_sku" "$sku_family"
             selected_family="$GET_QUOTA_FAMILY_RESULT"
             if [ -n "$selected_family" ]; then
                 printf " %b%s%b\n" "$C_MUTED" "$selected_family" "$C_RESET"

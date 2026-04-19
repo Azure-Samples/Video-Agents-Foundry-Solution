@@ -132,35 +132,38 @@ $currentWorkloadVm   = if ($env:WORKLOAD_VM_SIZE)        { $env:WORKLOAD_VM_SIZE
 $currentDeepstreamVm = if ($env:DEEPSTREAM_GPU_VM_SIZE)  { $env:DEEPSTREAM_GPU_VM_SIZE }  else { $DEFAULT_DEEPSTREAM_GPU_SIZE }
 $currentInferenceVm  = if ($env:INFERENCE_GPU_VM_SIZE)   { $env:INFERENCE_GPU_VM_SIZE }   else { $DEFAULT_INFERENCE_GPU_SIZE }
 
-# Pick recommended VM sizes per pool (4 families x 3 sizes = ~12 items each)
-$systemVmSizes   = Select-VmSizesForMenu -AllSizes $allVmSizes -Prefixes $CPU_VM_PREFIXES -RecommendedFamilies $SYSTEM_RECOMMENDED_FAMILIES   -DefaultSku $currentSystemVm     -SizesPerFamily $SIZES_PER_FAMILY -MaxCores $SYSTEM_MAX_CORES
-$workloadVmSizes = Select-VmSizesForMenu -AllSizes $allVmSizes -Prefixes $CPU_VM_PREFIXES -RecommendedFamilies $WORKLOAD_RECOMMENDED_FAMILIES -DefaultSku $currentWorkloadVm   -SizesPerFamily $SIZES_PER_FAMILY -MinCores $WORKLOAD_MIN_CORES
-$gpuVmSizes      = Select-VmSizesForMenu -AllSizes $allVmSizes -Prefixes $GPU_VM_PREFIXES -RecommendedFamilies $GPU_RECOMMENDED_FAMILIES      -DefaultSku $currentDeepstreamVm -SizesPerFamily $SIZES_PER_FAMILY
+Log-Info "Querying VM quota in region..."
+$quotaData = Get-AzVmQuotaForRegion -Location $env:AZURE_LOCATION
+Log-Success "Quota data retrieved for $($quotaData.Keys.Count) VM families"
+
+# Pick recommended VM sizes per pool (4 families x 3 sizes = ~12 items each).
+# QuotaData filters out SKUs whose family can't satisfy the pool's max node count.
+$systemVmSizes   = Select-VmSizesForMenu -AllSizes $allVmSizes -Prefixes $CPU_VM_PREFIXES -RecommendedFamilies $SYSTEM_RECOMMENDED_FAMILIES   -DefaultSku $currentSystemVm     -SizesPerFamily $SIZES_PER_FAMILY -MaxCores $SYSTEM_MAX_CORES   -QuotaData $quotaData -MaxNodes $SYSTEM_MAX_NODE_COUNT
+$workloadVmSizes = Select-VmSizesForMenu -AllSizes $allVmSizes -Prefixes $CPU_VM_PREFIXES -RecommendedFamilies $WORKLOAD_RECOMMENDED_FAMILIES -DefaultSku $currentWorkloadVm   -SizesPerFamily $SIZES_PER_FAMILY -MinCores $WORKLOAD_MIN_CORES -QuotaData $quotaData -MaxNodes $WORKLOAD_MAX_NODE_COUNT
+$deepstreamVmSizes = Select-VmSizesForMenu -AllSizes $allVmSizes -Prefixes $GPU_VM_PREFIXES -RecommendedFamilies $GPU_RECOMMENDED_FAMILIES    -DefaultSku $currentDeepstreamVm -SizesPerFamily $SIZES_PER_FAMILY                              -QuotaData $quotaData -MaxNodes $DEEPSTREAM_GPU_MAX_NODE_COUNT
+$inferenceVmSizes  = Select-VmSizesForMenu -AllSizes $allVmSizes -Prefixes $GPU_VM_PREFIXES -RecommendedFamilies $GPU_RECOMMENDED_FAMILIES    -DefaultSku $currentInferenceVm  -SizesPerFamily $SIZES_PER_FAMILY                              -QuotaData $quotaData -MaxNodes $INFERENCE_GPU_MAX_NODE_COUNT
 
 # Resolve defaults — if the configured default isn't available, pick the closest match
-$currentSystemVm     = Resolve-DefaultSku -DefaultSku $currentSystemVm     -AvailableSizes $systemVmSizes   -PreferCores 4
-$currentWorkloadVm   = Resolve-DefaultSku -DefaultSku $currentWorkloadVm   -AvailableSizes $workloadVmSizes -PreferCores 32
-$currentDeepstreamVm = Resolve-DefaultSku -DefaultSku $currentDeepstreamVm -AvailableSizes $gpuVmSizes      -PreferCores 24
-$currentInferenceVm  = Resolve-DefaultSku -DefaultSku $currentInferenceVm  -AvailableSizes $gpuVmSizes      -PreferCores 24
+$currentSystemVm     = Resolve-DefaultSku -DefaultSku $currentSystemVm     -AvailableSizes $systemVmSizes     -PreferCores 4
+$currentWorkloadVm   = Resolve-DefaultSku -DefaultSku $currentWorkloadVm   -AvailableSizes $workloadVmSizes   -PreferCores 32
+$currentDeepstreamVm = Resolve-DefaultSku -DefaultSku $currentDeepstreamVm -AvailableSizes $deepstreamVmSizes -PreferCores 24
+$currentInferenceVm  = Resolve-DefaultSku -DefaultSku $currentInferenceVm  -AvailableSizes $inferenceVmSizes  -PreferCores 24
 
-Write-KeyValue "System pool"   "$($systemVmSizes.Count) sizes"
-Write-KeyValue "Workload pool" "$($workloadVmSizes.Count) sizes"
-Write-KeyValue "GPU pool"      "$($gpuVmSizes.Count) sizes"
-
-Log-Info "Querying GPU quota..."
-$quotaData = Get-AzVmQuotaForRegion -Location $env:AZURE_LOCATION
-Log-Success "GPU quota data retrieved"
+Write-KeyValue "System pool"     "$($systemVmSizes.Count) sizes (with quota)"
+Write-KeyValue "Workload pool"   "$($workloadVmSizes.Count) sizes (with quota)"
+Write-KeyValue "Deepstream pool" "$($deepstreamVmSizes.Count) sizes (with quota)"
+Write-KeyValue "Inference pool"  "$($inferenceVmSizes.Count) sizes (with quota)"
 
 Write-Section "Choose a VM SKU for each AKS node pool"
 Log-Info "The default is highlighted. Press Enter to accept, C for custom."
 
-# CPU pools (separate lists for system vs workload)
-$selectedSystem   = Show-VmSelectionMenu -PoolName "System (CPU)"   -EnvVarName "SYSTEM_VM_SIZE"   -VmSizes $systemVmSizes   -DefaultSku $currentSystemVm   -Location $env:AZURE_LOCATION
-$selectedWorkload = Show-VmSelectionMenu -PoolName "Workload (CPU)" -EnvVarName "WORKLOAD_VM_SIZE" -VmSizes $workloadVmSizes -DefaultSku $currentWorkloadVm -Location $env:AZURE_LOCATION
+# CPU pools (quota-filtered lists, node count determines total cores checked)
+$selectedSystem   = Show-VmSelectionMenu -PoolName "System (CPU)"   -EnvVarName "SYSTEM_VM_SIZE"   -VmSizes $systemVmSizes   -DefaultSku $currentSystemVm   -Location $env:AZURE_LOCATION -MaxNodes $SYSTEM_MAX_NODE_COUNT   -QuotaData $quotaData
+$selectedWorkload = Show-VmSelectionMenu -PoolName "Workload (CPU)" -EnvVarName "WORKLOAD_VM_SIZE" -VmSizes $workloadVmSizes -DefaultSku $currentWorkloadVm -Location $env:AZURE_LOCATION -MaxNodes $WORKLOAD_MAX_NODE_COUNT -QuotaData $quotaData
 
 # GPU pools (quota validated inline, node count determines total cores checked)
-$selectedDeepstream = Show-VmSelectionMenu -PoolName "Deepstream (GPU)" -EnvVarName "DEEPSTREAM_GPU_VM_SIZE" -VmSizes $gpuVmSizes -DefaultSku $currentDeepstreamVm -Location $env:AZURE_LOCATION -IsGpu -MaxNodes $DEEPSTREAM_GPU_MAX_NODE_COUNT -QuotaData $quotaData
-$selectedInference  = Show-VmSelectionMenu -PoolName "Inference (GPU)"  -EnvVarName "INFERENCE_GPU_VM_SIZE"  -VmSizes $gpuVmSizes -DefaultSku $currentInferenceVm  -Location $env:AZURE_LOCATION -IsGpu -MaxNodes $INFERENCE_GPU_MAX_NODE_COUNT  -QuotaData $quotaData
+$selectedDeepstream = Show-VmSelectionMenu -PoolName "Deepstream (GPU)" -EnvVarName "DEEPSTREAM_GPU_VM_SIZE" -VmSizes $deepstreamVmSizes -DefaultSku $currentDeepstreamVm -Location $env:AZURE_LOCATION -IsGpu -MaxNodes $DEEPSTREAM_GPU_MAX_NODE_COUNT -QuotaData $quotaData
+$selectedInference  = Show-VmSelectionMenu -PoolName "Inference (GPU)"  -EnvVarName "INFERENCE_GPU_VM_SIZE"  -VmSizes $inferenceVmSizes  -DefaultSku $currentInferenceVm  -Location $env:AZURE_LOCATION -IsGpu -MaxNodes $INFERENCE_GPU_MAX_NODE_COUNT  -QuotaData $quotaData
 
 # Update script-scope variables for downstream consumers
 $DEEPSTREAM_GPU_VM_SIZE = $selectedDeepstream.Sku
