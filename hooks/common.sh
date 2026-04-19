@@ -179,18 +179,25 @@ get_filtered_vm_sizes() {
     local location="$1"; shift
     local -a prefixes=("$@")
 
-    # Simple query — matches PS1 Get-AzVmSizesForRegion approach.
-    # Filter unrestricted SKUs, extract name/vCPUs/memGB/family.
-    local query='[?restrictions[?type==`Location`]|length(@)==`0`].{n:name, c:capabilities[?name==`vCPUs`].value|[0], m:capabilities[?name==`MemoryGB`].value|[0], f:family}'
+    # Build a JMESPath expression like:
+    #   (starts_with(name, 'Standard_D') || starts_with(name, 'Standard_E'))
+    # so Azure does the prefix filtering server-side instead of piping every
+    # unrestricted SKU through bash.
+    local prefix_expr=""
+    if [ "${#prefixes[@]}" -gt 0 ]; then
+        local joined="" sep=""
+        for p in "${prefixes[@]}"; do
+            joined+="${sep}starts_with(name, \`${p}\`)"
+            sep=" || "
+        done
+        prefix_expr=" && (${joined})"
+    fi
+
+    local query="[?(restrictions[?type==\`Location\`]|length(@)==\`0\`)${prefix_expr}].{n:name, c:capabilities[?name==\`vCPUs\`].value|[0], m:capabilities[?name==\`MemoryGB\`].value|[0], f:family}"
     az vm list-skus --location "$location" --resource-type virtualMachines \
         --query "$query" -o tsv 2>/dev/null | while IFS=$'\t' read -r name cores memGB family; do
-        # Filter by prefix in bash (more robust than JMESPath starts_with)
-        for p in "${prefixes[@]}"; do
-            if [[ "$name" == ${p}* ]]; then
-                echo "${name}|${cores}|${memGB}|${family}"
-                break
-            fi
-        done
+        [ -z "$name" ] && continue
+        echo "${name}|${cores}|${memGB}|${family}"
     done | sort -t'|' -k2 -n
 }
 
@@ -361,7 +368,6 @@ annotate_vm_sizes_with_quota() {
     [ "$max_nodes" -lt 1 ] && max_nodes=1
 
     local -a annotated=() kept=()
-    local any_filtered=0
 
     for entry in "${_list[@]}"; do
         local name="${entry%%|*}"
@@ -394,8 +400,6 @@ annotate_vm_sizes_with_quota() {
             kept+=("$annotated_entry")
         elif [ "$name" = "$default_sku" ]; then
             kept+=("$annotated_entry")
-        else
-            any_filtered=1
         fi
     done
 

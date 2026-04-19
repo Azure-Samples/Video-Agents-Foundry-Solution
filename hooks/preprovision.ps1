@@ -180,7 +180,13 @@ $currentInferenceVm  = if ($env:INFERENCE_GPU_VM_SIZE)   { $env:INFERENCE_GPU_VM
 
 Log-Info "Querying VM quota in region..."
 $quotaData = Get-AzVmQuotaForRegion -Location $env:AZURE_LOCATION
-Log-Success "Quota data retrieved for $($quotaData.Keys.Count) VM families"
+if ($quotaData -and $quotaData.Keys.Count -gt 0) {
+    Log-Success "Quota data retrieved for $($quotaData.Keys.Count) VM families"
+}
+else {
+    Log-Warning "Could not retrieve VM quota data for '$($env:AZURE_LOCATION)'. Menus will show all SKUs without quota filtering."
+    $quotaData = @{}
+}
 
 # Pick recommended VM sizes per pool (4 families x 3 sizes = ~12 items each).
 # QuotaData filters out SKUs whose family can't satisfy the pool's max node count.
