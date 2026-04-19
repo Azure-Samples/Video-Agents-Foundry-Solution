@@ -8,8 +8,7 @@
 # the resource group is deleted.
 # =============================================================================
 
-set -e
-
+set -eo pipefail
 echo ""
 echo "  Pre-down cleanup: removing untracked resources..."
 echo ""

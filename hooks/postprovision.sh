@@ -4,8 +4,7 @@
 # Post-Provision Script: Connect AKS to Azure Arc and deploy VI extension
 # =============================================================================
 
-set -e
-
+set -eo pipefail
 source "$(dirname "$0")/common.sh"
 
 TOTAL_STEPS=12
@@ -116,7 +115,7 @@ else
 fi
 
 # Save the Arc cluster name to azd env
-azd env set AZURE_ARC_CLUSTER_NAME "$ARC_CLUSTER_NAME"
+azd_env_set AZURE_ARC_CLUSTER_NAME "$ARC_CLUSTER_NAME" || true
 
 # =====================================================
 # Step 4: Create Public IP and construct Endpoint URI
@@ -171,9 +170,9 @@ VIDEO_INDEXER_ENDPOINT_URI="https://${DNS_LABEL}.${AZURE_LOCATION}.cloudapp.azur
 write_key_value "Endpoint URI" "$VIDEO_INDEXER_ENDPOINT_URI"
 
 # Persist to azd env
-azd env set AZURE_DNS_LABEL "${DNS_LABEL}"
-azd env set AZURE_STATIC_IP "${STATIC_IP}"
-azd env set AZURE_VIDEO_INDEXER_ENDPOINT_URI "${VIDEO_INDEXER_ENDPOINT_URI}"
+azd_env_set AZURE_DNS_LABEL "${DNS_LABEL}" || true
+azd_env_set AZURE_STATIC_IP "${STATIC_IP}" || true
+azd_env_set AZURE_VIDEO_INDEXER_ENDPOINT_URI "${VIDEO_INDEXER_ENDPOINT_URI}" || true
 
 # =====================================================
 # Step 5: Enable App Routing (HTTP only)

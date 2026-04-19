@@ -4,8 +4,7 @@
 # Pre-Provision Script: Validate prerequisites before provisioning
 # =============================================================================
 
-set -e
-
+set -eo pipefail
 source "$(dirname "$0")/common.sh"
 
 TOTAL_STEPS=6
@@ -78,6 +77,32 @@ if [ "$STORAGE_SKU" = "Standard_ZRS" ]; then
     fi
 fi
 write_key_value "Storage SKU" "$STORAGE_SKU"
+
+# ── Validate Kubernetes version against region capabilities ──────────────
+# Pin minors drift from standard support to LTS-only (e.g. 1.32 → LTS).
+# If the requested minor is not available on the standard "KubernetesOfficial"
+# support plan in this region, auto-fall back to the region's default minor.
+REQUESTED_K8S="${KUBERNETES_VERSION:-1.34}"
+log_info "Checking AKS version '${REQUESTED_K8S}' in ${AZURE_LOCATION}..."
+K8S_VERSIONS_JSON=$(az aks get-versions --location "$AZURE_LOCATION" -o json 2>/dev/null || true)
+if [ -n "$K8S_VERSIONS_JSON" ] && command -v jq >/dev/null 2>&1; then
+    K8S_STANDARD=$(echo "$K8S_VERSIONS_JSON" | jq -r '.values[] | select(.capabilities.supportPlan | index("KubernetesOfficial")) | .version' 2>/dev/null || true)
+    K8S_DEFAULT=$(echo "$K8S_VERSIONS_JSON" | jq -r '.values[] | select(.isDefault==true) | .version' 2>/dev/null | head -n1)
+    if ! echo "$K8S_STANDARD" | grep -qx "$REQUESTED_K8S"; then
+        if [ -n "$K8S_DEFAULT" ]; then
+            log_warning "Kubernetes '${REQUESTED_K8S}' is not on standard support in '${AZURE_LOCATION}'."
+            log_warning "Falling back to region default: '${K8S_DEFAULT}'."
+            azd_env_set KUBERNETES_VERSION "$K8S_DEFAULT" || true
+            export KUBERNETES_VERSION="$K8S_DEFAULT"
+            REQUESTED_K8S="$K8S_DEFAULT"
+        else
+            log_warning "Kubernetes '${REQUESTED_K8S}' is not on standard support and no default could be resolved."
+        fi
+    fi
+    write_key_value "Kubernetes version" "$REQUESTED_K8S"
+else
+    log_warning "Could not query AKS versions in '${AZURE_LOCATION}'. Proceeding with '${REQUESTED_K8S}'."
+fi
 
 # Persist the resolved CREATE_FOUNDRY_PROJECT value so Bicep + all downstream
 # hooks agree on the same boolean. (Bicep's default is true; the hooks default

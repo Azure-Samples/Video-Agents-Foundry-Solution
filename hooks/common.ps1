@@ -7,6 +7,47 @@
 . "$PSScriptRoot/config.ps1"
 . "$PSScriptRoot/ui.ps1"
 
+# ── Helpers ─────────────────────────────────────────────────────────────────
+
+function Invoke-AzJson {
+    <#
+    .SYNOPSIS
+        Runs an `az` command (passed as a script block or string array), captures
+        stdout, and returns parsed JSON. Returns $null if the command produced no
+        output or if parsing failed. Never throws — callers must null-check.
+    #>
+    param([Parameter(Mandatory)] [scriptblock]$Command)
+    try {
+        $raw = & $Command 2>$null
+        if ($null -eq $raw -or ($raw -is [string] -and [string]::IsNullOrWhiteSpace($raw))) {
+            return $null
+        }
+        if ($raw -is [array]) { $raw = ($raw -join "`n") }
+        if ([string]::IsNullOrWhiteSpace($raw)) { return $null }
+        return $raw | ConvertFrom-Json -ErrorAction Stop
+    }
+    catch {
+        return $null
+    }
+}
+
+function Invoke-AzdEnvSet {
+    <#
+    .SYNOPSIS
+        Persists a key/value via `azd env set`, warning (but not failing) on error.
+    #>
+    param(
+        [Parameter(Mandatory)] [string]$Name,
+        [Parameter(Mandatory)] [AllowEmptyString()] [string]$Value
+    )
+    & azd env set $Name $Value 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        Log-Warning "Could not persist '$Name' via 'azd env set' (exit $LASTEXITCODE)."
+        return $false
+    }
+    return $true
+}
+
 # ── Prerequisite Checks ─────────────────────────────────────────────────────
 
 function Assert-EnvVars {
@@ -191,7 +232,7 @@ function Get-AzVmSizesForRegion {
     #>
     param([string]$Location)
     $query = "[?restrictions[?type=='Location']|length(@)==``0``].{name:name, family:family, vCPUs:capabilities[?name=='vCPUs'].value|[0], memGB:capabilities[?name=='MemoryGB'].value|[0]}"
-    $raw = (az vm list-skus --location $Location --resource-type virtualMachines --query $query -o json 2>$null) | ConvertFrom-Json
+    $raw = Invoke-AzJson { az vm list-skus --location $Location --resource-type virtualMachines --query $query -o json }
     if (-not $raw) { return @() }
     return $raw | ForEach-Object {
         @{ Name = $_.name; Cores = [int]$_.vCPUs; MemoryGB = [int]$_.memGB; Family = $_.family }
@@ -307,11 +348,12 @@ function Select-VmSizesForMenu {
             $annotated += ,$copy
         }
 
-        # Keep only entries with a known quota family AND enough quota.
-        # The user-facing default is kept regardless so it's never silently
-        # hidden — the final quota check before submission still guards it.
+        # Keep SKUs that either (a) have enough quota in a known family,
+        # (b) are in an unknown family (can't verify — don't hide newer SKUs),
+        # or (c) are the configured default. Unknown families are treated as
+        # "OK" here; the final quota check before submission still guards them.
         $filtered = $annotated | Where-Object {
-            ($_.QuotaFamilyKnown -and $_.HasEnoughQuota) -or ($_.Name -eq $DefaultSku)
+            (-not $_.QuotaFamilyKnown) -or $_.HasEnoughQuota -or ($_.Name -eq $DefaultSku)
         }
 
         # Fallback: if quota would empty the list, return the unfiltered annotated
@@ -333,7 +375,7 @@ function Get-AzVmQuotaForRegion {
     #>
     param([string]$Location)
     $result = @{}
-    $raw = (az vm list-usage --location $Location -o json 2>$null) | ConvertFrom-Json
+    $raw = Invoke-AzJson { az vm list-usage --location $Location -o json }
     if (-not $raw) { return $result }
     foreach ($q in $raw) {
         $result[$q.name.value] = @{
@@ -433,12 +475,10 @@ function Resolve-ModelQuota {
     $modelType = "$Format.$DeploymentType.$Model"
     Log-Info "Checking quota for $modelType in $Location..."
 
-    $modelInfo = $null
-    try {
-        $modelInfo = (az cognitiveservices usage list --location $Location `
-                --query "[?name.value=='$modelType'] | [0]" -o json 2>$null) | ConvertFrom-Json
+    $modelInfo = Invoke-AzJson {
+        az cognitiveservices usage list --location $Location `
+            --query "[?name.value=='$modelType'] | [0]" -o json
     }
-    catch { }
 
     if (-not $modelInfo) {
         Log-Warning "No quota info found for '$modelType' in '$Location'. Skipping quota check."
@@ -476,7 +516,7 @@ function Resolve-ModelQuota {
             }
         } while (-not $validInput)
 
-        azd env set $CapacityEnvVarName $parsed 2>$null
+        [void](Invoke-AzdEnvSet -Name $CapacityEnvVarName -Value "$parsed")
         Log-Success "Capacity adjusted to $parsed (saved to $CapacityEnvVarName)"
     }
     else {

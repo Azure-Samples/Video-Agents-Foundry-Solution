@@ -8,8 +8,7 @@
 # Pattern adapted from get-started-with-ai-agents/scripts/validate_env_vars.sh
 # =============================================================================
 
-set -e
-
+set -eo pipefail
 has_error=false
 
 validate_env_var() {

@@ -36,7 +36,7 @@ Assert-EnvVars @(
 # Ensure required Azure CLI extensions are installed
 # =====================================================
 foreach ($ext in @('connectedk8s', 'k8s-extension')) {
-    $installed = az extension show --name $ext 2>$null | ConvertFrom-Json -ErrorAction SilentlyContinue
+    $installed = Invoke-AzJson { az extension show --name $ext }
     if (-not $installed) {
         Log-Info "Installing Azure CLI extension: $ext..."
         az extension add --name $ext --yes 2>$null
@@ -129,7 +129,7 @@ else {
 }
 
 # Save the Arc cluster name to azd env
-azd env set AZURE_ARC_CLUSTER_NAME "$ARC_CLUSTER_NAME"
+[void](Invoke-AzdEnvSet -Name 'AZURE_ARC_CLUSTER_NAME' -Value "$ARC_CLUSTER_NAME")
 
 # =====================================================
 # Step 4: Create Public IP and construct Endpoint URI
@@ -192,9 +192,9 @@ $VIDEO_INDEXER_ENDPOINT_URI = "https://${DNS_LABEL}.$($env:AZURE_LOCATION).cloud
 Write-KeyValue "Endpoint URI" $VIDEO_INDEXER_ENDPOINT_URI
 
 # Persist to azd env
-azd env set AZURE_DNS_LABEL "$DNS_LABEL"
-azd env set AZURE_STATIC_IP "$STATIC_IP"
-azd env set AZURE_VIDEO_INDEXER_ENDPOINT_URI "$VIDEO_INDEXER_ENDPOINT_URI"
+[void](Invoke-AzdEnvSet -Name 'AZURE_DNS_LABEL' -Value "$DNS_LABEL")
+[void](Invoke-AzdEnvSet -Name 'AZURE_STATIC_IP' -Value "$STATIC_IP")
+[void](Invoke-AzdEnvSet -Name 'AZURE_VIDEO_INDEXER_ENDPOINT_URI' -Value "$VIDEO_INDEXER_ENDPOINT_URI")
 
 # =====================================================
 # Step 5: Enable App Routing (HTTP only)

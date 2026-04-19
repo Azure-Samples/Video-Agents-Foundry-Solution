@@ -4,8 +4,7 @@
 # Post-Up Script: Deployment health dashboard and next steps
 # =============================================================================
 
-set -e
-
+set -eo pipefail
 source "$(dirname "$0")/common.sh"
 
 TOTAL_STEPS=6

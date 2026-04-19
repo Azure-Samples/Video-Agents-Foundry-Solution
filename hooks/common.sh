@@ -9,6 +9,20 @@ HOOKS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${HOOKS_DIR}/config.sh"
 source "${HOOKS_DIR}/ui.sh"
 
+# ── Helpers ─────────────────────────────────────────────────────────────────
+
+# Persist a key/value via `azd env set`, warning (but not failing) on error.
+# Usage: azd_env_set NAME VALUE
+azd_env_set() {
+    local name="$1"
+    local value="${2:-}"
+    if ! azd env set "$name" "$value" 2>/dev/null; then
+        log_warning "Could not persist '${name}' via 'azd env set'."
+        return 1
+    fi
+    return 0
+}
+
 # ── Prerequisite Checks ─────────────────────────────────────────────────────
 
 assert_env_vars() {
@@ -352,8 +366,9 @@ annotate_vm_sizes_with_quota() {
         get_quota_family_for_vm "$name" "$family" >/dev/null || true
         local fam="$GET_QUOTA_FAMILY_RESULT"
 
-        local avail="" limit="" has_enough=1
+        local avail="" limit="" has_enough=1 family_known=0
         if [ -n "$fam" ] && [ -n "${VM_QUOTA_MAP[$fam]+x}" ]; then
+            family_known=1
             local qinfo="${VM_QUOTA_MAP[$fam]}"
             avail="${qinfo%%|*}"
             limit="${qinfo##*|}"
@@ -366,7 +381,9 @@ annotate_vm_sizes_with_quota() {
         local annotated_entry="${name}|${cores}|${mem}|${fam}|${avail}|${limit}|${has_enough}"
         annotated+=("$annotated_entry")
 
-        if [ "$has_enough" = "1" ] && [ -n "$avail" ]; then
+        # Keep SKUs with unknown quota family (can't verify, don't hide newer
+        # SKUs), SKUs with enough quota, or the configured default.
+        if [ "$family_known" = "0" ] || [ "$has_enough" = "1" ]; then
             kept+=("$annotated_entry")
         elif [ "$name" = "$default_sku" ]; then
             kept+=("$annotated_entry")

@@ -93,6 +93,36 @@ if ($storageSku -eq 'Standard_ZRS') {
 }
 Write-KeyValue "Storage SKU" $storageSku
 
+# ── Validate Kubernetes version against region capabilities ──────────────
+# Pin minors drift from standard support to LTS-only (e.g. 1.32 → LTS).
+# If the requested minor is not available on the standard "KubernetesOfficial"
+# support plan in this region, auto-fall back to the region's default minor.
+$requestedK8s = if ($env:KUBERNETES_VERSION) { $env:KUBERNETES_VERSION } else { '1.34' }
+Log-Info "Checking AKS version '$requestedK8s' in $($env:AZURE_LOCATION)..."
+$versions = Invoke-AzJson { az aks get-versions --location $env:AZURE_LOCATION -o json }
+if ($versions -and $versions.values) {
+    $standardVersions = @($versions.values | Where-Object {
+            $_.capabilities.supportPlan -contains 'KubernetesOfficial'
+        } | ForEach-Object { $_.version })
+    $defaultVersion = ($versions.values | Where-Object { $_.isDefault } | Select-Object -First 1).version
+    if ($standardVersions -notcontains $requestedK8s) {
+        if ($defaultVersion) {
+            Log-Warning "Kubernetes '$requestedK8s' is not on standard support in '$($env:AZURE_LOCATION)'."
+            Log-Warning "Falling back to region default: '$defaultVersion'."
+            [void](Invoke-AzdEnvSet -Name 'KUBERNETES_VERSION' -Value $defaultVersion)
+            $env:KUBERNETES_VERSION = $defaultVersion
+            $requestedK8s = $defaultVersion
+        }
+        else {
+            Log-Warning "Kubernetes '$requestedK8s' is not on standard support and no default could be resolved."
+        }
+    }
+    Write-KeyValue "Kubernetes version" $requestedK8s
+}
+else {
+    Log-Warning "Could not query AKS versions in '$($env:AZURE_LOCATION)'. Proceeding with '$requestedK8s'."
+}
+
 # Persist the resolved CREATE_FOUNDRY_PROJECT value so Bicep + all downstream
 # hooks agree on the same boolean. (Bicep's default is true; the hooks default
 # to true to match. Without this step, a step that reads $env:... raw would
