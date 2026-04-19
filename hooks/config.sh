@@ -91,7 +91,8 @@ GPU_QUOTA_FAMILIES=(
 # ── Foundry flag & inference node count ──────────────────────────────────
 # createFoundryProject=true  → Foundry handles model serving → 1 inference GPU node
 # createFoundryProject=false → self-hosted inference          → 2 inference GPU nodes
-CREATE_FOUNDRY_PROJECT="${CREATE_FOUNDRY_PROJECT:-false}"
+# Default must match infra/main.parameters.json (${CREATE_FOUNDRY_PROJECT=true}).
+CREATE_FOUNDRY_PROJECT="${CREATE_FOUNDRY_PROJECT:-true}"
 if [ "$CREATE_FOUNDRY_PROJECT" = "true" ]; then
     _INFERENCE_NODE_DEFAULT=1
 else

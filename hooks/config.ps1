@@ -76,7 +76,12 @@ $Script:GPU_QUOTA_FAMILY_MAP = [ordered]@{
 # ── Foundry flag & inference node count ──────────────────────────────────
 # createFoundryProject=true  → Foundry handles model serving → 1 inference GPU node
 # createFoundryProject=false → self-hosted inference          → 2 inference GPU nodes
-$Script:CREATE_FOUNDRY_PROJECT = ($env:CREATE_FOUNDRY_PROJECT -eq 'true')
+# Default must match infra/main.parameters.json (${CREATE_FOUNDRY_PROJECT=true}).
+$Script:CREATE_FOUNDRY_PROJECT = if ([string]::IsNullOrEmpty($env:CREATE_FOUNDRY_PROJECT)) {
+    $true
+} else {
+    ($env:CREATE_FOUNDRY_PROJECT -eq 'true')
+}
 $inferenceNodeDefault = if ($CREATE_FOUNDRY_PROJECT) { 1 } else { 2 }
 
 # ── Resolved runtime values (env var wins, then default) ────────────────

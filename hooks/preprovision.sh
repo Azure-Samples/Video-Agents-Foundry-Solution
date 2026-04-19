@@ -79,6 +79,16 @@ if [ "$STORAGE_SKU" = "Standard_ZRS" ]; then
 fi
 write_key_value "Storage SKU" "$STORAGE_SKU"
 
+# Persist the resolved CREATE_FOUNDRY_PROJECT value so Bicep + all downstream
+# hooks agree on the same boolean. (Bicep's default is true; the hooks default
+# to true to match.)
+if azd env set CREATE_FOUNDRY_PROJECT "$CREATE_FOUNDRY_PROJECT" 2>/dev/null; then
+    export CREATE_FOUNDRY_PROJECT
+    log_info "CREATE_FOUNDRY_PROJECT=${CREATE_FOUNDRY_PROJECT} (persisted to azd env)."
+else
+    log_warning "Could not persist CREATE_FOUNDRY_PROJECT via 'azd env set'."
+fi
+
 # =====================================================
 # Step 4: Resolve AI Model Quota (if Foundry enabled)
 # =====================================================

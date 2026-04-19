@@ -93,6 +93,22 @@ if ($storageSku -eq 'Standard_ZRS') {
 }
 Write-KeyValue "Storage SKU" $storageSku
 
+# Persist the resolved CREATE_FOUNDRY_PROJECT value so Bicep + all downstream
+# hooks agree on the same boolean. (Bicep's default is true; the hooks default
+# to true to match. Without this step, a step that reads $env:... raw would
+# see the empty string and take the 'false' branch.)
+$resolvedFoundry = if ($CREATE_FOUNDRY_PROJECT) { 'true' } else { 'false' }
+if ($env:CREATE_FOUNDRY_PROJECT -ne $resolvedFoundry) {
+    try {
+        azd env set CREATE_FOUNDRY_PROJECT $resolvedFoundry 2>$null
+        $env:CREATE_FOUNDRY_PROJECT = $resolvedFoundry
+        Log-Info "CREATE_FOUNDRY_PROJECT resolved to '$resolvedFoundry' (persisted to azd env)."
+    }
+    catch {
+        Log-Warning "Could not persist CREATE_FOUNDRY_PROJECT via 'azd env set'."
+    }
+}
+
 # =====================================================
 # Step 4: Resolve AI Model Quota (if Foundry enabled)
 # =====================================================
