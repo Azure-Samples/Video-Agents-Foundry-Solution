@@ -140,10 +140,17 @@ connect_aks_cluster() {
 
 get_running_pod_count() {
     # Usage: count=$(get_running_pod_count namespace kube_context)
+    # Counts both Running and Succeeded pods — some workloads (e.g. the GPU
+    # operator's cuda-validator / install jobs) intentionally end in Succeeded
+    # and should not be reported as degraded.
     local namespace="$1"
     local kube_context="$2"
-    kubectl --context "$kube_context" get pods -n "$namespace" \
-        --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l | tr -d ' '
+    local running succeeded
+    running=$(kubectl --context "$kube_context" get pods -n "$namespace" \
+        --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l | tr -d ' ')
+    succeeded=$(kubectl --context "$kube_context" get pods -n "$namespace" \
+        --field-selector=status.phase=Succeeded --no-headers 2>/dev/null | wc -l | tr -d ' ')
+    echo $(( ${running:-0} + ${succeeded:-0} ))
 }
 
 get_total_pod_count() {

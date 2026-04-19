@@ -166,16 +166,21 @@ function Connect-AksCluster {
 function Get-RunningPodCount {
     <#
     .SYNOPSIS
-        Returns the number of Running pods in a given namespace.
+        Returns the number of "healthy" pods in a namespace.
+        Counts both Running and Succeeded pods — some workloads (e.g. the
+        GPU operator's cuda-validator / install jobs) intentionally end in
+        Succeeded and should not be reported as degraded.
     #>
     param(
         [string]$Namespace,
         [string]$KubeContext
     )
     try {
-        $count = (kubectl --context $KubeContext get pods -n $Namespace `
+        $running   = (kubectl --context $KubeContext get pods -n $Namespace `
             --field-selector=status.phase=Running --no-headers 2>$null | Measure-Object -Line).Lines
-        return [int]$count
+        $succeeded = (kubectl --context $KubeContext get pods -n $Namespace `
+            --field-selector=status.phase=Succeeded --no-headers 2>$null | Measure-Object -Line).Lines
+        return [int]$running + [int]$succeeded
     }
     catch {
         return 0
