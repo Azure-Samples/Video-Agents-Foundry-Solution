@@ -324,6 +324,14 @@ $principalId = (az k8s-extension show `
         --query "identity.principalId" -o tsv 2>$null)
 
 $accountResourceId = $env:AZURE_VIDEO_INDEXER_ACCOUNT_RESOURCE_ID
+$foundryAccountResourceId = $env:AI_FOUNDRY_ACCOUNT_RESOURCE_ID
+
+if (-not $foundryAccountResourceId -and $env:AI_FOUNDRY_ACCOUNT_NAME) {
+    $foundryAccountResourceId = (az cognitiveservices account show `
+            --name "$env:AI_FOUNDRY_ACCOUNT_NAME" `
+            --resource-group "$env:AZURE_RESOURCE_GROUP" `
+            --query "id" -o tsv 2>$null)
+}
 
 if (-not $principalId) {
     Log-Error "Extension managed identity principalId not found. Cannot assign permissions."
@@ -361,6 +369,41 @@ else {
         }
         else {
             Log-Success "Permissions assigned to Arc extension managed identity"
+        }
+    }
+
+    if (-not $foundryAccountResourceId) {
+        Log-Info "AI Foundry account resource ID not found. Skipping 'Cognitive Services OpenAI Contributor' role assignment."
+    }
+    else {
+        Log-Info "Adding 'Cognitive Services OpenAI Contributor' role assignment on AI Foundry account..."
+
+        $existingOpenAiAssignment = (az role assignment list `
+                --assignee $principalId `
+                --role "Cognitive Services OpenAI Contributor" `
+                --scope $foundryAccountResourceId `
+                --query "[0].id" -o tsv 2>$null)
+
+        if ($existingOpenAiAssignment) {
+            Log-Success "Cognitive Services OpenAI Contributor role assignment already exists. Skipping."
+        }
+        else {
+            $openAiRoleErr = $null
+            az role assignment create `
+                --assignee-object-id $principalId `
+                --assignee-principal-type ServicePrincipal `
+                --role "Cognitive Services OpenAI Contributor" `
+                --scope $foundryAccountResourceId 2>&1 | ForEach-Object {
+                    if ($_ -match 'ERROR|WARN') { $openAiRoleErr = $_ }
+                }
+
+            if ($LASTEXITCODE -ne 0) {
+                Log-Error "Failed to create Cognitive Services OpenAI Contributor role assignment: $openAiRoleErr"
+                Log-Error "Agent inference scenarios may not function correctly without this permission."
+            }
+            else {
+                Log-Success "Cognitive Services OpenAI Contributor role assigned on AI Foundry account"
+            }
         }
     }
 }
@@ -589,6 +632,9 @@ if ($env:AI_FOUNDRY_ACCOUNT_NAME) {
     Write-KeyValue "AI Foundry Hub"   $env:AI_FOUNDRY_ACCOUNT_NAME
     Write-KeyValue "AI Foundry Model" $env:AI_FOUNDRY_MODEL_DEPLOYMENT
     Write-KeyValue "AI Endpoint"      $env:AI_FOUNDRY_AI_SERVICES_ENDPOINT
+    if ($foundryAccountResourceId) {
+        Write-KeyValue "AI Foundry Resource ID" $foundryAccountResourceId
+    }
 }
 if ($principalId -and $cameraId) {
     $portalUrl = "https://www.videoindexer.ai/accounts/$env:AZURE_VIDEO_INDEXER_ACCOUNT_ID/extensions/$principalId/cameras/$cameraId/live-stream?feature.VideoAssistant=true&feature.LiveActivity=true"

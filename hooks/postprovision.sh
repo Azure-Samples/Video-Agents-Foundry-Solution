@@ -292,6 +292,14 @@ PRINCIPAL_ID=$(az k8s-extension show \
     --query "identity.principalId" -o tsv 2>/dev/null || true)
 
 ACCOUNT_RESOURCE_ID="$AZURE_VIDEO_INDEXER_ACCOUNT_RESOURCE_ID"
+FOUNDRY_ACCOUNT_RESOURCE_ID="${AI_FOUNDRY_ACCOUNT_RESOURCE_ID:-}"
+
+if [ -z "$FOUNDRY_ACCOUNT_RESOURCE_ID" ] && [ -n "${AI_FOUNDRY_ACCOUNT_NAME:-}" ]; then
+    FOUNDRY_ACCOUNT_RESOURCE_ID=$(az cognitiveservices account show \
+        --name "$AI_FOUNDRY_ACCOUNT_NAME" \
+        --resource-group "$AZURE_RESOURCE_GROUP" \
+        --query "id" -o tsv 2>/dev/null || true)
+fi
 
 if [ -z "$PRINCIPAL_ID" ]; then
     log_error "Extension managed identity principalId not found. Cannot assign permissions."
@@ -322,6 +330,34 @@ else
         else
             log_error "Failed to create role assignment: $ROLE_ERR"
             log_error "The VI extension may not function correctly without this permission."
+        fi
+    fi
+
+    if [ -z "$FOUNDRY_ACCOUNT_RESOURCE_ID" ]; then
+        log_info "AI Foundry account resource ID not found. Skipping 'Cognitive Services OpenAI Contributor' role assignment."
+    else
+        log_info "Adding 'Cognitive Services OpenAI Contributor' role assignment on AI Foundry account..."
+
+        EXISTING_OPENAI_ASSIGNMENT=$(az role assignment list \
+            --assignee "$PRINCIPAL_ID" \
+            --role "Cognitive Services OpenAI Contributor" \
+            --scope "$FOUNDRY_ACCOUNT_RESOURCE_ID" \
+            --query "[0].id" -o tsv 2>/dev/null || true)
+
+        if [ -n "$EXISTING_OPENAI_ASSIGNMENT" ]; then
+            log_success "Cognitive Services OpenAI Contributor role assignment already exists. Skipping."
+        else
+            OPENAI_ROLE_ERR=""
+            if OPENAI_ROLE_ERR=$(az role assignment create \
+                --assignee-object-id "$PRINCIPAL_ID" \
+                --assignee-principal-type ServicePrincipal \
+                --role "Cognitive Services OpenAI Contributor" \
+                --scope "$FOUNDRY_ACCOUNT_RESOURCE_ID" 2>&1); then
+                log_success "Cognitive Services OpenAI Contributor role assigned on AI Foundry account"
+            else
+                log_error "Failed to create Cognitive Services OpenAI Contributor role assignment: $OPENAI_ROLE_ERR"
+                log_error "Agent inference scenarios may not function correctly without this permission."
+            fi
         fi
     fi
 fi
@@ -488,6 +524,9 @@ if [ -n "${AI_FOUNDRY_ACCOUNT_NAME:-}" ]; then
     write_key_value "AI Foundry Hub"   "$AI_FOUNDRY_ACCOUNT_NAME"
     write_key_value "AI Foundry Model" "${AI_FOUNDRY_MODEL_DEPLOYMENT:-n/a}"
     write_key_value "AI Endpoint"      "${AI_FOUNDRY_AI_SERVICES_ENDPOINT:-n/a}"
+    if [ -n "${FOUNDRY_ACCOUNT_RESOURCE_ID:-}" ]; then
+        write_key_value "AI Foundry Resource ID" "$FOUNDRY_ACCOUNT_RESOURCE_ID"
+    fi
 fi
 if [ -n "${PRINCIPAL_ID:-}" ] && [ -n "${CAMERA_ID:-}" ]; then
     PORTAL_URL="https://www.videoindexer.ai/accounts/${AZURE_VIDEO_INDEXER_ACCOUNT_ID}/extensions/${PRINCIPAL_ID}/cameras/${CAMERA_ID}/live-stream?feature.VideoAssistant=true&feature.LiveActivity=true"
