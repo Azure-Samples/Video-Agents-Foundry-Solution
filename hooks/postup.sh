@@ -50,7 +50,7 @@ log_step 1 $TOTAL_STEPS "AKS Cluster Health"
 
 if [ "$HAS_CLUSTER_ACCESS" = "true" ]; then
     AKS_STATE=$(az aks show -g "$AZURE_RESOURCE_GROUP" -n "$AZURE_AKS_CLUSTER_NAME" \
-        --query "provisioningState" -o tsv 2>/dev/null || echo "Unknown")
+        --query "provisioningState" -o tsv 2>/dev/null | tr -d '\r' || echo "Unknown")
     AKS_STATUS="Pass"; [ "$AKS_STATE" != "Succeeded" ] && AKS_STATUS="Fail"
     write_health_row "AKS provisioning state" "$AKS_STATUS" "$AKS_STATE"
     _track_health "$AKS_STATUS"
@@ -109,7 +109,7 @@ if [ -n "$ARC_CLUSTER_NAME" ]; then
     ARC_STATUS=$(az connectedk8s show \
         --name "$ARC_CLUSTER_NAME" \
         --resource-group "$AZURE_RESOURCE_GROUP" \
-        --query "connectivityStatus" -o tsv 2>/dev/null || echo "Unknown")
+        --query "connectivityStatus" -o tsv 2>/dev/null | tr -d '\r' || echo "Unknown")
     ARC_HEALTH="Pass"; [ "$ARC_STATUS" != "Connected" ] && ARC_HEALTH="Warn"
     write_health_row "Arc connection" "$ARC_HEALTH" "$ARC_CLUSTER_NAME ($ARC_STATUS)"
     _track_health "$ARC_HEALTH"
@@ -178,7 +178,7 @@ if [ -n "$ARC_CLUSTER_NAME" ]; then
         --cluster-name "$ARC_CLUSTER_NAME" \
         --cluster-type connectedClusters \
         --name videoindexer \
-        --query "provisioningState" -o tsv 2>/dev/null || echo "Unknown")
+        --query "provisioningState" -o tsv 2>/dev/null | tr -d '\r' || echo "Unknown")
     VI_EXT_STATUS="Pass"; [ "$VI_STATE" != "Succeeded" ] && VI_EXT_STATUS="Warn"
     write_health_row "VI Extension" "$VI_EXT_STATUS" "$VI_STATE"
     _track_health "$VI_EXT_STATUS"

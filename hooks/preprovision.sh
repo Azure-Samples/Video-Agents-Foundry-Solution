@@ -16,14 +16,14 @@ write_foundry_banner "Pre-Provision Validation"
 # =====================================================
 log_step 1 $TOTAL_STEPS "Checking Azure CLI Authentication"
 
-ACCOUNT_INFO=$(az account show --query "{name:name, id:id}" -o tsv 2>/dev/null || true)
+ACCOUNT_INFO=$(az account show --query "{name:name, id:id}" -o tsv 2>/dev/null | tr -d '\r' || true)
 
 if [ -z "$ACCOUNT_INFO" ]; then
     log_error "Not logged in to Azure CLI. Run 'az login' before provisioning."
     exit 1
 fi
 
-ACCOUNT_NAME=$(az account show --query "name" -o tsv 2>/dev/null)
+ACCOUNT_NAME=$(az account show --query "name" -o tsv 2>/dev/null | tr -d '\r')
 log_success "Signed in to account: ${ACCOUNT_NAME}"
 
 if [ -n "${AZURE_SUBSCRIPTION_ID:-}" ]; then
@@ -32,9 +32,9 @@ if [ -n "${AZURE_SUBSCRIPTION_ID:-}" ]; then
         log_info "Verify the subscription ID and your access permissions."
         exit 1
     }
-    SUB_NAME=$(az account show --query "name" -o tsv 2>/dev/null)
+    SUB_NAME=$(az account show --query "name" -o tsv 2>/dev/null | tr -d '\r')
     log_success "Subscription: ${SUB_NAME}"
-    write_key_value "ID" "$AZURE_SUBSCRIPTION_ID"
+    log_success "ID ${AZURE_SUBSCRIPTION_ID}"
 fi
 
 # =====================================================
@@ -66,7 +66,7 @@ if [ "$STORAGE_SKU" = "Standard_ZRS" ]; then
     log_info "Checking ZRS availability in ${AZURE_LOCATION}..."
     ZRS_AVAILABLE=$(az storage account list-skus --location "$AZURE_LOCATION" \
         --query "[?name=='Standard_ZRS'].name | [0]" \
-        -o tsv 2>/dev/null || true)
+        -o tsv 2>/dev/null | tr -d '\r' || true)
     if [ -z "$ZRS_AVAILABLE" ]; then
         log_warning "Requested Standard_ZRS is not available in '${AZURE_LOCATION}'."
         log_warning "Falling back to Standard_LRS to avoid deployment failure."
@@ -76,14 +76,13 @@ if [ "$STORAGE_SKU" = "Standard_ZRS" ]; then
         log_success "ZRS is available in ${AZURE_LOCATION}"
     fi
 fi
-write_key_value "Storage SKU" "$STORAGE_SKU"
+write_key_value "STORAGE_SKU" "$STORAGE_SKU"
 
 # ── Validate Kubernetes version against region capabilities ──────────────
 # Pin minors drift from standard support to LTS-only (e.g. 1.32 → LTS).
 # If the requested minor is not available on the standard "KubernetesOfficial"
 # support plan in this region, auto-fall back to the region's default minor.
 REQUESTED_K8S="${KUBERNETES_VERSION:-1.34}"
-log_info "Checking AKS version '${REQUESTED_K8S}' in ${AZURE_LOCATION}..."
 K8S_VERSIONS_JSON=$(az aks get-versions --location "$AZURE_LOCATION" -o json 2>/dev/null || true)
 if [ -n "$K8S_VERSIONS_JSON" ] && command -v jq >/dev/null 2>&1; then
     K8S_STANDARD=$(echo "$K8S_VERSIONS_JSON" | jq -r '.values[] | select(.capabilities.supportPlan | contains(["KubernetesOfficial"])) | .version' 2>/dev/null || true)
@@ -99,7 +98,7 @@ if [ -n "$K8S_VERSIONS_JSON" ] && command -v jq >/dev/null 2>&1; then
             log_warning "Kubernetes '${REQUESTED_K8S}' is not on standard support and no default could be resolved."
         fi
     fi
-    write_key_value "Kubernetes version" "$REQUESTED_K8S"
+    write_key_value "KUBERNETES_VERSION" "$REQUESTED_K8S"
 else
     log_warning "Could not query AKS versions in '${AZURE_LOCATION}'. Proceeding with '${REQUESTED_K8S}'."
 fi
@@ -109,7 +108,7 @@ fi
 # to true to match.)
 if azd env set CREATE_FOUNDRY_PROJECT "$CREATE_FOUNDRY_PROJECT" 2>/dev/null; then
     export CREATE_FOUNDRY_PROJECT
-    log_info "CREATE_FOUNDRY_PROJECT=${CREATE_FOUNDRY_PROJECT} (persisted to azd env)."
+    write_key_value "CREATE_FOUNDRY_PROJECT" $CREATE_FOUNDRY_PROJECT
 else
     log_warning "Could not persist CREATE_FOUNDRY_PROJECT via 'azd env set'."
 fi

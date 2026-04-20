@@ -88,7 +88,7 @@ register_required_providers() {
     local providers_registering=0
     for provider in "${providers[@]}"; do
         local state
-        state=$(az provider show -n "$provider" --query "registrationState" -o tsv 2>/dev/null || echo "Unknown")
+        state=$(az provider show -n "$provider" --query "registrationState" -o tsv 2>/dev/null | tr -d '\r' || echo "Unknown")
         case "$state" in
             Registered)
                 log_success "$provider"
@@ -195,7 +195,7 @@ get_filtered_vm_sizes() {
 
     local query="[?(restrictions[?type==\`Location\`]|length(@)==\`0\`)${prefix_expr}].{n:name, c:capabilities[?name==\`vCPUs\`].value|[0], m:capabilities[?name==\`MemoryGB\`].value|[0], f:family}"
     az vm list-skus --location "$location" --resource-type virtualMachines \
-        --query "$query" -o tsv 2>/dev/null | while IFS=$'\t' read -r name cores memGB family; do
+        --query "$query" -o tsv 2>/dev/null | tr -d '\r' | while IFS=$'\t' read -r name cores memGB family; do
         [ -z "$name" ] && continue
         echo "${name}|${cores}|${memGB}|${family}"
     done | sort -t'|' -k2 -n
@@ -265,7 +265,7 @@ select_vm_sizes_for_menu() {
             local cores="${rest%%|*}"
             [ "$cores" -lt "$min_cores" ] && continue
             [ "$cores" -gt "$max_cores" ] && continue
-            if echo "$sku" | grep -qE "$pattern"; then
+            if [[ "$sku" =~ $pattern ]]; then
                 if [ -z "${seen[$sku]+x}" ]; then
                     seen[$sku]=1
                     _out+=("$entry")
@@ -301,7 +301,7 @@ lookup_vm_quota() {
     local raw
     raw=$(az vm list-usage --location "$location" \
         --query "[?name.value=='${family}'] | [0].{l:limit, u:currentValue}" \
-        -o tsv 2>/dev/null || true)
+        -o tsv 2>/dev/null | tr -d '\r' || true)
     [ -z "$raw" ] && return 1
     VM_QUOTA_LIMIT=$(echo "$raw" | cut -f1)
     VM_QUOTA_USED=$(echo "$raw" | cut -f2)
@@ -323,7 +323,7 @@ get_quota_family_for_vm() {
         return 0
     fi
     for ((i=0; i<${#GPU_QUOTA_PATTERNS[@]}; i++)); do
-        if echo "$vm_size" | grep -qE "${GPU_QUOTA_PATTERNS[$i]}"; then
+        if [[ "$vm_size" =~ ${GPU_QUOTA_PATTERNS[$i]} ]]; then
             GET_QUOTA_FAMILY_RESULT="${GPU_QUOTA_FAMILIES[$i]}"
             return 0
         fi
@@ -342,7 +342,7 @@ fetch_vm_quota_map() {
     local raw
     raw=$(az vm list-usage --location "$location" \
         --query "[].{n:name.value, l:limit, u:currentValue}" \
-        -o tsv 2>/dev/null || true)
+        -o tsv 2>/dev/null | tr -d '\r' || true)
     [ -z "$raw" ] && return 1
     while IFS=$'\t' read -r fam limit used; do
         [ -z "$fam" ] && continue
@@ -469,8 +469,8 @@ resolve_model_quota() {
     # Query limit + current as TSV (two tab-separated fields, explicit order) —
     # avoids fragile awk JSON parsing.
     model_info=$(az cognitiveservices usage list --location "$location" \
-        --query "[?name.value=='$model_type'].[limit, currentValue] | [0]" \
-        --output tsv 2>/dev/null)
+        --query "[?name.value=='$model_type'] | [0].{l:limit, u:currentValue}" \
+        --output tsv 2>/dev/null | tr -d '\r')
 
     if [ -z "$model_info" ]; then
         log_warning "No quota info found for '$model_type' in '$location'. Skipping quota check."

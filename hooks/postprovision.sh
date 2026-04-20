@@ -44,7 +44,7 @@ done
 # =====================================================
 # Authenticate and set subscription
 # =====================================================
-SIGNED_IN_USER_ID=$(az ad signed-in-user show --query 'id' -o tsv 2>/dev/null || true)
+SIGNED_IN_USER_ID=$(az ad signed-in-user show --query 'id' -o tsv 2>/dev/null | tr -d '\r' || true)
 
 if [ -z "$SIGNED_IN_USER_ID" ]; then
     log_warning "No Azure user signed in. Please login."
@@ -106,7 +106,7 @@ write_key_value "Arc cluster name" "$ARC_CLUSTER_NAME"
 ARC_EXISTS=$(az connectedk8s show \
     --name "$ARC_CLUSTER_NAME" \
     --resource-group "$AZURE_RESOURCE_GROUP" \
-    --query "name" -o tsv 2>/dev/null || true)
+    --query "name" -o tsv 2>/dev/null | tr -d '\r' || true)
 
 if [ -n "$ARC_EXISTS" ]; then
     log_success "Arc-connected cluster already exists. Skipping."
@@ -159,7 +159,7 @@ PUBLIC_IP_NAME="${AZURE_ENV_NAME}-inbound-ip"
 PUBLIC_IP_EXISTS=$(az network public-ip show \
     --resource-group "$AKS_MC_RG" \
     --name "$PUBLIC_IP_NAME" \
-    --query "name" -o tsv 2>/dev/null || true)
+    --query "name" -o tsv 2>/dev/null | tr -d '\r' || true)
 
 if [ -n "$PUBLIC_IP_EXISTS" ]; then
     log_success "Public IP '$PUBLIC_IP_NAME' already exists. Skipping."
@@ -178,7 +178,7 @@ fi
 STATIC_IP=$(az network public-ip show \
     --resource-group "$AKS_MC_RG" \
     --name "$PUBLIC_IP_NAME" \
-    --query "ipAddress" -o tsv)
+    --query "ipAddress" -o tsv | tr -d '\r')
 
 write_key_value "Static IP" "$STATIC_IP"
 
@@ -198,7 +198,7 @@ log_step 5 $TOTAL_STEPS "Enabling App Routing on AKS Cluster"
 APPROUTING_ENABLED=$(az aks show \
     --resource-group "$AZURE_RESOURCE_GROUP" \
     --name "$AZURE_AKS_CLUSTER_NAME" \
-    --query "ingressProfile.webAppRouting.enabled" -o tsv 2>/dev/null || true)
+    --query "ingressProfile.webAppRouting.enabled" -o tsv 2>/dev/null | tr -d '\r' || true)
 
 if [ "$APPROUTING_ENABLED" = "true" ]; then
     log_success "App Routing already enabled. Skipping."
@@ -304,7 +304,7 @@ PRINCIPAL_ID=$(az k8s-extension show \
     --cluster-name "$ARC_CLUSTER_NAME" \
     --cluster-type connectedClusters \
     --name videoindexer \
-    --query "identity.principalId" -o tsv 2>/dev/null || true)
+    --query "identity.principalId" -o tsv 2>/dev/null | tr -d '\r' || true)
 
 ACCOUNT_RESOURCE_ID="$AZURE_VIDEO_INDEXER_ACCOUNT_RESOURCE_ID"
 
@@ -322,7 +322,7 @@ else
         --assignee "$PRINCIPAL_ID" \
         --role Contributor \
         --scope "$ACCOUNT_RESOURCE_ID" \
-        --query "[0].id" -o tsv 2>/dev/null || true)
+        --query "[0].id" -o tsv 2>/dev/null | tr -d '\r' || true)
 
     if [ -n "$EXISTING_ASSIGNMENT" ]; then
         log_success "Role assignment already exists. Skipping."
@@ -349,7 +349,7 @@ VI_EXT_STATE=$(az k8s-extension show \
     --cluster-name "$ARC_CLUSTER_NAME" \
     --cluster-type connectedClusters \
     --name videoindexer \
-    --query "provisioningState" -o tsv 2>/dev/null || echo "Unknown")
+    --query "provisioningState" -o tsv 2>/dev/null | tr -d '\r' || echo "Unknown")
 
 # =====================================================
 # Acquire VI Extension Access Token (used by Steps 10-11)
@@ -368,7 +368,7 @@ else
         --cluster-name "$ARC_CLUSTER_NAME" \
         --cluster-type connectedClusters \
         --name videoindexer \
-        --query "id" -o tsv 2>/dev/null || true)
+        --query "id" -o tsv 2>/dev/null | tr -d '\r' || true)
 
     if [ -z "$EXTENSION_ID" ]; then
         log_warning "Failed to retrieve VI extension ID. Skipping camera and agent job setup."
@@ -379,7 +379,7 @@ else
 
         VI_ACCESS_TOKEN=$(az rest --method post --url "$TOKEN_URL" \
             --body "$TOKEN_BODY" \
-            --query "accessToken" -o tsv 2>/dev/null || true)
+            --query "accessToken" -o tsv 2>/dev/null | tr -d '\r' || true)
 
         if [ -z "$VI_ACCESS_TOKEN" ]; then
             log_warning "Failed to generate VI extension access token. Skipping camera and agent job setup."
@@ -476,7 +476,7 @@ log_step 12 $TOTAL_STEPS "Running Post-Deployment Health Checks"
 ARC_STATUS=$(az connectedk8s show \
     --name "$ARC_CLUSTER_NAME" \
     --resource-group "$AZURE_RESOURCE_GROUP" \
-    --query "connectivityStatus" -o tsv 2>/dev/null || echo "unknown")
+    --query "connectivityStatus" -o tsv 2>/dev/null | tr -d '\r' || echo "unknown")
 ARC_HEALTH="Pass"; [ "$ARC_STATUS" != "Connected" ] && ARC_HEALTH="Warn"
 write_health_row "Arc connection" "$ARC_HEALTH" "$ARC_STATUS"
 

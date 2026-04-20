@@ -41,7 +41,7 @@ if ($env:AZURE_SUBSCRIPTION_ID) {
     }
     $subName = (az account show --query "name" -o tsv 2>$null)
     Log-Success "Subscription: $subName"
-    Log-Success "ID" $env:AZURE_SUBSCRIPTION_ID
+    Log-Success "ID: $env:AZURE_SUBSCRIPTION_ID"
 }
 
 # =====================================================
@@ -91,14 +91,13 @@ if ($storageSku -eq 'Standard_ZRS') {
         Log-Success "ZRS is available in $($env:AZURE_LOCATION)"
     }
 }
-Write-KeyValue "Storage SKU" $storageSku
+Write-KeyValue "STORAGE_SKU" $storageSku
 
 # ── Validate Kubernetes version against region capabilities ──────────────
 # Pin minors drift from standard support to LTS-only (e.g. 1.32 → LTS).
 # If the requested minor is not available on the standard "KubernetesOfficial"
 # support plan in this region, auto-fall back to the region's default minor.
 $requestedK8s = if ($env:KUBERNETES_VERSION) { $env:KUBERNETES_VERSION } else { '1.34' }
-Log-Info "Checking AKS version '$requestedK8s' in $($env:AZURE_LOCATION)..."
 $versions = Invoke-AzJson { az aks get-versions --location $env:AZURE_LOCATION -o json }
 if ($versions -and $versions.values) {
     $standardVersions = @($versions.values | Where-Object {
@@ -117,7 +116,7 @@ if ($versions -and $versions.values) {
             Log-Warning "Kubernetes '$requestedK8s' is not on standard support and no default could be resolved."
         }
     }
-    Write-KeyValue "Kubernetes version" $requestedK8s
+    Write-KeyValue "KUBERNETES_VERSION" $requestedK8s
 }
 else {
     Log-Warning "Could not query AKS versions in '$($env:AZURE_LOCATION)'. Proceeding with '$requestedK8s'."
@@ -132,7 +131,7 @@ if ($env:CREATE_FOUNDRY_PROJECT -ne $resolvedFoundry) {
     try {
         azd env set CREATE_FOUNDRY_PROJECT $resolvedFoundry 2>$null
         $env:CREATE_FOUNDRY_PROJECT = $resolvedFoundry
-        Log-Info "CREATE_FOUNDRY_PROJECT resolved to '$resolvedFoundry' (persisted to azd env)."
+        Write-KeyValue "CREATE_FOUNDRY_PROJECT" $resolvedFoundry
     }
     catch {
         Log-Warning "Could not persist CREATE_FOUNDRY_PROJECT via 'azd env set'."

@@ -16,8 +16,8 @@ infra:
 hooks:
   preup:
     windows:
-      shell: pwsh
-      run: ./hooks/validate-env.ps1
+      shell: sh
+      run: ./hooks/validate-env.sh
       interactive: true
       continueOnError: false
     posix:
@@ -27,8 +27,8 @@ hooks:
       continueOnError: false
   preprovision:
     windows:
-      shell: pwsh
-      run: ./hooks/preprovision.ps1
+      shell: sh
+      run: ./hooks/preprovision.sh
       interactive: true
     posix:
       shell: sh
@@ -36,14 +36,14 @@ hooks:
       interactive: true
   postprovision:
     windows:
-      shell: pwsh
-      run: ./hooks/postprovision.ps1
+      shell: sh
+      run: ./hooks/postprovision.sh
     posix:
       shell: sh
       run: ./hooks/postprovision.sh
   postup:
     windows:
-      shell: pwsh
+      shell: sh
       run: ./hooks/postup.ps1
       interactive: true
     posix:
