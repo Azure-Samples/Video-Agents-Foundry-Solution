@@ -18,7 +18,7 @@ param extensionName string = 'videoindexer'
   'stable'
 ])
 @description('Release train for the extension')
-param releaseTrain string = 'stable'
+param releaseTrain string = 'dev'
 
 @description('Whether to use GPU for summarization')
 param useGpuForSummarization bool = false

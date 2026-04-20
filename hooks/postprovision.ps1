@@ -62,6 +62,7 @@ az account set -s $env:AZURE_SUBSCRIPTION_ID
 # Configuration
 # =====================================================
 $gpuOperatorVersion = if ($env:GPU_OPERATOR_VERSION) { $env:GPU_OPERATOR_VERSION } else { "v25.10.01" }
+$cognitiveServicesRoleAssignmentFailed = $false
 
 # =====================================================
 # Step 1: Get AKS credentials
@@ -400,6 +401,7 @@ else {
             if ($LASTEXITCODE -ne 0) {
                 Log-Error "Failed to create Cognitive Services OpenAI Contributor role assignment: $openAiRoleErr"
                 Log-Error "Agent inference scenarios may not function correctly without this permission."
+                $cognitiveServicesRoleAssignmentFailed = $true
             }
             else {
                 Log-Success "Cognitive Services OpenAI Contributor role assigned on AI Foundry account"
@@ -634,6 +636,12 @@ if ($env:AI_FOUNDRY_ACCOUNT_NAME) {
     Write-KeyValue "AI Endpoint"      $env:AI_FOUNDRY_AI_SERVICES_ENDPOINT
     if ($foundryAccountResourceId) {
         Write-KeyValue "AI Foundry Resource ID" $foundryAccountResourceId
+    }
+    if ($cognitiveServicesRoleAssignmentFailed) {
+        Write-Host ""
+        Write-Host "⚠️  WARNING: Cognitive Services OpenAI Contributor role assignment failed." -ForegroundColor Yellow
+        Write-Host "   Please manually grant this role to the VI extension managed identity on the AI Foundry account." -ForegroundColor Yellow
+        Write-Host "   Agent inference scenarios will not function without this permission." -ForegroundColor Yellow
     }
 }
 if ($principalId -and $cameraId) {
