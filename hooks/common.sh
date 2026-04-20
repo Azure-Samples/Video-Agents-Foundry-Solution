@@ -284,10 +284,13 @@ select_vm_sizes_for_menu() {
         done
     fi
 
-    # Sort output by cores
-    local -a sorted
-    mapfile -t sorted < <(printf '%s\n' "${_out[@]}" | sort -t'|' -k2 -n)
-    _out=("${sorted[@]}")
+    # Sort output by cores (guard: empty array → printf with no args emits a
+    # bare newline that mapfile captures as one phantom empty-string element)
+    if [ "${#_out[@]}" -gt 0 ]; then
+        local -a sorted
+        mapfile -t sorted < <(printf '%s\n' "${_out[@]}" | sort -t'|' -k2 -n)
+        _out=("${sorted[@]}")
+    fi
 }
 
 # Looks up quota for a family directly via az CLI (single call).
@@ -526,7 +529,36 @@ resolve_model_quota() {
 
 # ── Interactive VM Selection Menu ─────────────────────────────────────────
 # NOTE: This function uses low-level terminal manipulation for interactive
-# arrow-key menus. Its internal styling is intentionally left as-is.
+# arrow-key menus when a capable terminal is available.  When running under
+# azd on Windows (pseudo-terminal without raw-mode support) it falls back to
+# a simple numbered-list menu that only needs basic line input.
+
+# Detect whether the terminal supports the interactive arrow-key menu.
+# On Windows (MSYS / Git Bash / Cygwin) the pseudo-terminal that azd provides
+# passes the stty probe but still breaks on read -rsn1, so we always fall back
+# to the simple numbered-list menu there.
+_TERM_SUPPORTS_RAW=""
+_test_terminal_raw_mode() {
+    if [ -n "$_TERM_SUPPORTS_RAW" ]; then return "$_TERM_SUPPORTS_RAW"; fi
+    _TERM_SUPPORTS_RAW=1  # assume unsupported
+
+    # Windows pseudo-terminals (MSYS, Cygwin) don't reliably support raw reads
+    case "$OSTYPE" in
+        msys*|cygwin*|mingw*) _TERM_SUPPORTS_RAW=1; return 1 ;;
+    esac
+
+    if [ -t 0 ] && [ -t 1 ]; then
+        local _old
+        _old=$(stty -g 2>/dev/null) || { _TERM_SUPPORTS_RAW=1; return 1; }
+        if stty raw -echo min 0 time 1 2>/dev/null; then
+            stty "$_old" 2>/dev/null
+            _TERM_SUPPORTS_RAW=0
+        else
+            stty "$_old" 2>/dev/null || true
+        fi
+    fi
+    return "$_TERM_SUPPORTS_RAW"
+}
 
 SELECTED_VM_SKU=""
 SELECTED_VM_CORES=0
@@ -535,16 +567,14 @@ SELECTED_VM_FAMILY=""
 show_vm_selection_menu() {
     local pool_name="$1"
     local env_var_name="$2"
-    local -n _vm_array=$3
+    local _vm_array_name=$3
     local default_sku="$4"
     local location="$5"
     local max_nodes="${6:-1}"
     local is_gpu="${7:-}"
 
-    local vm_count=${#_vm_array[@]}
-    local item_count=$((vm_count + 1))
-    local max_visible=20
-    [ "$item_count" -lt "$max_visible" ] && max_visible=$item_count
+    local -n _vm_array_ref=$_vm_array_name
+    local vm_count=${#_vm_array_ref[@]}
 
     if [ "$vm_count" -eq 0 ]; then
         log_error "No VM sizes available for this pool."
@@ -552,12 +582,161 @@ show_vm_selection_menu() {
         exit 1
     fi
 
+    if _test_terminal_raw_mode; then
+        _show_vm_menu_interactive "$pool_name" "$env_var_name" "$_vm_array_name" "$default_sku" "$location" "$max_nodes" "$is_gpu"
+    else
+        _show_vm_menu_simple "$pool_name" "$env_var_name" "$_vm_array_name" "$default_sku" "$location" "$max_nodes" "$is_gpu"
+    fi
+}
+
+# ── Simple numbered-list fallback (works without raw terminal) ────────────
+_show_vm_menu_simple() {
+    local pool_name="$1"
+    local env_var_name="$2"
+    local -n _svm_array=$3
+    local default_sku="$4"
+    local location="$5"
+    local max_nodes="${6:-1}"
+    local is_gpu="${7:-}"
+
+    local vm_count=${#_svm_array[@]}
+
+    # Parse into parallel arrays
+    local -a vm_names vm_cores vm_mem vm_family vm_avail vm_limit vm_has_enough
+    local has_quota_info=0
+    for entry in "${_svm_array[@]}"; do
+        IFS='|' read -r -a _f <<< "$entry"
+        vm_names+=("${_f[0]}")
+        vm_cores+=("${_f[1]}")
+        vm_mem+=("${_f[2]}")
+        vm_family+=("${_f[3]:-}")
+        vm_avail+=("${_f[4]:-}")
+        vm_limit+=("${_f[5]:-}")
+        vm_has_enough+=("${_f[6]:-1}")
+        if [ -n "${_f[4]:-}" ] || [ -n "${_f[5]:-}" ]; then
+            has_quota_info=1
+        fi
+    done
+
+    # Find default index
+    local default_index=0
+    for ((i=0; i<vm_count; i++)); do
+        [ "${vm_names[$i]}" = "$default_sku" ] && { default_index=$i; break; }
+    done
+
+    while true; do
+        echo ""
+        write_section "Select VM size for ${pool_name} (${vm_count} sizes available)"
+        if [ "$has_quota_info" = "1" ]; then
+            log_info "Quota column shows cores free in this region (pool max nodes: ${max_nodes})."
+        fi
+        echo ""
+
+        for ((i=0; i<vm_count; i++)); do
+            local tag=""
+            [ "${vm_names[$i]}" = "$default_sku" ] && tag=" (default)"
+
+            local qcol=""
+            if [ "$has_quota_info" = "1" ]; then
+                if [ -n "${vm_avail[$i]}" ]; then
+                    qcol=$(printf "%-14s" "${vm_avail[$i]} free")
+                else
+                    qcol=$(printf "%-14s" "quota n/a")
+                fi
+            fi
+
+            printf "   %2d) %-35s %-10s %-8s %s%s\n" "$((i+1))" "${vm_names[$i]}" "${vm_cores[$i]} vCPUs" "${vm_mem[$i]} GB" "$qcol" "$tag"
+        done
+        printf "    C) Enter custom VM size\n"
+        echo ""
+        printf "   Enter choice [%d]: " "$((default_index + 1))"
+        read -r user_choice
+
+        # Default: press Enter → use default index
+        if [ -z "$user_choice" ]; then
+            user_choice=$((default_index + 1))
+        fi
+
+        local selected_sku="" selected_cores=0 selected_family=""
+
+        if [ "$user_choice" = "c" ] || [ "$user_choice" = "C" ]; then
+            printf "   Enter VM SKU (e.g. Standard_NC24ads_A100_v4): "
+            read -r custom_sku
+            [ -z "$custom_sku" ] && { log_warning "No value entered. Re-showing menu..."; continue; }
+            selected_sku="$(echo "$custom_sku" | xargs)"
+            for ((i=0; i<vm_count; i++)); do
+                [ "${vm_names[$i]}" = "$selected_sku" ] && { selected_cores="${vm_cores[$i]}"; break; }
+            done
+            [ "$selected_cores" -eq 0 ] && { log_error "'$selected_sku' not found in region."; continue; }
+        elif [[ "$user_choice" =~ ^[0-9]+$ ]] && [ "$user_choice" -ge 1 ] && [ "$user_choice" -le "$vm_count" ]; then
+            local idx=$((user_choice - 1))
+            selected_sku="${vm_names[$idx]}"
+            selected_cores="${vm_cores[$idx]}"
+        else
+            log_warning "Invalid choice '$user_choice'. Enter a number 1-${vm_count} or C."
+            continue
+        fi
+
+        log_success "${selected_sku} (${selected_cores} vCPUs)"
+
+        # GPU quota check
+        if [ "$is_gpu" = "gpu" ]; then
+            _write_log_message "Resolving quota family..." "$SYM_INFO" "$C_ACCENT" "$C_TEXT" false true
+            local sku_family=""
+            for ((i=0; i<vm_count; i++)); do
+                if [ "${vm_names[$i]}" = "$selected_sku" ]; then
+                    sku_family="${vm_family[$i]:-}"
+                    break
+                fi
+            done
+            get_quota_family_for_vm "$selected_sku" "$sku_family"
+            selected_family="$GET_QUOTA_FAMILY_RESULT"
+            if [ -n "$selected_family" ]; then
+                printf " %b%s%b\n" "$C_MUTED" "$selected_family" "$C_RESET"
+                local total_cores=$((selected_cores * max_nodes))
+                assert_vm_quota "$pool_name" "$selected_family" "$location" "$total_cores" || true
+                if [ "$ASSERT_QUOTA_RESULT" = "zero" ] || [ "$ASSERT_QUOTA_RESULT" = "low" ]; then
+                    log_warning "Re-showing menu..."
+                    continue
+                fi
+            else
+                printf " %bnot found (quota check skipped)%b\n" "$C_WARNING" "$C_RESET"
+            fi
+        fi
+
+        azd env set "$env_var_name" "$selected_sku" 2>/dev/null || \
+            log_warning "Could not persist ${env_var_name} via 'azd env set'."
+
+        log_success "Selected: $selected_sku"
+        echo ""
+        SELECTED_VM_SKU="$selected_sku"
+        SELECTED_VM_CORES="$selected_cores"
+        SELECTED_VM_FAMILY="$selected_family"
+        return 0
+    done
+}
+
+# ── Interactive arrow-key menu (requires raw terminal support) ────────────
+_show_vm_menu_interactive() {
+    local pool_name="$1"
+    local env_var_name="$2"
+    local -n _ivm_array=$3
+    local default_sku="$4"
+    local location="$5"
+    local max_nodes="${6:-1}"
+    local is_gpu="${7:-}"
+
+    local vm_count=${#_ivm_array[@]}
+    local item_count=$((vm_count + 1))
+    local max_visible=20
+    [ "$item_count" -lt "$max_visible" ] && max_visible=$item_count
+
     # Parse into parallel arrays for fast indexed access.
     # Entries are either "name|cores|memGB" (legacy), "name|cores|memGB|family",
     # or quota-annotated "name|cores|memGB|family|avail|limit|hasEnough".
     local -a vm_names vm_cores vm_mem vm_family vm_avail vm_limit vm_has_enough
     local has_quota_info=0
-    for entry in "${_vm_array[@]}"; do
+    for entry in "${_ivm_array[@]}"; do
         IFS='|' read -r -a _f <<< "$entry"
         vm_names+=("${_f[0]}")
         vm_cores+=("${_f[1]}")
@@ -637,24 +816,27 @@ show_vm_selection_menu() {
         fi
         echo ""
 
-        # Get cursor row via ANSI DSR
-        local cursor_row
-        if [ -t 0 ]; then
-            local old_stty; old_stty=$(stty -g)
-            # Restore terminal state if user Ctrl-Cs or script is terminated mid-menu.
-            trap 'stty "$old_stty" 2>/dev/null || true' EXIT INT TERM
-            stty raw -echo min 0
-            printf "\033[6n" > /dev/tty
-            local response=""
-            while true; do
-                local ch; ch=$(dd bs=1 count=1 2>/dev/null)
-                response="${response}${ch}"
-                case "$response" in *R) break ;; esac
-            done
-            stty "$old_stty"
-            trap - EXIT INT TERM
-            cursor_row=$(echo "$response" | sed 's/.*\[//;s/;.*//')
-        else
+        # Get cursor row via ANSI DSR.
+        # The stty/dd sequence can fail on Windows pseudo-terminals or when azd
+        # pipes stdin, so guard against set -e by using a subshell with || true.
+        local cursor_row=""
+        if [ -t 0 ] && [ -t 1 ]; then
+            cursor_row=$(
+                old_stty=$(stty -g 2>/dev/null) || true
+                stty raw -echo min 0 2>/dev/null || true
+                printf "\033[6n" > /dev/tty 2>/dev/null || true
+                resp=""
+                for _i in $(seq 1 20); do
+                    ch=$(dd bs=1 count=1 2>/dev/null) || break
+                    resp="${resp}${ch}"
+                    case "$resp" in *R) break ;; esac
+                done
+                [ -n "$old_stty" ] && stty "$old_stty" 2>/dev/null || true
+                echo "$resp" | sed 's/.*\[//;s/;.*//'
+            ) 2>/dev/null || true
+        fi
+        # Fall back if DSR failed or returned garbage
+        if ! [[ "$cursor_row" =~ ^[0-9]+$ ]]; then
             cursor_row=10
         fi
 
@@ -724,10 +906,11 @@ show_vm_selection_menu() {
             if [ -n "$selected_family" ]; then
                 printf " %b%s%b\n" "$C_MUTED" "$selected_family" "$C_RESET"
                 local total_cores=$((selected_cores * max_nodes))
-                assert_vm_quota "$pool_name" "$selected_family" "$location" "$total_cores"
+                assert_vm_quota "$pool_name" "$selected_family" "$location" "$total_cores" || true
+
                 if [ "$ASSERT_QUOTA_RESULT" = "zero" ] || [ "$ASSERT_QUOTA_RESULT" = "low" ]; then
-                    echo ""; printf "   Continue anyway? (y/n) [n]: "; read -r proceed
-                    [ "$proceed" != "y" ] && [ "$proceed" != "Y" ] && { log_warning "Re-showing menu..."; continue; }
+                    log_warning "Re-showing menu..."
+                    continue
                 fi
             else
                 printf " %bnot found (quota check skipped)%b\n" "$C_WARNING" "$C_RESET"

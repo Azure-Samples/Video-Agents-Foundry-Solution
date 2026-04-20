@@ -791,11 +791,8 @@ function Show-VmSelectionMenu {
                 $totalCoresNeeded = $selectedCores * $MaxNodes
                 $quotaResult = Assert-VmQuota -Label $PoolName -Family $selectedFamily -QuotaData $QuotaData -CoresNeeded $totalCoresNeeded
                 if ($quotaResult -in @("zero", "low")) {
-                    $proceed = Read-Host "   Continue with this VM anyway? (y = keep, n = re-select) [n]"
-                    if ($proceed -ne 'y' -and $proceed -ne 'Y') {
-                        Log-Warning "Re-showing menu..."
-                        continue
-                    }
+                    Log-Warning "Re-showing menu..."
+                    continue
                 }
             }
             else {

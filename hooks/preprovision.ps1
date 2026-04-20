@@ -169,7 +169,34 @@ if ($allVmSizes.Count -eq 0) {
     exit 1
 }
 
-Log-Success "Found $($allVmSizes.Count) VM sizes in $($env:AZURE_LOCATION)"
+$cpuCount = @($allVmSizes | Where-Object { $n = $_.Name; ($CPU_VM_PREFIXES | Where-Object { $n.StartsWith($_) }).Count -gt 0 }).Count
+$gpuCount = @($allVmSizes | Where-Object { $n = $_.Name; ($GPU_VM_PREFIXES | Where-Object { $n.StartsWith($_) }).Count -gt 0 }).Count
+Log-Success "Found VM SKUs in $($env:AZURE_LOCATION)"
+Log-Info "$cpuCount CPU + $gpuCount GPU sizes available"
+
+if ($cpuCount -eq 0 -and $gpuCount -eq 0) {
+    Log-Error "No VM sizes are available in '$($env:AZURE_LOCATION)' for this subscription."
+    Log-Info "This usually means the region has restrictive SKU policies for your subscription."
+    Log-Info "Try a different region: run 'azd env set AZURE_LOCATION <region>' and re-run 'azd up'."
+    Log-Info "Recommended regions: eastus2, westus3, southcentralus, northeurope"
+    exit 1
+}
+
+if ($cpuCount -eq 0) {
+    Log-Error "No CPU VM sizes (D/E/F-series) are available in '$($env:AZURE_LOCATION)'."
+    Log-Info "AKS requires CPU nodes for system and workload pools."
+    Log-Info "Try a different region: run 'azd env set AZURE_LOCATION <region>' and re-run 'azd up'."
+    Log-Info "Recommended regions: eastus2, westus3, southcentralus, northeurope"
+    exit 1
+}
+
+if ($gpuCount -eq 0) {
+    Log-Warning "No GPU VM sizes (NC/NV/ND-series) are available in '$($env:AZURE_LOCATION)'."
+    Log-Info "GPU pools are required for video processing. Consider a region with GPU support."
+    Log-Info "Try: run 'azd env set AZURE_LOCATION <region>' and re-run 'azd up'."
+    Log-Info "Recommended GPU regions: eastus2, westus3, southcentralus, northeurope"
+    exit 1
+}
 
 # Determine current/default values (env var overrides config default)
 $currentSystemVm     = if ($env:SYSTEM_VM_SIZE)          { $env:SYSTEM_VM_SIZE }          else { $DEFAULT_SYSTEM_VM_SIZE }

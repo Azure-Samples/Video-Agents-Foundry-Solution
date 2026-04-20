@@ -147,6 +147,30 @@ log_success "Found VM SKUs in ${AZURE_LOCATION}"
 
 log_info "${#ALL_CPU_VMS[@]} CPU + ${#ALL_GPU_VMS[@]} GPU sizes available"
 
+if [ "${#ALL_CPU_VMS[@]}" -eq 0 ] && [ "${#ALL_GPU_VMS[@]}" -eq 0 ]; then
+    log_error "No VM sizes are available in '${AZURE_LOCATION}' for this subscription."
+    log_info "This usually means the region has restrictive SKU policies for your subscription."
+    log_info "Try a different region: run 'azd env set AZURE_LOCATION <region>' and re-run 'azd up'."
+    log_info "Recommended regions: eastus2, westus3, southcentralus, northeurope"
+    exit 1
+fi
+
+if [ "${#ALL_CPU_VMS[@]}" -eq 0 ]; then
+    log_error "No CPU VM sizes (D/E/F-series) are available in '${AZURE_LOCATION}'."
+    log_info "AKS requires CPU nodes for system and workload pools."
+    log_info "Try a different region: run 'azd env set AZURE_LOCATION <region>' and re-run 'azd up'."
+    log_info "Recommended regions: eastus2, westus3, southcentralus, northeurope"
+    exit 1
+fi
+
+if [ "${#ALL_GPU_VMS[@]}" -eq 0 ]; then
+    log_warning "No GPU VM sizes (NC/NV/ND-series) are available in '${AZURE_LOCATION}'."
+    log_info "GPU pools are required for video processing. Consider a region with GPU support."
+    log_info "Try: run 'azd env set AZURE_LOCATION <region>' and re-run 'azd up'."
+    log_info "Recommended GPU regions: eastus2, westus3, southcentralus, northeurope"
+    exit 1
+fi
+
 log_info "Querying VM quota in region..."
 if fetch_vm_quota_map "$AZURE_LOCATION"; then
     log_success "Quota data retrieved for ${VM_QUOTA_MAP_COUNT} VM families"
