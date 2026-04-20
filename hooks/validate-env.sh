@@ -37,7 +37,7 @@ validate_env_var "AZURE_SUBSCRIPTION_ID" "$uuid_pattern" "xxxxxxxx-xxxx-xxxx-xxx
 validate_env_var "AZURE_PRINCIPAL_ID" "$uuid_pattern" "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 
 # ── VM sizes must start with Standard_ ────────────────────────────────────
-vm_pattern='^Standard_'
+vm_pattern='^Standard_[A-Za-z0-9_]+$'
 validate_env_var "SYSTEM_VM_SIZE" "$vm_pattern" "Standard_D4a_v4"
 validate_env_var "WORKLOAD_VM_SIZE" "$vm_pattern" "Standard_D32a_v4"
 validate_env_var "DEEPSTREAM_GPU_VM_SIZE" "$vm_pattern" "Standard_NC24ads_A100_v4"
@@ -54,7 +54,7 @@ sku_pattern='^Standard_(LRS|ZRS|GRS)$'
 validate_env_var "STORAGE_SKU_NAME" "$sku_pattern" "Standard_LRS, Standard_ZRS, or Standard_GRS"
 
 # ── Location must be non-empty lowercase alphanumeric if set ───────────────
-location_pattern='^[a-z0-9]+$'
+location_pattern='^[a-z0-9]+(-[a-z0-9]+)*$'
 validate_env_var "AZURE_LOCATION" "$location_pattern" "eastus2"
 
 if [ "$has_error" = true ]; then

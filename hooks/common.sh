@@ -29,7 +29,7 @@ assert_env_vars() {
     # Usage: assert_env_vars VAR1 VAR2 VAR3
     local missing=()
     for var in "$@"; do
-        eval val=\$$var 2>/dev/null || val=""
+        val="${!var:-}"
         if [ -z "$val" ]; then
             missing+=("$var")
         fi
@@ -222,7 +222,7 @@ resolve_default_sku() {
     # Not available — pick closest by core count
     log_warning "Default SKU '$default_sku' is not available in this subscription/region." >&2
 
-    local best_sku="" best_diff=999999
+    local best_sku="" best_diff=999999 best_cores=0
     for entry in "${_sizes[@]}"; do
         local sku="${entry%%|*}"
         local rest="${entry#*|}"
@@ -466,20 +466,25 @@ resolve_model_quota() {
     log_info "Checking quota for $model_type in $location..."
 
     local model_info
+    # Query limit + current as TSV (two tab-separated fields, explicit order) —
+    # avoids fragile awk JSON parsing.
     model_info=$(az cognitiveservices usage list --location "$location" \
-        --query "[?name.value=='$model_type']" --output json 2>/dev/null | tr '[:upper:]' '[:lower:]')
+        --query "[?name.value=='$model_type'].[limit, currentValue] | [0]" \
+        --output tsv 2>/dev/null)
 
-    if [ -z "$model_info" ] || [ "$model_info" = "[]" ]; then
+    if [ -z "$model_info" ]; then
         log_warning "No quota info found for '$model_type' in '$location'. Skipping quota check."
         log_info "The model may not be available in this region. Bicep will report a clearer error if so."
         return 0
     fi
 
     local current_value limit
-    current_value=$(echo "$model_info" | awk -F': ' '/"currentvalue"/ {print $2}' | tr -d ',' | tr -d ' ')
-    limit=$(echo "$model_info" | awk -F': ' '/"limit"/ {print $2}' | tr -d ',' | tr -d ' ')
-    current_value=$(echo "${current_value:-0}" | cut -d'.' -f1)
-    limit=$(echo "${limit:-0}" | cut -d'.' -f1)
+    limit=$(echo "$model_info" | cut -f1)
+    current_value=$(echo "$model_info" | cut -f2)
+    current_value=$(echo "${current_value:-0}" | cut -d'.' -f1 | tr -dc '0-9')
+    limit=$(echo "${limit:-0}" | cut -d'.' -f1 | tr -dc '0-9')
+    current_value=${current_value:-0}
+    limit=${limit:-0}
     local available=$((limit - current_value))
 
     write_key_value "Model" "$model_type"
@@ -636,6 +641,8 @@ show_vm_selection_menu() {
         local cursor_row
         if [ -t 0 ]; then
             local old_stty; old_stty=$(stty -g)
+            # Restore terminal state if user Ctrl-Cs or script is terminated mid-menu.
+            trap 'stty "$old_stty" 2>/dev/null || true' EXIT INT TERM
             stty raw -echo min 0
             printf "\033[6n" > /dev/tty
             local response=""
@@ -645,6 +652,7 @@ show_vm_selection_menu() {
                 case "$response" in *R) break ;; esac
             done
             stty "$old_stty"
+            trap - EXIT INT TERM
             cursor_row=$(echo "$response" | sed 's/.*\[//;s/;.*//')
         else
             cursor_row=10

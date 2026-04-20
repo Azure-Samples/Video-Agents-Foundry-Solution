@@ -50,13 +50,6 @@ hooks:
       shell: sh
       run: ./hooks/postup.sh
       interactive: true
-  predown:
-    windows:
-      shell: pwsh
-      run: ./hooks/predown.ps1
-    posix:
-      shell: sh
-      run: ./hooks/predown.sh
 pipeline:
   variables:
     - AZURE_RESOURCE_GROUP

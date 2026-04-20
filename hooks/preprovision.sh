@@ -50,7 +50,7 @@ assert_cli_tools az helm kubectl -- kubelogin jq
 log_step 3 $TOTAL_STEPS "Validating Environment Variables"
 
 for var in AZURE_SUBSCRIPTION_ID AZURE_LOCATION AZURE_ENV_NAME; do
-    eval val=\$$var 2>/dev/null || val=""
+    val="${!var:-}"
     if [ -z "$val" ]; then
         write_health_row "$var" "Fail" "not set"
     else
@@ -64,11 +64,11 @@ assert_env_vars AZURE_SUBSCRIPTION_ID AZURE_LOCATION AZURE_ENV_NAME
 STORAGE_SKU="${STORAGE_SKU_NAME:-Standard_LRS}"
 if [ "$STORAGE_SKU" = "Standard_ZRS" ]; then
     log_info "Checking ZRS availability in ${AZURE_LOCATION}..."
-    ZRS_AVAILABLE=$(az provider show --namespace Microsoft.Storage \
-        --query "resourceTypes[?resourceType=='storageAccounts'].zoneMappings[?contains(location, '${AZURE_LOCATION}')].location | [0][0]" \
+    ZRS_AVAILABLE=$(az storage account list-skus --location "$AZURE_LOCATION" \
+        --query "[?name=='Standard_ZRS'].name | [0]" \
         -o tsv 2>/dev/null || true)
     if [ -z "$ZRS_AVAILABLE" ]; then
-        log_warning "Standard_ZRS may not be available in '${AZURE_LOCATION}'."
+        log_warning "Requested Standard_ZRS is not available in '${AZURE_LOCATION}'."
         log_warning "Falling back to Standard_LRS to avoid deployment failure."
         azd env set STORAGE_SKU_NAME Standard_LRS 2>/dev/null || true
         STORAGE_SKU="Standard_LRS"
@@ -86,7 +86,7 @@ REQUESTED_K8S="${KUBERNETES_VERSION:-1.34}"
 log_info "Checking AKS version '${REQUESTED_K8S}' in ${AZURE_LOCATION}..."
 K8S_VERSIONS_JSON=$(az aks get-versions --location "$AZURE_LOCATION" -o json 2>/dev/null || true)
 if [ -n "$K8S_VERSIONS_JSON" ] && command -v jq >/dev/null 2>&1; then
-    K8S_STANDARD=$(echo "$K8S_VERSIONS_JSON" | jq -r '.values[] | select(.capabilities.supportPlan | index("KubernetesOfficial")) | .version' 2>/dev/null || true)
+    K8S_STANDARD=$(echo "$K8S_VERSIONS_JSON" | jq -r '.values[] | select(.capabilities.supportPlan | contains(["KubernetesOfficial"])) | .version' 2>/dev/null || true)
     K8S_DEFAULT=$(echo "$K8S_VERSIONS_JSON" | jq -r '.values[] | select(.isDefault==true) | .version' 2>/dev/null | head -n1)
     if ! echo "$K8S_STANDARD" | grep -qx "$REQUESTED_K8S"; then
         if [ -n "$K8S_DEFAULT" ]; then

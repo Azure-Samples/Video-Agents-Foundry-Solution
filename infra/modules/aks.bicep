@@ -22,10 +22,10 @@ param deepstreamGpuVmSize string
 @description('VM size for the GPU inference workload node pool')
 param inferenceGpuVmSize string
 
-@description('Maximum number of system nodes')
+@description('Number of nodes in the system node pool (fixed count — not autoscaled)')
 @minValue(1)
 @maxValue(10)
-param systemMaxNodeCount int = 2
+param systemNodeCount int = 2
 
 @description('Maximum number of workload nodes')
 @minValue(1)
@@ -48,10 +48,10 @@ param dnsPrefix string = name
 @description('Node resource group name')
 param nodeResourceGroup string
 
-@description('Node label value used to target deepstream workloads')
+// Node label value used to target deepstream workloads
 var deepstreamWorkloadLabel = 'deepstream'
 
-@description('Node label value used to target inference workloads')
+// Node label value used to target inference workloads
 var inferenceWorkloadLabel = 'inference'
 
 resource aksCluster 'Microsoft.ContainerService/managedClusters@2024-09-01' = {
@@ -111,7 +111,7 @@ resource aksCluster 'Microsoft.ContainerService/managedClusters@2024-09-01' = {
     agentPoolProfiles: [
       {
         name: 'system'
-        count: systemMaxNodeCount
+        count: systemNodeCount
         vmSize: systemVmSize
         osType: 'Linux'
         osSKU: 'AzureLinux'

@@ -18,7 +18,13 @@ function Invoke-AzJson {
     #>
     param([Parameter(Mandatory)] [scriptblock]$Command)
     try {
-        $raw = & $Command 2>$null
+        $raw = & $Command 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            $snippet = if ($raw) { ($raw | Out-String).Trim() } else { '(no output)' }
+            if ($snippet.Length -gt 400) { $snippet = $snippet.Substring(0, 400) + '...' }
+            Log-Warning "az command failed (exit $LASTEXITCODE): $snippet"
+            return $null
+        }
         if ($null -eq $raw -or ($raw -is [string] -and [string]::IsNullOrWhiteSpace($raw))) {
             return $null
         }
@@ -27,6 +33,7 @@ function Invoke-AzJson {
         return $raw | ConvertFrom-Json -ErrorAction Stop
     }
     catch {
+        Log-Warning "Invoke-AzJson exception: $($_.Exception.Message)"
         return $null
     }
 }

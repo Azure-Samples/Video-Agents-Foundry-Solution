@@ -12,6 +12,8 @@ TOTAL_STEPS=12
 write_foundry_banner "Post-Provision Setup"
 
 if [ "$CREATE_IN_LOCAL" = "false" ]; then
+    # CREATE_IN_LOCAL=false is set by CI workflows that provision infra via
+    # dedicated pipelines and do not want the local azd hook to run.
     log_info "Skipping postprovision script for non-local deployment."
     exit 0
 fi
@@ -42,9 +44,9 @@ done
 # =====================================================
 # Authenticate and set subscription
 # =====================================================
-EXPIRED_TOKEN=$(az ad signed-in-user show --query 'id' -o tsv 2>/dev/null || true)
+SIGNED_IN_USER_ID=$(az ad signed-in-user show --query 'id' -o tsv 2>/dev/null || true)
 
-if [ -z "$EXPIRED_TOKEN" ]; then
+if [ -z "$SIGNED_IN_USER_ID" ]; then
     log_warning "No Azure user signed in. Please login."
     az login -o none
 fi
@@ -89,9 +91,12 @@ log_success "NVIDIA GPU Operator installed"
 # Step 3: Connect AKS to Azure Arc
 # =====================================================
 ARC_CLUSTER_NAME="${ARC_CLUSTER_PREFIX}${AZURE_AKS_CLUSTER_NAME}"
-# Defensive clamp: Azure Arc cluster names must be <= 63 chars
+# Azure Arc cluster name rules: lowercase alnum + hyphen, no leading/trailing hyphen, <=63 chars
+ARC_CLUSTER_NAME=$(echo "$ARC_CLUSTER_NAME" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9-' '-')
+ARC_CLUSTER_NAME=$(echo "$ARC_CLUSTER_NAME" | sed -E 's/-+/-/g; s/^-+//; s/-+$//')
 if [ ${#ARC_CLUSTER_NAME} -gt 63 ]; then
-    ARC_CLUSTER_NAME=$(echo "${ARC_CLUSTER_NAME:0:63}" | sed 's/-$//')
+    ARC_CLUSTER_NAME="${ARC_CLUSTER_NAME:0:63}"
+    ARC_CLUSTER_NAME=$(echo "$ARC_CLUSTER_NAME" | sed -E 's/-+$//')
 fi
 log_step 3 $TOTAL_STEPS "Connecting AKS to Azure Arc"
 
@@ -132,7 +137,18 @@ if [ -n "$AZURE_DNS_LABEL" ]; then
     DNS_LABEL="$AZURE_DNS_LABEL"
     log_info "Reusing existing DNS label: $DNS_LABEL"
 else
-    RANDOM_SUFFIX=$((RANDOM % 900 + 100))
+    # Deterministic 5-digit suffix derived from env + location + subscription.
+    # Same inputs always produce same DNS label (idempotent) while collision
+    # space is 10^5 (vs 900 for the prior RANDOM % 900 + 100).
+    DNS_HASH_INPUT="${AZURE_ENV_NAME}|${AZURE_LOCATION}|${AZURE_SUBSCRIPTION_ID:-}"
+    if command -v sha256sum >/dev/null 2>&1; then
+        DNS_HASH=$(printf '%s' "$DNS_HASH_INPUT" | sha256sum | cut -c1-10)
+    else
+        DNS_HASH=$(printf '%s' "$DNS_HASH_INPUT" | shasum -a 256 | cut -c1-10)
+    fi
+    # Convert hex slice to decimal and take 5 digits
+    RANDOM_SUFFIX=$(printf '%d' "0x${DNS_HASH}" 2>/dev/null | tr -dc '0-9' | head -c 5)
+    RANDOM_SUFFIX=${RANDOM_SUFFIX:-00000}
     DNS_LABEL="${AZURE_ENV_NAME}${RANDOM_SUFFIX}"
     log_info "Generated DNS label: $DNS_LABEL"
 fi
@@ -257,10 +273,12 @@ log_success "Cert Manager extension deployed"
 # =====================================================
 log_step 9 $TOTAL_STEPS "Deploying Video Indexer Arc Extension"
 
-if [ "$CREATE_FOUNDRY_PROJECT" = "true" ]; then
-    INFERENCE_AGENT_ENABLED="false"
-else
+# Normalize to true by default; only explicit "false" disables Foundry.
+CREATE_FOUNDRY_PROJECT="${CREATE_FOUNDRY_PROJECT:-true}"
+if [ "$CREATE_FOUNDRY_PROJECT" = "false" ]; then
     INFERENCE_AGENT_ENABLED="true"
+else
+    INFERENCE_AGENT_ENABLED="false"
 fi
 
 MEDIA_STREAMER_ENABLED="${MEDIA_STREAMER_ENABLED:-true}"
@@ -276,8 +294,8 @@ az deployment group create \
         videoIndexerEndpointUri="$VIDEO_INDEXER_ENDPOINT_URI" \
         deepstreamNodeSelectorValue="$AZURE_DEEPSTREAM_NODE_SELECTOR_VALUE" \
         inferenceNodeSelectorValue="$AZURE_INFERENCE_NODE_SELECTOR_VALUE" \
-        inferenceAgentEnabled=$INFERENCE_AGENT_ENABLED \
-        mediaStreamerEnabled=$MEDIA_STREAMER_ENABLED
+        inferenceAgentEnabled="$INFERENCE_AGENT_ENABLED" \
+        mediaStreamerEnabled="$MEDIA_STREAMER_ENABLED"
 log_success "Video Indexer Arc extension deployed"
 
 log_info "Assigning permissions to Arc extension managed identity..."

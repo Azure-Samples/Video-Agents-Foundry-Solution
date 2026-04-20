@@ -17,8 +17,8 @@ DEFAULT_WORKLOAD_VM_SIZE="Standard_D32a_v4"
 DEFAULT_DEEPSTREAM_GPU_SIZE="Standard_NC24ads_A100_v4"
 DEFAULT_INFERENCE_GPU_SIZE="Standard_NC24ads_A100_v4"
 
-# ── VM name-prefix filters (used to split az vm list-sizes into CPU / GPU) ─
-CPU_VM_PREFIXES=("Standard_D")
+# ── VM name-prefix filters (used to split az vm list-skus into CPU / GPU) ─
+CPU_VM_PREFIXES=("Standard_D" "Standard_E" "Standard_F")
 GPU_VM_PREFIXES=("Standard_NC" "Standard_NV" "Standard_ND")
 
 # ── Recommended VM families (4 families x 3 sizes each = 12 menu items) ──

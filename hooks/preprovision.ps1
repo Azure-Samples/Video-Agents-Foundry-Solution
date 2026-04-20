@@ -75,14 +75,14 @@ if ($storageSku -eq 'Standard_ZRS') {
     Log-Info "Checking ZRS availability in $($env:AZURE_LOCATION)..."
     $zrsAvailable = $false
     try {
-        $skuInfo = (az provider show --namespace Microsoft.Storage `
-                --query "resourceTypes[?resourceType=='storageAccounts'].zoneMappings[?contains(location, '$($env:AZURE_LOCATION)')].location | [0][0]" `
+        $skuInfo = (az storage account list-skus --location $env:AZURE_LOCATION `
+                --query "[?name=='Standard_ZRS'].name | [0]" `
                 -o tsv 2>$null)
-        if ($skuInfo) { $zrsAvailable = $true }
+        if (-not [string]::IsNullOrWhiteSpace($skuInfo)) { $zrsAvailable = $true }
     }
-    catch { }
+    catch { $zrsAvailable = $false }
     if (-not $zrsAvailable) {
-        Log-Warning "Standard_ZRS may not be available in '$($env:AZURE_LOCATION)'."
+        Log-Warning "Requested Standard_ZRS is not available in '$($env:AZURE_LOCATION)'."
         Log-Warning "Falling back to Standard_LRS to avoid deployment failure."
         azd env set STORAGE_SKU_NAME Standard_LRS 2>$null
         $storageSku = 'Standard_LRS'
