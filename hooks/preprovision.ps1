@@ -41,7 +41,7 @@ if ($env:AZURE_SUBSCRIPTION_ID) {
     }
     $subName = (az account show --query "name" -o tsv 2>$null)
     Log-Success "Subscription: $subName"
-    Log-Success "ID" $env:AZURE_SUBSCRIPTION_ID
+    Log-Success "ID: $env:AZURE_SUBSCRIPTION_ID"
 }
 
 # =====================================================
@@ -75,14 +75,14 @@ if ($storageSku -eq 'Standard_ZRS') {
     Log-Info "Checking ZRS availability in $($env:AZURE_LOCATION)..."
     $zrsAvailable = $false
     try {
-        $skuInfo = (az provider show --namespace Microsoft.Storage `
-                --query "resourceTypes[?resourceType=='storageAccounts'].zoneMappings[?contains(location, '$($env:AZURE_LOCATION)')].location | [0][0]" `
+        $skuInfo = (az storage account list-skus --location $env:AZURE_LOCATION `
+                --query "[?name=='Standard_ZRS'].name | [0]" `
                 -o tsv 2>$null)
-        if ($skuInfo) { $zrsAvailable = $true }
+        if (-not [string]::IsNullOrWhiteSpace($skuInfo)) { $zrsAvailable = $true }
     }
-    catch { }
+    catch { $zrsAvailable = $false }
     if (-not $zrsAvailable) {
-        Log-Warning "Standard_ZRS may not be available in '$($env:AZURE_LOCATION)'."
+        Log-Warning "Requested Standard_ZRS is not available in '$($env:AZURE_LOCATION)'."
         Log-Warning "Falling back to Standard_LRS to avoid deployment failure."
         azd env set STORAGE_SKU_NAME Standard_LRS 2>$null
         $storageSku = 'Standard_LRS'
@@ -91,7 +91,52 @@ if ($storageSku -eq 'Standard_ZRS') {
         Log-Success "ZRS is available in $($env:AZURE_LOCATION)"
     }
 }
-Write-KeyValue "Storage SKU" $storageSku
+Write-KeyValue "STORAGE_SKU" $storageSku
+
+# ── Validate Kubernetes version against region capabilities ──────────────
+# Pin minors drift from standard support to LTS-only (e.g. 1.32 → LTS).
+# If the requested minor is not available on the standard "KubernetesOfficial"
+# support plan in this region, auto-fall back to the region's default minor.
+$requestedK8s = if ($env:KUBERNETES_VERSION) { $env:KUBERNETES_VERSION } else { '1.34' }
+$versions = Invoke-AzJson { az aks get-versions --location $env:AZURE_LOCATION -o json }
+if ($versions -and $versions.values) {
+    $standardVersions = @($versions.values | Where-Object {
+            $_.capabilities.supportPlan -contains 'KubernetesOfficial'
+        } | ForEach-Object { $_.version })
+    $defaultVersion = ($versions.values | Where-Object { $_.isDefault } | Select-Object -First 1).version
+    if ($standardVersions -notcontains $requestedK8s) {
+        if ($defaultVersion) {
+            Log-Warning "Kubernetes '$requestedK8s' is not on standard support in '$($env:AZURE_LOCATION)'."
+            Log-Warning "Falling back to region default: '$defaultVersion'."
+            [void](Invoke-AzdEnvSet -Name 'KUBERNETES_VERSION' -Value $defaultVersion)
+            $env:KUBERNETES_VERSION = $defaultVersion
+            $requestedK8s = $defaultVersion
+        }
+        else {
+            Log-Warning "Kubernetes '$requestedK8s' is not on standard support and no default could be resolved."
+        }
+    }
+    Write-KeyValue "KUBERNETES_VERSION" $requestedK8s
+}
+else {
+    Log-Warning "Could not query AKS versions in '$($env:AZURE_LOCATION)'. Proceeding with '$requestedK8s'."
+}
+
+# Persist the resolved CREATE_FOUNDRY_PROJECT value so Bicep + all downstream
+# hooks agree on the same boolean. (Bicep's default is true; the hooks default
+# to true to match. Without this step, a step that reads $env:... raw would
+# see the empty string and take the 'false' branch.)
+$resolvedFoundry = if ($CREATE_FOUNDRY_PROJECT) { 'true' } else { 'false' }
+if ($env:CREATE_FOUNDRY_PROJECT -ne $resolvedFoundry) {
+    try {
+        azd env set CREATE_FOUNDRY_PROJECT $resolvedFoundry 2>$null
+        $env:CREATE_FOUNDRY_PROJECT = $resolvedFoundry
+        Write-KeyValue "CREATE_FOUNDRY_PROJECT" $resolvedFoundry
+    }
+    catch {
+        Log-Warning "Could not persist CREATE_FOUNDRY_PROJECT via 'azd env set'."
+    }
+}
 
 # =====================================================
 # Step 4: Resolve AI Model Quota (if Foundry enabled)
@@ -124,7 +169,34 @@ if ($allVmSizes.Count -eq 0) {
     exit 1
 }
 
-Log-Success "Found $($allVmSizes.Count) VM sizes in $($env:AZURE_LOCATION)"
+$cpuCount = @($allVmSizes | Where-Object { $n = $_.Name; ($CPU_VM_PREFIXES | Where-Object { $n.StartsWith($_) }).Count -gt 0 }).Count
+$gpuCount = @($allVmSizes | Where-Object { $n = $_.Name; ($GPU_VM_PREFIXES | Where-Object { $n.StartsWith($_) }).Count -gt 0 }).Count
+Log-Success "Found VM SKUs in $($env:AZURE_LOCATION)"
+Log-Info "$cpuCount CPU + $gpuCount GPU sizes available"
+
+if ($cpuCount -eq 0 -and $gpuCount -eq 0) {
+    Log-Error "No VM sizes are available in '$($env:AZURE_LOCATION)' for this subscription."
+    Log-Info "This usually means the region has restrictive SKU policies for your subscription."
+    Log-Info "Try a different region: run 'azd env set AZURE_LOCATION <region>' and re-run 'azd up'."
+    Log-Info "Recommended regions: eastus2, westus3, southcentralus, northeurope"
+    exit 1
+}
+
+if ($cpuCount -eq 0) {
+    Log-Error "No CPU VM sizes (D/E/F-series) are available in '$($env:AZURE_LOCATION)'."
+    Log-Info "AKS requires CPU nodes for system and workload pools."
+    Log-Info "Try a different region: run 'azd env set AZURE_LOCATION <region>' and re-run 'azd up'."
+    Log-Info "Recommended regions: eastus2, westus3, southcentralus, northeurope"
+    exit 1
+}
+
+if ($gpuCount -eq 0) {
+    Log-Warning "No GPU VM sizes (NC/NV/ND-series) are available in '$($env:AZURE_LOCATION)'."
+    Log-Info "GPU pools are required for video processing. Consider a region with GPU support."
+    Log-Info "Try: run 'azd env set AZURE_LOCATION <region>' and re-run 'azd up'."
+    Log-Info "Recommended GPU regions: eastus2, westus3, southcentralus, northeurope"
+    exit 1
+}
 
 # Determine current/default values (env var overrides config default)
 $currentSystemVm     = if ($env:SYSTEM_VM_SIZE)          { $env:SYSTEM_VM_SIZE }          else { $DEFAULT_SYSTEM_VM_SIZE }
@@ -132,35 +204,44 @@ $currentWorkloadVm   = if ($env:WORKLOAD_VM_SIZE)        { $env:WORKLOAD_VM_SIZE
 $currentDeepstreamVm = if ($env:DEEPSTREAM_GPU_VM_SIZE)  { $env:DEEPSTREAM_GPU_VM_SIZE }  else { $DEFAULT_DEEPSTREAM_GPU_SIZE }
 $currentInferenceVm  = if ($env:INFERENCE_GPU_VM_SIZE)   { $env:INFERENCE_GPU_VM_SIZE }   else { $DEFAULT_INFERENCE_GPU_SIZE }
 
-# Pick recommended VM sizes per pool (4 families x 3 sizes = ~12 items each)
-$systemVmSizes   = Select-VmSizesForMenu -AllSizes $allVmSizes -Prefixes $CPU_VM_PREFIXES -RecommendedFamilies $SYSTEM_RECOMMENDED_FAMILIES   -DefaultSku $currentSystemVm     -SizesPerFamily $SIZES_PER_FAMILY -MaxCores $SYSTEM_MAX_CORES
-$workloadVmSizes = Select-VmSizesForMenu -AllSizes $allVmSizes -Prefixes $CPU_VM_PREFIXES -RecommendedFamilies $WORKLOAD_RECOMMENDED_FAMILIES -DefaultSku $currentWorkloadVm   -SizesPerFamily $SIZES_PER_FAMILY -MinCores $WORKLOAD_MIN_CORES
-$gpuVmSizes      = Select-VmSizesForMenu -AllSizes $allVmSizes -Prefixes $GPU_VM_PREFIXES -RecommendedFamilies $GPU_RECOMMENDED_FAMILIES      -DefaultSku $currentDeepstreamVm -SizesPerFamily $SIZES_PER_FAMILY
+Log-Info "Querying VM quota in region..."
+$quotaData = Get-AzVmQuotaForRegion -Location $env:AZURE_LOCATION
+if ($quotaData -and $quotaData.Keys.Count -gt 0) {
+    Log-Success "Quota data retrieved for $($quotaData.Keys.Count) VM families"
+}
+else {
+    Log-Warning "Could not retrieve VM quota data for '$($env:AZURE_LOCATION)'. Menus will show all SKUs without quota filtering."
+    $quotaData = @{}
+}
+
+# Pick recommended VM sizes per pool (4 families x 3 sizes = ~12 items each).
+# QuotaData filters out SKUs whose family can't satisfy the pool's max node count.
+$systemVmSizes   = Select-VmSizesForMenu -AllSizes $allVmSizes -Prefixes $CPU_VM_PREFIXES -RecommendedFamilies $SYSTEM_RECOMMENDED_FAMILIES   -DefaultSku $currentSystemVm     -SizesPerFamily $SIZES_PER_FAMILY -MaxCores $SYSTEM_MAX_CORES   -QuotaData $quotaData -MaxNodes $SYSTEM_MAX_NODE_COUNT
+$workloadVmSizes = Select-VmSizesForMenu -AllSizes $allVmSizes -Prefixes $CPU_VM_PREFIXES -RecommendedFamilies $WORKLOAD_RECOMMENDED_FAMILIES -DefaultSku $currentWorkloadVm   -SizesPerFamily $SIZES_PER_FAMILY -MinCores $WORKLOAD_MIN_CORES -QuotaData $quotaData -MaxNodes $WORKLOAD_MAX_NODE_COUNT
+$deepstreamVmSizes = Select-VmSizesForMenu -AllSizes $allVmSizes -Prefixes $GPU_VM_PREFIXES -RecommendedFamilies $GPU_RECOMMENDED_FAMILIES    -DefaultSku $currentDeepstreamVm -SizesPerFamily $SIZES_PER_FAMILY                              -QuotaData $quotaData -MaxNodes $DEEPSTREAM_GPU_MAX_NODE_COUNT
+$inferenceVmSizes  = Select-VmSizesForMenu -AllSizes $allVmSizes -Prefixes $GPU_VM_PREFIXES -RecommendedFamilies $GPU_RECOMMENDED_FAMILIES    -DefaultSku $currentInferenceVm  -SizesPerFamily $SIZES_PER_FAMILY                              -QuotaData $quotaData -MaxNodes $INFERENCE_GPU_MAX_NODE_COUNT
 
 # Resolve defaults — if the configured default isn't available, pick the closest match
-$currentSystemVm     = Resolve-DefaultSku -DefaultSku $currentSystemVm     -AvailableSizes $systemVmSizes   -PreferCores 4
-$currentWorkloadVm   = Resolve-DefaultSku -DefaultSku $currentWorkloadVm   -AvailableSizes $workloadVmSizes -PreferCores 32
-$currentDeepstreamVm = Resolve-DefaultSku -DefaultSku $currentDeepstreamVm -AvailableSizes $gpuVmSizes      -PreferCores 24
-$currentInferenceVm  = Resolve-DefaultSku -DefaultSku $currentInferenceVm  -AvailableSizes $gpuVmSizes      -PreferCores 24
+$currentSystemVm     = Resolve-DefaultSku -DefaultSku $currentSystemVm     -AvailableSizes $systemVmSizes     -PreferCores 4
+$currentWorkloadVm   = Resolve-DefaultSku -DefaultSku $currentWorkloadVm   -AvailableSizes $workloadVmSizes   -PreferCores 32
+$currentDeepstreamVm = Resolve-DefaultSku -DefaultSku $currentDeepstreamVm -AvailableSizes $deepstreamVmSizes -PreferCores 24
+$currentInferenceVm  = Resolve-DefaultSku -DefaultSku $currentInferenceVm  -AvailableSizes $inferenceVmSizes  -PreferCores 24
 
-Write-KeyValue "System pool"   "$($systemVmSizes.Count) sizes"
-Write-KeyValue "Workload pool" "$($workloadVmSizes.Count) sizes"
-Write-KeyValue "GPU pool"      "$($gpuVmSizes.Count) sizes"
-
-Log-Info "Querying GPU quota..."
-$quotaData = Get-AzVmQuotaForRegion -Location $env:AZURE_LOCATION
-Log-Success "GPU quota data retrieved"
+Write-KeyValue "System pool"     "$($systemVmSizes.Count) sizes (with quota)"
+Write-KeyValue "Workload pool"   "$($workloadVmSizes.Count) sizes (with quota)"
+Write-KeyValue "Deepstream pool" "$($deepstreamVmSizes.Count) sizes (with quota)"
+Write-KeyValue "Inference pool"  "$($inferenceVmSizes.Count) sizes (with quota)"
 
 Write-Section "Choose a VM SKU for each AKS node pool"
 Log-Info "The default is highlighted. Press Enter to accept, C for custom."
 
-# CPU pools (separate lists for system vs workload)
-$selectedSystem   = Show-VmSelectionMenu -PoolName "System (CPU)"   -EnvVarName "SYSTEM_VM_SIZE"   -VmSizes $systemVmSizes   -DefaultSku $currentSystemVm   -Location $env:AZURE_LOCATION
-$selectedWorkload = Show-VmSelectionMenu -PoolName "Workload (CPU)" -EnvVarName "WORKLOAD_VM_SIZE" -VmSizes $workloadVmSizes -DefaultSku $currentWorkloadVm -Location $env:AZURE_LOCATION
+# CPU pools (quota-filtered lists, node count determines total cores checked)
+$selectedSystem   = Show-VmSelectionMenu -PoolName "System (CPU)"   -EnvVarName "SYSTEM_VM_SIZE"   -VmSizes $systemVmSizes   -DefaultSku $currentSystemVm   -Location $env:AZURE_LOCATION -MaxNodes $SYSTEM_MAX_NODE_COUNT   -QuotaData $quotaData
+$selectedWorkload = Show-VmSelectionMenu -PoolName "Workload (CPU)" -EnvVarName "WORKLOAD_VM_SIZE" -VmSizes $workloadVmSizes -DefaultSku $currentWorkloadVm -Location $env:AZURE_LOCATION -MaxNodes $WORKLOAD_MAX_NODE_COUNT -QuotaData $quotaData
 
 # GPU pools (quota validated inline, node count determines total cores checked)
-$selectedDeepstream = Show-VmSelectionMenu -PoolName "Deepstream (GPU)" -EnvVarName "DEEPSTREAM_GPU_VM_SIZE" -VmSizes $gpuVmSizes -DefaultSku $currentDeepstreamVm -Location $env:AZURE_LOCATION -IsGpu -MaxNodes $DEEPSTREAM_GPU_MAX_NODE_COUNT -QuotaData $quotaData
-$selectedInference  = Show-VmSelectionMenu -PoolName "Inference (GPU)"  -EnvVarName "INFERENCE_GPU_VM_SIZE"  -VmSizes $gpuVmSizes -DefaultSku $currentInferenceVm  -Location $env:AZURE_LOCATION -IsGpu -MaxNodes $INFERENCE_GPU_MAX_NODE_COUNT  -QuotaData $quotaData
+$selectedDeepstream = Show-VmSelectionMenu -PoolName "Deepstream (GPU)" -EnvVarName "DEEPSTREAM_GPU_VM_SIZE" -VmSizes $deepstreamVmSizes -DefaultSku $currentDeepstreamVm -Location $env:AZURE_LOCATION -IsGpu -MaxNodes $DEEPSTREAM_GPU_MAX_NODE_COUNT -QuotaData $quotaData
+$selectedInference  = Show-VmSelectionMenu -PoolName "Inference (GPU)"  -EnvVarName "INFERENCE_GPU_VM_SIZE"  -VmSizes $inferenceVmSizes  -DefaultSku $currentInferenceVm  -Location $env:AZURE_LOCATION -IsGpu -MaxNodes $INFERENCE_GPU_MAX_NODE_COUNT  -QuotaData $quotaData
 
 # Update script-scope variables for downstream consumers
 $DEEPSTREAM_GPU_VM_SIZE = $selectedDeepstream.Sku

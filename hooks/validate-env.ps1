@@ -36,7 +36,7 @@ Test-EnvVarFormat -VarName "AZURE_SUBSCRIPTION_ID" -Pattern $uuidPattern -Exampl
 Test-EnvVarFormat -VarName "AZURE_PRINCIPAL_ID" -Pattern $uuidPattern -Example "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 
 # ── VM sizes must start with Standard_ ────────────────────────────────────
-$vmPattern = '^Standard_\w+'
+$vmPattern = '^Standard_[A-Za-z0-9_]+$'
 Test-EnvVarFormat -VarName "SYSTEM_VM_SIZE" -Pattern $vmPattern -Example "Standard_D4a_v4"
 Test-EnvVarFormat -VarName "WORKLOAD_VM_SIZE" -Pattern $vmPattern -Example "Standard_D32a_v4"
 Test-EnvVarFormat -VarName "DEEPSTREAM_GPU_VM_SIZE" -Pattern $vmPattern -Example "Standard_NC24ads_A100_v4"
@@ -53,7 +53,7 @@ $skuPattern = '^Standard_(LRS|ZRS|GRS)$'
 Test-EnvVarFormat -VarName "STORAGE_SKU_NAME" -Pattern $skuPattern -Example "Standard_LRS, Standard_ZRS, or Standard_GRS"
 
 # ── Location must be non-empty if set ──────────────────────────────────────
-$locationPattern = '^[a-z0-9]+$'
+$locationPattern = '^[a-z0-9]+(-[a-z0-9]+)*$'
 Test-EnvVarFormat -VarName "AZURE_LOCATION" -Pattern $locationPattern -Example "eastus2"
 
 if ($hasError) {

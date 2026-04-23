@@ -109,6 +109,12 @@ log_info() {
     _write_log_message "$1" "$SYM_INFO" "$C_ACCENT"
 }
 
+# Character count (not byte count) — safe for UTF-8 glyphs like symbols.
+# Use this instead of ${#var} when computing display widths.
+_str_len() {
+    printf '%s' "$1" | wc -m | tr -d ' '
+}
+
 log_success() {
     _write_log_message "$1" "$SYM_SUCCESS" "$C_SUCCESS" "$C_SUCCESS"
 }
@@ -128,7 +134,7 @@ log_step() {
 
     # Divider length matches the title line above (min 40)
     local header_text="${SYM_STEP}  [${number}/${total}]  ${title}"
-    local divider_len=${#header_text}
+    local divider_len; divider_len=$(_str_len "$header_text")
     [ "$divider_len" -lt 40 ] && divider_len=40
 
     local rule=""
@@ -169,7 +175,7 @@ write_box_banner() {
     local spaces; spaces=$(_repeat_char " " "$inner_width")
 
     # Centered title
-    local text_len=${#text}
+    local text_len; text_len=$(_str_len "$text")
     local left_pad=$(( (inner_width - text_len) / 2 ))
     local right_pad=$(( inner_width - text_len - left_pad ))
     local left_spaces; left_spaces=$(_repeat_char " " "$left_pad")
@@ -182,7 +188,7 @@ write_box_banner() {
         "$color" "$right_spaces" "$v" "$C_RESET"
 
     if [ -n "$subtitle" ]; then
-        local sub_len=${#subtitle}
+        local sub_len; sub_len=$(_str_len "$subtitle")
         local sub_left=$(( (inner_width - sub_len) / 2 ))
         local sub_right=$(( inner_width - sub_len - sub_left ))
         local sub_left_sp; sub_left_sp=$(_repeat_char " " "$sub_left")
@@ -231,7 +237,7 @@ write_foundry_banner() {
 
 write_title() {
     local text="$1"
-    local text_len=${#text}
+    local text_len; text_len=$(_str_len "$text")
     local rule; rule=$(_repeat_char "$SYM_HLINE" "$((text_len + 4))")
     printf "\n  %b%s%b\n" "$C_BOLD_WHITE" "$text" "$C_RESET"
     printf "  %b%s%b\n" "$C_ACCENT_DIM" "$rule" "$C_RESET"

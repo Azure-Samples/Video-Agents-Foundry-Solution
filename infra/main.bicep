@@ -23,7 +23,7 @@ param principalId string = ''
 param createRoleForUser bool
 
 @description('Whether to create a Foundry project and link it to the VI extension')
-param createFoundryProject bool
+param createFoundryProject bool = true
 
 @description('Model name to deploy in AI Foundry')
 param aiModelName string

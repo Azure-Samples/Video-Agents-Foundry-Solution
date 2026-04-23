@@ -4,8 +4,7 @@
 # Pre-Provision Script: Validate prerequisites before provisioning
 # =============================================================================
 
-set -e
-
+set -eo pipefail
 source "$(dirname "$0")/common.sh"
 
 TOTAL_STEPS=6
@@ -17,14 +16,14 @@ write_foundry_banner "Pre-Provision Validation"
 # =====================================================
 log_step 1 $TOTAL_STEPS "Checking Azure CLI Authentication"
 
-ACCOUNT_INFO=$(az account show --query "{name:name, id:id}" -o tsv 2>/dev/null || true)
+ACCOUNT_INFO=$(az account show --query "{name:name, id:id}" -o tsv 2>/dev/null | tr -d '\r' || true)
 
 if [ -z "$ACCOUNT_INFO" ]; then
     log_error "Not logged in to Azure CLI. Run 'az login' before provisioning."
     exit 1
 fi
 
-ACCOUNT_NAME=$(az account show --query "name" -o tsv 2>/dev/null)
+ACCOUNT_NAME=$(az account show --query "name" -o tsv 2>/dev/null | tr -d '\r')
 log_success "Signed in to account: ${ACCOUNT_NAME}"
 
 if [ -n "${AZURE_SUBSCRIPTION_ID:-}" ]; then
@@ -33,9 +32,9 @@ if [ -n "${AZURE_SUBSCRIPTION_ID:-}" ]; then
         log_info "Verify the subscription ID and your access permissions."
         exit 1
     }
-    SUB_NAME=$(az account show --query "name" -o tsv 2>/dev/null)
+    SUB_NAME=$(az account show --query "name" -o tsv 2>/dev/null | tr -d '\r')
     log_success "Subscription: ${SUB_NAME}"
-    write_key_value "ID" "$AZURE_SUBSCRIPTION_ID"
+    log_success "ID ${AZURE_SUBSCRIPTION_ID}"
 fi
 
 # =====================================================
@@ -51,7 +50,7 @@ assert_cli_tools az helm kubectl -- kubelogin jq
 log_step 3 $TOTAL_STEPS "Validating Environment Variables"
 
 for var in AZURE_SUBSCRIPTION_ID AZURE_LOCATION AZURE_ENV_NAME; do
-    eval val=\$$var 2>/dev/null || val=""
+    val="${!var:-}"
     if [ -z "$val" ]; then
         write_health_row "$var" "Fail" "not set"
     else
@@ -65,11 +64,11 @@ assert_env_vars AZURE_SUBSCRIPTION_ID AZURE_LOCATION AZURE_ENV_NAME
 STORAGE_SKU="${STORAGE_SKU_NAME:-Standard_LRS}"
 if [ "$STORAGE_SKU" = "Standard_ZRS" ]; then
     log_info "Checking ZRS availability in ${AZURE_LOCATION}..."
-    ZRS_AVAILABLE=$(az provider show --namespace Microsoft.Storage \
-        --query "resourceTypes[?resourceType=='storageAccounts'].zoneMappings[?contains(location, '${AZURE_LOCATION}')].location | [0][0]" \
-        -o tsv 2>/dev/null || true)
+    ZRS_AVAILABLE=$(az storage account list-skus --location "$AZURE_LOCATION" \
+        --query "[?name=='Standard_ZRS'].name | [0]" \
+        -o tsv 2>/dev/null | tr -d '\r' || true)
     if [ -z "$ZRS_AVAILABLE" ]; then
-        log_warning "Standard_ZRS may not be available in '${AZURE_LOCATION}'."
+        log_warning "Requested Standard_ZRS is not available in '${AZURE_LOCATION}'."
         log_warning "Falling back to Standard_LRS to avoid deployment failure."
         azd env set STORAGE_SKU_NAME Standard_LRS 2>/dev/null || true
         STORAGE_SKU="Standard_LRS"
@@ -77,7 +76,42 @@ if [ "$STORAGE_SKU" = "Standard_ZRS" ]; then
         log_success "ZRS is available in ${AZURE_LOCATION}"
     fi
 fi
-write_key_value "Storage SKU" "$STORAGE_SKU"
+write_key_value "STORAGE_SKU" "$STORAGE_SKU"
+
+# ── Validate Kubernetes version against region capabilities ──────────────
+# Pin minors drift from standard support to LTS-only (e.g. 1.32 → LTS).
+# If the requested minor is not available on the standard "KubernetesOfficial"
+# support plan in this region, auto-fall back to the region's default minor.
+REQUESTED_K8S="${KUBERNETES_VERSION:-1.34}"
+K8S_VERSIONS_JSON=$(az aks get-versions --location "$AZURE_LOCATION" -o json 2>/dev/null || true)
+if [ -n "$K8S_VERSIONS_JSON" ] && command -v jq >/dev/null 2>&1; then
+    K8S_STANDARD=$(echo "$K8S_VERSIONS_JSON" | jq -r '.values[] | select(.capabilities.supportPlan | contains(["KubernetesOfficial"])) | .version' 2>/dev/null || true)
+    K8S_DEFAULT=$(echo "$K8S_VERSIONS_JSON" | jq -r '.values[] | select(.isDefault==true) | .version' 2>/dev/null | head -n1)
+    if ! echo "$K8S_STANDARD" | grep -qx "$REQUESTED_K8S"; then
+        if [ -n "$K8S_DEFAULT" ]; then
+            log_warning "Kubernetes '${REQUESTED_K8S}' is not on standard support in '${AZURE_LOCATION}'."
+            log_warning "Falling back to region default: '${K8S_DEFAULT}'."
+            azd_env_set KUBERNETES_VERSION "$K8S_DEFAULT" || true
+            export KUBERNETES_VERSION="$K8S_DEFAULT"
+            REQUESTED_K8S="$K8S_DEFAULT"
+        else
+            log_warning "Kubernetes '${REQUESTED_K8S}' is not on standard support and no default could be resolved."
+        fi
+    fi
+    write_key_value "KUBERNETES_VERSION" "$REQUESTED_K8S"
+else
+    log_warning "Could not query AKS versions in '${AZURE_LOCATION}'. Proceeding with '${REQUESTED_K8S}'."
+fi
+
+# Persist the resolved CREATE_FOUNDRY_PROJECT value so Bicep + all downstream
+# hooks agree on the same boolean. (Bicep's default is true; the hooks default
+# to true to match.)
+if azd env set CREATE_FOUNDRY_PROJECT "$CREATE_FOUNDRY_PROJECT" 2>/dev/null; then
+    export CREATE_FOUNDRY_PROJECT
+    write_key_value "CREATE_FOUNDRY_PROJECT" $CREATE_FOUNDRY_PROJECT
+else
+    log_warning "Could not persist CREATE_FOUNDRY_PROJECT via 'azd env set'."
+fi
 
 # =====================================================
 # Step 4: Resolve AI Model Quota (if Foundry enabled)
@@ -113,35 +147,74 @@ log_success "Found VM SKUs in ${AZURE_LOCATION}"
 
 log_info "${#ALL_CPU_VMS[@]} CPU + ${#ALL_GPU_VMS[@]} GPU sizes available"
 
+if [ "${#ALL_CPU_VMS[@]}" -eq 0 ] && [ "${#ALL_GPU_VMS[@]}" -eq 0 ]; then
+    log_error "No VM sizes are available in '${AZURE_LOCATION}' for this subscription."
+    log_info "This usually means the region has restrictive SKU policies for your subscription."
+    log_info "Try a different region: run 'azd env set AZURE_LOCATION <region>' and re-run 'azd up'."
+    log_info "Recommended regions: eastus2, westus3, southcentralus, northeurope"
+    exit 1
+fi
+
+if [ "${#ALL_CPU_VMS[@]}" -eq 0 ]; then
+    log_error "No CPU VM sizes (D/E/F-series) are available in '${AZURE_LOCATION}'."
+    log_info "AKS requires CPU nodes for system and workload pools."
+    log_info "Try a different region: run 'azd env set AZURE_LOCATION <region>' and re-run 'azd up'."
+    log_info "Recommended regions: eastus2, westus3, southcentralus, northeurope"
+    exit 1
+fi
+
+if [ "${#ALL_GPU_VMS[@]}" -eq 0 ]; then
+    log_warning "No GPU VM sizes (NC/NV/ND-series) are available in '${AZURE_LOCATION}'."
+    log_info "GPU pools are required for video processing. Consider a region with GPU support."
+    log_info "Try: run 'azd env set AZURE_LOCATION <region>' and re-run 'azd up'."
+    log_info "Recommended GPU regions: eastus2, westus3, southcentralus, northeurope"
+    exit 1
+fi
+
+log_info "Querying VM quota in region..."
+if fetch_vm_quota_map "$AZURE_LOCATION"; then
+    log_success "Quota data retrieved for ${VM_QUOTA_MAP_COUNT} VM families"
+else
+    log_warning "Could not retrieve VM quota data; menus will show all SKUs."
+fi
+
 select_vm_sizes_for_menu ALL_CPU_VMS SYSTEM_VMS   SYSTEM_RECOMMENDED_FAMILIES   "$CURRENT_SYSTEM_VM"     "$SIZES_PER_FAMILY" 0 "$SYSTEM_MAX_CORES"
 select_vm_sizes_for_menu ALL_CPU_VMS WORKLOAD_VMS WORKLOAD_RECOMMENDED_FAMILIES "$CURRENT_WORKLOAD_VM"   "$SIZES_PER_FAMILY" "$WORKLOAD_MIN_CORES"
-select_vm_sizes_for_menu ALL_GPU_VMS GPU_VMS      GPU_RECOMMENDED_FAMILIES      "$CURRENT_DEEPSTREAM_VM" "$SIZES_PER_FAMILY"
+select_vm_sizes_for_menu ALL_GPU_VMS DEEPSTREAM_VMS GPU_RECOMMENDED_FAMILIES    "$CURRENT_DEEPSTREAM_VM" "$SIZES_PER_FAMILY"
+select_vm_sizes_for_menu ALL_GPU_VMS INFERENCE_VMS  GPU_RECOMMENDED_FAMILIES    "$CURRENT_INFERENCE_VM"  "$SIZES_PER_FAMILY"
+
+# Annotate + filter by quota using each pool's max node count.
+annotate_vm_sizes_with_quota SYSTEM_VMS     "$CURRENT_SYSTEM_VM"     "$SYSTEM_MAX_NODE_COUNT"
+annotate_vm_sizes_with_quota WORKLOAD_VMS   "$CURRENT_WORKLOAD_VM"   "$WORKLOAD_MAX_NODE_COUNT"
+annotate_vm_sizes_with_quota DEEPSTREAM_VMS "$CURRENT_DEEPSTREAM_VM" "$DEEPSTREAM_GPU_MAX_NODE_COUNT"
+annotate_vm_sizes_with_quota INFERENCE_VMS  "$CURRENT_INFERENCE_VM"  "$INFERENCE_GPU_MAX_NODE_COUNT"
 
 # Resolve defaults — if the configured default isn't available, pick the closest match
 CURRENT_SYSTEM_VM=$(resolve_default_sku "$CURRENT_SYSTEM_VM" SYSTEM_VMS 4)
 CURRENT_WORKLOAD_VM=$(resolve_default_sku "$CURRENT_WORKLOAD_VM" WORKLOAD_VMS 32)
-CURRENT_DEEPSTREAM_VM=$(resolve_default_sku "$CURRENT_DEEPSTREAM_VM" GPU_VMS 24)
-CURRENT_INFERENCE_VM=$(resolve_default_sku "$CURRENT_INFERENCE_VM" GPU_VMS 24)
+CURRENT_DEEPSTREAM_VM=$(resolve_default_sku "$CURRENT_DEEPSTREAM_VM" DEEPSTREAM_VMS 24)
+CURRENT_INFERENCE_VM=$(resolve_default_sku "$CURRENT_INFERENCE_VM" INFERENCE_VMS 24)
 
-write_key_value "System pool"   "${#SYSTEM_VMS[@]} sizes"
-write_key_value "Workload pool" "${#WORKLOAD_VMS[@]} sizes"
-write_key_value "GPU pool"      "${#GPU_VMS[@]} sizes"
+write_key_value "System pool"     "${#SYSTEM_VMS[@]} sizes (with quota)"
+write_key_value "Workload pool"   "${#WORKLOAD_VMS[@]} sizes (with quota)"
+write_key_value "Deepstream pool" "${#DEEPSTREAM_VMS[@]} sizes (with quota)"
+write_key_value "Inference pool"  "${#INFERENCE_VMS[@]} sizes (with quota)"
 
 write_section "Choose a VM SKU for each AKS node pool"
 log_info "The default is highlighted. Press Enter to accept, C for custom."
 
-# CPU pools (separate lists for system vs workload)
-show_vm_selection_menu "System (CPU)"   "SYSTEM_VM_SIZE"   SYSTEM_VMS   "$CURRENT_SYSTEM_VM"   "$AZURE_LOCATION"
+# CPU pools (quota-filtered lists, node count determines total cores checked)
+show_vm_selection_menu "System (CPU)"   "SYSTEM_VM_SIZE"   SYSTEM_VMS   "$CURRENT_SYSTEM_VM"   "$AZURE_LOCATION" "$SYSTEM_MAX_NODE_COUNT"
 SYSTEM_SKU="$SELECTED_VM_SKU"
 
-show_vm_selection_menu "Workload (CPU)" "WORKLOAD_VM_SIZE" WORKLOAD_VMS "$CURRENT_WORKLOAD_VM" "$AZURE_LOCATION"
+show_vm_selection_menu "Workload (CPU)" "WORKLOAD_VM_SIZE" WORKLOAD_VMS "$CURRENT_WORKLOAD_VM" "$AZURE_LOCATION" "$WORKLOAD_MAX_NODE_COUNT"
 WORKLOAD_SKU="$SELECTED_VM_SKU"
 
 # GPU pools (quota validated inline, node count determines total cores checked)
-show_vm_selection_menu "Deepstream (GPU)" "DEEPSTREAM_GPU_VM_SIZE" GPU_VMS "$CURRENT_DEEPSTREAM_VM" "$AZURE_LOCATION" "$DEEPSTREAM_GPU_MAX_NODE_COUNT" "gpu"
+show_vm_selection_menu "Deepstream (GPU)" "DEEPSTREAM_GPU_VM_SIZE" DEEPSTREAM_VMS "$CURRENT_DEEPSTREAM_VM" "$AZURE_LOCATION" "$DEEPSTREAM_GPU_MAX_NODE_COUNT" "gpu"
 DEEPSTREAM_GPU_VM_SIZE="$SELECTED_VM_SKU"
 
-show_vm_selection_menu "Inference (GPU)" "INFERENCE_GPU_VM_SIZE" GPU_VMS "$CURRENT_INFERENCE_VM" "$AZURE_LOCATION" "$INFERENCE_GPU_MAX_NODE_COUNT" "gpu"
+show_vm_selection_menu "Inference (GPU)" "INFERENCE_GPU_VM_SIZE" INFERENCE_VMS "$CURRENT_INFERENCE_VM" "$AZURE_LOCATION" "$INFERENCE_GPU_MAX_NODE_COUNT" "gpu"
 INFERENCE_GPU_VM_SIZE="$SELECTED_VM_SKU"
 
 # =====================================================

@@ -18,7 +18,7 @@
       "value": "${CREATE_ROLE_FOR_USER=true}"
     },
     "kubernetesVersion": {
-      "value": "${KUBERNETES_VERSION=1.32}"
+      "value": "${KUBERNETES_VERSION=1.34}"
     },
     "systemVmSize": {
       "value": "${SYSTEM_VM_SIZE=Standard_D4a_v4}"
