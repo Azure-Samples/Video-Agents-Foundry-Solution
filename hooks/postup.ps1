@@ -64,7 +64,7 @@ if ($HasClusterAccess) {
     $HealthResults += @{ Name = "Cluster nodes"; Status = $nodeStatus; Detail = $nodeDetail }
 
     try {
-        $gpuNodes = (kubectl --context $KubeContext get nodes -l "accelerator=nvidia" --no-headers 2>$null | Measure-Object -Line).Lines
+        $gpuNodes = (kubectl --context $KubeContext get nodes -l "nvidia.com/gpu.present=true" --no-headers 2>$null | Measure-Object -Line).Lines
         if ($gpuNodes -gt 0) {
             $gpuNodeStatus = "Pass"
             $gpuNodeDetail = "$gpuNodes detected"

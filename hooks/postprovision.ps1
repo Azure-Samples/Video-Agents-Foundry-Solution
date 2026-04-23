@@ -11,6 +11,8 @@ $totalSteps = 12
 Write-FoundryBanner -Phase "Post-Provision Setup"
 
 if ($env:CREATE_IN_LOCAL -eq "false") {
+    # CREATE_IN_LOCAL=false is set by CI workflows that provision infra via
+    # dedicated pipelines and do not want the local azd hook to run.
     Log-Info "Skipping postprovision script for non-local deployment."
     exit 0
 }
@@ -36,7 +38,7 @@ Assert-EnvVars @(
 # Ensure required Azure CLI extensions are installed
 # =====================================================
 foreach ($ext in @('connectedk8s', 'k8s-extension')) {
-    $installed = az extension show --name $ext 2>$null | ConvertFrom-Json -ErrorAction SilentlyContinue
+    $installed = Invoke-AzJson { az extension show --name $ext }
     if (-not $installed) {
         Log-Info "Installing Azure CLI extension: $ext..."
         az extension add --name $ext --yes 2>$null
@@ -49,9 +51,9 @@ foreach ($ext in @('connectedk8s', 'k8s-extension')) {
 # =====================================================
 # Authenticate and set subscription
 # =====================================================
-$EXPIRED_TOKEN = (az ad signed-in-user show --query 'id' -o tsv 2>$null)
+$SIGNED_IN_USER_ID = (az ad signed-in-user show --query 'id' -o tsv 2>$null)
 
-if (-not $EXPIRED_TOKEN) {
+if (-not $SIGNED_IN_USER_ID) {
     Log-Warning "No Azure user signed in. Please login."
     az login -o none
 }
@@ -96,7 +98,10 @@ Log-Success "NVIDIA GPU Operator installed"
 # Step 3: Connect AKS to Azure Arc
 # =====================================================
 $ARC_CLUSTER_NAME = "${ARC_CLUSTER_PREFIX}$env:AZURE_AKS_CLUSTER_NAME"
-# Defensive clamp: Azure Arc cluster names must be <= 63 chars
+# Azure Arc cluster name rules: lowercase alnum + hyphen, no leading/trailing hyphen, <=63 chars
+$ARC_CLUSTER_NAME = $ARC_CLUSTER_NAME.ToLower() -replace '[^a-z0-9-]', '-'
+$ARC_CLUSTER_NAME = $ARC_CLUSTER_NAME -replace '-+', '-'
+$ARC_CLUSTER_NAME = $ARC_CLUSTER_NAME.Trim('-')
 if ($ARC_CLUSTER_NAME.Length -gt 63) {
     $ARC_CLUSTER_NAME = $ARC_CLUSTER_NAME.Substring(0, 63).TrimEnd('-')
 }
@@ -129,7 +134,7 @@ else {
 }
 
 # Save the Arc cluster name to azd env
-azd env set AZURE_ARC_CLUSTER_NAME "$ARC_CLUSTER_NAME"
+[void](Invoke-AzdEnvSet -Name 'AZURE_ARC_CLUSTER_NAME' -Value "$ARC_CLUSTER_NAME")
 
 # =====================================================
 # Step 4: Create Public IP and construct Endpoint URI
@@ -147,7 +152,16 @@ if ($env:AZURE_DNS_LABEL) {
     Log-Info "Reusing existing DNS label: $DNS_LABEL"
 }
 else {
-    $RANDOM_SUFFIX = Get-Random -Minimum 100 -Maximum 1000
+    # Deterministic 5-digit suffix derived from env + location + subscription.
+    # Same inputs always produce same DNS label (idempotent) while collision
+    # space is 10^5 (vs 900 for the prior Get-Random 100..999).
+    $dnsHashInput = "$($env:AZURE_ENV_NAME)|$($env:AZURE_LOCATION)|$($env:AZURE_SUBSCRIPTION_ID)"
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    $bytes = $sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($dnsHashInput))
+    $sha.Dispose()
+    # Take first 4 bytes as uint32, mod 100000 for a 5-digit decimal suffix
+    $uint = [System.BitConverter]::ToUInt32($bytes, 0)
+    $RANDOM_SUFFIX = ('{0:D5}' -f ($uint % 100000))
     $DNS_LABEL = "$($env:AZURE_ENV_NAME)$RANDOM_SUFFIX"
     Log-Info "Generated DNS label: $DNS_LABEL"
 }
@@ -192,9 +206,9 @@ $VIDEO_INDEXER_ENDPOINT_URI = "https://${DNS_LABEL}.$($env:AZURE_LOCATION).cloud
 Write-KeyValue "Endpoint URI" $VIDEO_INDEXER_ENDPOINT_URI
 
 # Persist to azd env
-azd env set AZURE_DNS_LABEL "$DNS_LABEL"
-azd env set AZURE_STATIC_IP "$STATIC_IP"
-azd env set AZURE_VIDEO_INDEXER_ENDPOINT_URI "$VIDEO_INDEXER_ENDPOINT_URI"
+[void](Invoke-AzdEnvSet -Name 'AZURE_DNS_LABEL' -Value "$DNS_LABEL")
+[void](Invoke-AzdEnvSet -Name 'AZURE_STATIC_IP' -Value "$STATIC_IP")
+[void](Invoke-AzdEnvSet -Name 'AZURE_VIDEO_INDEXER_ENDPOINT_URI' -Value "$VIDEO_INDEXER_ENDPOINT_URI")
 
 # =====================================================
 # Step 5: Enable App Routing (HTTP only)
@@ -294,7 +308,9 @@ Log-Success "Cert Manager extension deployed"
 # =====================================================
 Log-Step -Number 9 -Total $totalSteps -Title "Deploying Video Indexer Arc Extension"
 
-$inferenceAgentEnabled = if ($env:CREATE_FOUNDRY_PROJECT -eq 'true') { 'false' } else { 'true' }
+# Normalize to true by default; only explicit "false" disables Foundry.
+$createFoundry = if ($env:CREATE_FOUNDRY_PROJECT -eq 'false') { 'false' } else { 'true' }
+$inferenceAgentEnabled = if ($createFoundry -eq 'false') { 'true' } else { 'false' }
 $mediaStreamerEnabled = if ($env:MEDIA_STREAMER_ENABLED -eq 'false') { 'false' } else { 'true' }
 
 Log-Info "Deploying VI Arc extension (this may take several minutes)..."
@@ -308,8 +324,8 @@ az deployment group create `
     videoIndexerEndpointUri="$VIDEO_INDEXER_ENDPOINT_URI" `
     deepstreamNodeSelectorValue="$env:AZURE_DEEPSTREAM_NODE_SELECTOR_VALUE" `
     inferenceNodeSelectorValue="$env:AZURE_INFERENCE_NODE_SELECTOR_VALUE" `
-    inferenceAgentEnabled=$inferenceAgentEnabled `
-    mediaStreamerEnabled=$mediaStreamerEnabled
+    inferenceAgentEnabled="$inferenceAgentEnabled" `
+    mediaStreamerEnabled="$mediaStreamerEnabled"
 Log-Success "Video Indexer Arc extension deployed"
 
 

@@ -4,8 +4,7 @@
 # Post-Provision Script: Connect AKS to Azure Arc and deploy VI extension
 # =============================================================================
 
-set -e
-
+set -eo pipefail
 source "$(dirname "$0")/common.sh"
 
 TOTAL_STEPS=12
@@ -13,6 +12,8 @@ TOTAL_STEPS=12
 write_foundry_banner "Post-Provision Setup"
 
 if [ "$CREATE_IN_LOCAL" = "false" ]; then
+    # CREATE_IN_LOCAL=false is set by CI workflows that provision infra via
+    # dedicated pipelines and do not want the local azd hook to run.
     log_info "Skipping postprovision script for non-local deployment."
     exit 0
 fi
@@ -43,9 +44,9 @@ done
 # =====================================================
 # Authenticate and set subscription
 # =====================================================
-EXPIRED_TOKEN=$(az ad signed-in-user show --query 'id' -o tsv 2>/dev/null || true)
+SIGNED_IN_USER_ID=$(az ad signed-in-user show --query 'id' -o tsv 2>/dev/null | tr -d '\r' || true)
 
-if [ -z "$EXPIRED_TOKEN" ]; then
+if [ -z "$SIGNED_IN_USER_ID" ]; then
     log_warning "No Azure user signed in. Please login."
     az login -o none
 fi
@@ -90,9 +91,12 @@ log_success "NVIDIA GPU Operator installed"
 # Step 3: Connect AKS to Azure Arc
 # =====================================================
 ARC_CLUSTER_NAME="${ARC_CLUSTER_PREFIX}${AZURE_AKS_CLUSTER_NAME}"
-# Defensive clamp: Azure Arc cluster names must be <= 63 chars
+# Azure Arc cluster name rules: lowercase alnum + hyphen, no leading/trailing hyphen, <=63 chars
+ARC_CLUSTER_NAME=$(echo "$ARC_CLUSTER_NAME" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9-' '-')
+ARC_CLUSTER_NAME=$(echo "$ARC_CLUSTER_NAME" | sed -E 's/-+/-/g; s/^-+//; s/-+$//')
 if [ ${#ARC_CLUSTER_NAME} -gt 63 ]; then
-    ARC_CLUSTER_NAME=$(echo "${ARC_CLUSTER_NAME:0:63}" | sed 's/-$//')
+    ARC_CLUSTER_NAME="${ARC_CLUSTER_NAME:0:63}"
+    ARC_CLUSTER_NAME=$(echo "$ARC_CLUSTER_NAME" | sed -E 's/-+$//')
 fi
 log_step 3 $TOTAL_STEPS "Connecting AKS to Azure Arc"
 
@@ -102,7 +106,7 @@ write_key_value "Arc cluster name" "$ARC_CLUSTER_NAME"
 ARC_EXISTS=$(az connectedk8s show \
     --name "$ARC_CLUSTER_NAME" \
     --resource-group "$AZURE_RESOURCE_GROUP" \
-    --query "name" -o tsv 2>/dev/null || true)
+    --query "name" -o tsv 2>/dev/null | tr -d '\r' || true)
 
 if [ -n "$ARC_EXISTS" ]; then
     log_success "Arc-connected cluster already exists. Skipping."
@@ -116,7 +120,7 @@ else
 fi
 
 # Save the Arc cluster name to azd env
-azd env set AZURE_ARC_CLUSTER_NAME "$ARC_CLUSTER_NAME"
+azd_env_set AZURE_ARC_CLUSTER_NAME "$ARC_CLUSTER_NAME" || true
 
 # =====================================================
 # Step 4: Create Public IP and construct Endpoint URI
@@ -133,7 +137,18 @@ if [ -n "$AZURE_DNS_LABEL" ]; then
     DNS_LABEL="$AZURE_DNS_LABEL"
     log_info "Reusing existing DNS label: $DNS_LABEL"
 else
-    RANDOM_SUFFIX=$((RANDOM % 900 + 100))
+    # Deterministic 5-digit suffix derived from env + location + subscription.
+    # Same inputs always produce same DNS label (idempotent) while collision
+    # space is 10^5 (vs 900 for the prior RANDOM % 900 + 100).
+    DNS_HASH_INPUT="${AZURE_ENV_NAME}|${AZURE_LOCATION}|${AZURE_SUBSCRIPTION_ID:-}"
+    if command -v sha256sum >/dev/null 2>&1; then
+        DNS_HASH=$(printf '%s' "$DNS_HASH_INPUT" | sha256sum | cut -c1-10)
+    else
+        DNS_HASH=$(printf '%s' "$DNS_HASH_INPUT" | shasum -a 256 | cut -c1-10)
+    fi
+    # Convert hex slice to decimal and take 5 digits
+    RANDOM_SUFFIX=$(printf '%d' "0x${DNS_HASH}" 2>/dev/null | tr -dc '0-9' | head -c 5)
+    RANDOM_SUFFIX=${RANDOM_SUFFIX:-00000}
     DNS_LABEL="${AZURE_ENV_NAME}${RANDOM_SUFFIX}"
     log_info "Generated DNS label: $DNS_LABEL"
 fi
@@ -144,7 +159,7 @@ PUBLIC_IP_NAME="${AZURE_ENV_NAME}-inbound-ip"
 PUBLIC_IP_EXISTS=$(az network public-ip show \
     --resource-group "$AKS_MC_RG" \
     --name "$PUBLIC_IP_NAME" \
-    --query "name" -o tsv 2>/dev/null || true)
+    --query "name" -o tsv 2>/dev/null | tr -d '\r' || true)
 
 if [ -n "$PUBLIC_IP_EXISTS" ]; then
     log_success "Public IP '$PUBLIC_IP_NAME' already exists. Skipping."
@@ -163,7 +178,7 @@ fi
 STATIC_IP=$(az network public-ip show \
     --resource-group "$AKS_MC_RG" \
     --name "$PUBLIC_IP_NAME" \
-    --query "ipAddress" -o tsv)
+    --query "ipAddress" -o tsv | tr -d '\r')
 
 write_key_value "Static IP" "$STATIC_IP"
 
@@ -171,9 +186,9 @@ VIDEO_INDEXER_ENDPOINT_URI="https://${DNS_LABEL}.${AZURE_LOCATION}.cloudapp.azur
 write_key_value "Endpoint URI" "$VIDEO_INDEXER_ENDPOINT_URI"
 
 # Persist to azd env
-azd env set AZURE_DNS_LABEL "${DNS_LABEL}"
-azd env set AZURE_STATIC_IP "${STATIC_IP}"
-azd env set AZURE_VIDEO_INDEXER_ENDPOINT_URI "${VIDEO_INDEXER_ENDPOINT_URI}"
+azd_env_set AZURE_DNS_LABEL "${DNS_LABEL}" || true
+azd_env_set AZURE_STATIC_IP "${STATIC_IP}" || true
+azd_env_set AZURE_VIDEO_INDEXER_ENDPOINT_URI "${VIDEO_INDEXER_ENDPOINT_URI}" || true
 
 # =====================================================
 # Step 5: Enable App Routing (HTTP only)
@@ -183,7 +198,7 @@ log_step 5 $TOTAL_STEPS "Enabling App Routing on AKS Cluster"
 APPROUTING_ENABLED=$(az aks show \
     --resource-group "$AZURE_RESOURCE_GROUP" \
     --name "$AZURE_AKS_CLUSTER_NAME" \
-    --query "ingressProfile.webAppRouting.enabled" -o tsv 2>/dev/null || true)
+    --query "ingressProfile.webAppRouting.enabled" -o tsv 2>/dev/null | tr -d '\r' || true)
 
 if [ "$APPROUTING_ENABLED" = "true" ]; then
     log_success "App Routing already enabled. Skipping."
@@ -258,10 +273,12 @@ log_success "Cert Manager extension deployed"
 # =====================================================
 log_step 9 $TOTAL_STEPS "Deploying Video Indexer Arc Extension"
 
-if [ "$CREATE_FOUNDRY_PROJECT" = "true" ]; then
-    INFERENCE_AGENT_ENABLED="false"
-else
+# Normalize to true by default; only explicit "false" disables Foundry.
+CREATE_FOUNDRY_PROJECT="${CREATE_FOUNDRY_PROJECT:-true}"
+if [ "$CREATE_FOUNDRY_PROJECT" = "false" ]; then
     INFERENCE_AGENT_ENABLED="true"
+else
+    INFERENCE_AGENT_ENABLED="false"
 fi
 
 MEDIA_STREAMER_ENABLED="${MEDIA_STREAMER_ENABLED:-true}"
@@ -277,8 +294,8 @@ az deployment group create \
         videoIndexerEndpointUri="$VIDEO_INDEXER_ENDPOINT_URI" \
         deepstreamNodeSelectorValue="$AZURE_DEEPSTREAM_NODE_SELECTOR_VALUE" \
         inferenceNodeSelectorValue="$AZURE_INFERENCE_NODE_SELECTOR_VALUE" \
-        inferenceAgentEnabled=$INFERENCE_AGENT_ENABLED \
-        mediaStreamerEnabled=$MEDIA_STREAMER_ENABLED
+        inferenceAgentEnabled="$INFERENCE_AGENT_ENABLED" \
+        mediaStreamerEnabled="$MEDIA_STREAMER_ENABLED"
 log_success "Video Indexer Arc extension deployed"
 
 log_info "Assigning permissions to Arc extension managed identity..."
@@ -287,7 +304,7 @@ PRINCIPAL_ID=$(az k8s-extension show \
     --cluster-name "$ARC_CLUSTER_NAME" \
     --cluster-type connectedClusters \
     --name videoindexer \
-    --query "identity.principalId" -o tsv 2>/dev/null || true)
+    --query "identity.principalId" -o tsv 2>/dev/null | tr -d '\r' || true)
 
 ACCOUNT_RESOURCE_ID="$AZURE_VIDEO_INDEXER_ACCOUNT_RESOURCE_ID"
 
@@ -305,7 +322,7 @@ else
         --assignee "$PRINCIPAL_ID" \
         --role Contributor \
         --scope "$ACCOUNT_RESOURCE_ID" \
-        --query "[0].id" -o tsv 2>/dev/null || true)
+        --query "[0].id" -o tsv 2>/dev/null | tr -d '\r' || true)
 
     if [ -n "$EXISTING_ASSIGNMENT" ]; then
         log_success "Role assignment already exists. Skipping."
@@ -332,7 +349,7 @@ VI_EXT_STATE=$(az k8s-extension show \
     --cluster-name "$ARC_CLUSTER_NAME" \
     --cluster-type connectedClusters \
     --name videoindexer \
-    --query "provisioningState" -o tsv 2>/dev/null || echo "Unknown")
+    --query "provisioningState" -o tsv 2>/dev/null | tr -d '\r' || echo "Unknown")
 
 # =====================================================
 # Acquire VI Extension Access Token (used by Steps 10-11)
@@ -351,7 +368,7 @@ else
         --cluster-name "$ARC_CLUSTER_NAME" \
         --cluster-type connectedClusters \
         --name videoindexer \
-        --query "id" -o tsv 2>/dev/null || true)
+        --query "id" -o tsv 2>/dev/null | tr -d '\r' || true)
 
     if [ -z "$EXTENSION_ID" ]; then
         log_warning "Failed to retrieve VI extension ID. Skipping camera and agent job setup."
@@ -362,7 +379,7 @@ else
 
         VI_ACCESS_TOKEN=$(az rest --method post --url "$TOKEN_URL" \
             --body "$TOKEN_BODY" \
-            --query "accessToken" -o tsv 2>/dev/null || true)
+            --query "accessToken" -o tsv 2>/dev/null | tr -d '\r' || true)
 
         if [ -z "$VI_ACCESS_TOKEN" ]; then
             log_warning "Failed to generate VI extension access token. Skipping camera and agent job setup."
@@ -459,7 +476,7 @@ log_step 12 $TOTAL_STEPS "Running Post-Deployment Health Checks"
 ARC_STATUS=$(az connectedk8s show \
     --name "$ARC_CLUSTER_NAME" \
     --resource-group "$AZURE_RESOURCE_GROUP" \
-    --query "connectivityStatus" -o tsv 2>/dev/null || echo "unknown")
+    --query "connectivityStatus" -o tsv 2>/dev/null | tr -d '\r' || echo "unknown")
 ARC_HEALTH="Pass"; [ "$ARC_STATUS" != "Connected" ] && ARC_HEALTH="Warn"
 write_health_row "Arc connection" "$ARC_HEALTH" "$ARC_STATUS"
 

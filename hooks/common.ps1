@@ -7,6 +7,54 @@
 . "$PSScriptRoot/config.ps1"
 . "$PSScriptRoot/ui.ps1"
 
+# ── Helpers ─────────────────────────────────────────────────────────────────
+
+function Invoke-AzJson {
+    <#
+    .SYNOPSIS
+        Runs an `az` command (passed as a script block or string array), captures
+        stdout, and returns parsed JSON. Returns $null if the command produced no
+        output or if parsing failed. Never throws — callers must null-check.
+    #>
+    param([Parameter(Mandatory)] [scriptblock]$Command)
+    try {
+        $raw = & $Command 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            $snippet = if ($raw) { ($raw | Out-String).Trim() } else { '(no output)' }
+            if ($snippet.Length -gt 400) { $snippet = $snippet.Substring(0, 400) + '...' }
+            Log-Warning "az command failed (exit $LASTEXITCODE): $snippet"
+            return $null
+        }
+        if ($null -eq $raw -or ($raw -is [string] -and [string]::IsNullOrWhiteSpace($raw))) {
+            return $null
+        }
+        if ($raw -is [array]) { $raw = ($raw -join "`n") }
+        if ([string]::IsNullOrWhiteSpace($raw)) { return $null }
+        return $raw | ConvertFrom-Json -ErrorAction Stop
+    }
+    catch {
+        Log-Warning "Invoke-AzJson exception: $($_.Exception.Message)"
+        return $null
+    }
+}
+
+function Invoke-AzdEnvSet {
+    <#
+    .SYNOPSIS
+        Persists a key/value via `azd env set`, warning (but not failing) on error.
+    #>
+    param(
+        [Parameter(Mandatory)] [string]$Name,
+        [Parameter(Mandatory)] [AllowEmptyString()] [string]$Value
+    )
+    & azd env set $Name $Value 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        Log-Warning "Could not persist '$Name' via 'azd env set' (exit $LASTEXITCODE)."
+        return $false
+    }
+    return $true
+}
+
 # ── Prerequisite Checks ─────────────────────────────────────────────────────
 
 function Assert-EnvVars {
@@ -125,16 +173,21 @@ function Connect-AksCluster {
 function Get-RunningPodCount {
     <#
     .SYNOPSIS
-        Returns the number of Running pods in a given namespace.
+        Returns the number of "healthy" pods in a namespace.
+        Counts both Running and Succeeded pods — some workloads (e.g. the
+        GPU operator's cuda-validator / install jobs) intentionally end in
+        Succeeded and should not be reported as degraded.
     #>
     param(
         [string]$Namespace,
         [string]$KubeContext
     )
     try {
-        $count = (kubectl --context $KubeContext get pods -n $Namespace `
+        $running   = (kubectl --context $KubeContext get pods -n $Namespace `
             --field-selector=status.phase=Running --no-headers 2>$null | Measure-Object -Line).Lines
-        return [int]$count
+        $succeeded = (kubectl --context $KubeContext get pods -n $Namespace `
+            --field-selector=status.phase=Succeeded --no-headers 2>$null | Measure-Object -Line).Lines
+        return [int]$running + [int]$succeeded
     }
     catch {
         return 0
@@ -186,14 +239,15 @@ function Get-AzVmSizesForRegion {
         Queries az vm list-skus for a region and returns an array of hashtables.
         Uses list-skus (not list-sizes) to respect subscription restrictions —
         only SKUs the subscription is allowed to use are returned.
-        Each entry: @{ Name; Cores; MemoryGB }
+        Each entry: @{ Name; Cores; MemoryGB; Family }
+        Family is the quota family name (matches az vm list-usage name.value).
     #>
     param([string]$Location)
-    $query = "[?restrictions[?type=='Location']|length(@)==``0``].{name:name, vCPUs:capabilities[?name=='vCPUs'].value|[0], memGB:capabilities[?name=='MemoryGB'].value|[0]}"
-    $raw = (az vm list-skus --location $Location --resource-type virtualMachines --query $query -o json 2>$null) | ConvertFrom-Json
+    $query = "[?restrictions[?type=='Location']|length(@)==``0``].{name:name, family:family, vCPUs:capabilities[?name=='vCPUs'].value|[0], memGB:capabilities[?name=='MemoryGB'].value|[0]}"
+    $raw = Invoke-AzJson { az vm list-skus --location $Location --resource-type virtualMachines --query $query -o json }
     if (-not $raw) { return @() }
     return $raw | ForEach-Object {
-        @{ Name = $_.name; Cores = [int]$_.vCPUs; MemoryGB = [int]$_.memGB }
+        @{ Name = $_.name; Cores = [int]$_.vCPUs; MemoryGB = [int]$_.memGB; Family = $_.family }
     }
 }
 
@@ -238,6 +292,11 @@ function Select-VmSizesForMenu {
         For each family, matches VM names that contain the family pattern,
         filters by core range, takes up to $SizesPerFamily sorted by cores.
         The default SKU is always included. Result is sorted by cores.
+
+        When QuotaData is supplied, each entry is annotated with quota info
+        (AvailableQuota, QuotaLimit, QuotaFamily, HasEnoughQuota). SKUs whose
+        family has too little quota to run $MaxNodes of that size are dropped,
+        except the default SKU which is kept (annotated) so the user sees it.
     #>
     param(
         [array]$AllSizes,
@@ -246,7 +305,9 @@ function Select-VmSizesForMenu {
         [string]$DefaultSku,
         [int]$SizesPerFamily = 3,
         [int]$MinCores = 0,
-        [int]$MaxCores = [int]::MaxValue
+        [int]$MaxCores = [int]::MaxValue,
+        [hashtable]$QuotaData,
+        [int]$MaxNodes = 1
     )
 
     # Filter by broad prefix first (CPU vs GPU), then by core range
@@ -273,8 +334,49 @@ function Select-VmSizesForMenu {
         if ($defVm) { $selected[$defVm.Name] = $defVm }
     }
 
-    # Return sorted by cores
-    return $selected.Values | Sort-Object { $_.Cores }, { $_.Name }
+    $entries = $selected.Values | Sort-Object { $_.Cores }, { $_.Name }
+
+    # ── Annotate with quota + drop SKUs that cannot satisfy $MaxNodes ─────
+    if ($QuotaData -and $QuotaData.Count -gt 0) {
+        $annotated = @()
+        foreach ($vm in $entries) {
+            $fam = Get-QuotaFamilyForVm -VmSize $vm.Name -SkuFamily $vm.Family
+            $avail = $null; $limit = $null; $hasEnough = $true; $familyKnown = $false
+            if ($fam -and $QuotaData.ContainsKey($fam)) {
+                $familyKnown = $true
+                $avail = [int]$QuotaData[$fam].Available
+                $limit = [int]$QuotaData[$fam].Limit
+                $needed = [int]$vm.Cores * [math]::Max(1, [int]$MaxNodes)
+                $hasEnough = ($limit -gt 0) -and ($avail -ge $needed)
+            }
+            # Clone hashtable so we don't mutate the shared $AllSizes entries
+            $copy = @{}
+            foreach ($k in $vm.Keys) { $copy[$k] = $vm[$k] }
+            $copy.QuotaFamily     = $fam
+            $copy.QuotaFamilyKnown = $familyKnown
+            $copy.AvailableQuota  = $avail
+            $copy.QuotaLimit      = $limit
+            $copy.HasEnoughQuota  = $hasEnough
+            $annotated += ,$copy
+        }
+
+        # Keep SKUs that either (a) have enough quota in a known family,
+        # (b) are in an unknown family (can't verify — don't hide newer SKUs),
+        # or (c) are the configured default. Unknown families are treated as
+        # "OK" here; the final quota check before submission still guards them.
+        $filtered = $annotated | Where-Object {
+            (-not $_.QuotaFamilyKnown) -or $_.HasEnoughQuota -or ($_.Name -eq $DefaultSku)
+        }
+
+        # Fallback: if quota would empty the list, return the unfiltered annotated
+        # set so the user can still pick something and be warned.
+        if (-not $filtered -or @($filtered).Count -eq 0) {
+            return $annotated
+        }
+        return @($filtered)
+    }
+
+    return $entries
 }
 
 function Get-AzVmQuotaForRegion {
@@ -285,7 +387,7 @@ function Get-AzVmQuotaForRegion {
     #>
     param([string]$Location)
     $result = @{}
-    $raw = (az vm list-usage --location $Location -o json 2>$null) | ConvertFrom-Json
+    $raw = Invoke-AzJson { az vm list-usage --location $Location -o json }
     if (-not $raw) { return $result }
     foreach ($q in $raw) {
         $result[$q.name.value] = @{
@@ -300,14 +402,21 @@ function Get-AzVmQuotaForRegion {
 function Get-QuotaFamilyForVm {
     <#
     .SYNOPSIS
-        Resolves the quota family name for a GPU VM size using the
-        GPU_QUOTA_FAMILY_MAP regex lookup table. No API call needed.
-        Returns the family string, or $null if no pattern matches.
+        Resolves the quota family name for a VM size.
+        Prefers the family string reported by az vm list-skus (passed via
+        -SkuFamily) because it matches az vm list-usage's name.value directly.
+        Falls back to the GPU_QUOTA_FAMILY_MAP regex table for older SKUs where
+        the family field is empty.
+        Returns the family string, or $null if nothing matches.
     #>
     param(
         [string]$VmSize,
+        [string]$SkuFamily,
         [string]$Location   # kept for interface compat, not used
     )
+    if (-not [string]::IsNullOrWhiteSpace($SkuFamily)) {
+        return $SkuFamily
+    }
     foreach ($pattern in $GPU_QUOTA_FAMILY_MAP.Keys) {
         if ($VmSize -match $pattern) {
             return $GPU_QUOTA_FAMILY_MAP[$pattern]
@@ -378,12 +487,10 @@ function Resolve-ModelQuota {
     $modelType = "$Format.$DeploymentType.$Model"
     Log-Info "Checking quota for $modelType in $Location..."
 
-    $modelInfo = $null
-    try {
-        $modelInfo = (az cognitiveservices usage list --location $Location `
-                --query "[?name.value=='$modelType'] | [0]" -o json 2>$null) | ConvertFrom-Json
+    $modelInfo = Invoke-AzJson {
+        az cognitiveservices usage list --location $Location `
+            --query "[?name.value=='$modelType'] | [0]" -o json
     }
-    catch { }
 
     if (-not $modelInfo) {
         Log-Warning "No quota info found for '$modelType' in '$Location'. Skipping quota check."
@@ -421,7 +528,7 @@ function Resolve-ModelQuota {
             }
         } while (-not $validInput)
 
-        azd env set $CapacityEnvVarName $parsed 2>$null
+        [void](Invoke-AzdEnvSet -Name $CapacityEnvVarName -Value "$parsed")
         Log-Success "Capacity adjusted to $parsed (saved to $CapacityEnvVarName)"
     }
     else {
@@ -502,8 +609,20 @@ function Show-VmSelectionMenu {
         $name  = $Entry.Name.PadRight(35)
         $cores = "$($Entry.Cores) vCPUs".PadRight(10)
         $mem   = "$($Entry.MemoryGB) GB".PadRight(8)
-        $tag   = if ($IsDefault) { " (default)" } else { "" }
-        return "${name} ${cores} ${mem}${tag}"
+
+        # Quota column (only when quota data was supplied)
+        $quotaCol = ""
+        if ($Entry.ContainsKey('QuotaFamilyKnown')) {
+            if ($Entry.QuotaFamilyKnown) {
+                $quotaCol = "$($Entry.AvailableQuota) free".PadRight(14)
+            }
+            else {
+                $quotaCol = "quota n/a".PadRight(14)
+            }
+        }
+
+        $tag = if ($IsDefault) { " (default)" } else { "" }
+        return "${name} ${cores} ${mem} ${quotaCol}${tag}"
     }
 
     # ── Redraw the visible viewport in-place ───────────────────────
@@ -577,6 +696,9 @@ function Show-VmSelectionMenu {
         Write-Host ""
         Write-Section "Select VM size for $PoolName ($($VmSizes.Count) sizes available)"
         Log-Info "Use $([char]0x2191)/$([char]0x2193) to move, Enter to select, C custom, Esc cancel"
+        if ($VmSizes.Count -gt 0 -and $VmSizes[0].ContainsKey('QuotaFamilyKnown')) {
+            Log-Info "Quota column shows cores free in this region (pool max nodes: $MaxNodes)."
+        }
         Write-Host ""
 
         # Reserve exactly $maxVisible blank lines (viewport size, not total items)
@@ -660,17 +782,17 @@ function Show-VmSelectionMenu {
         # ── GPU quota check ────────────────────────────────────────
         if ($IsGpu) {
             Write-LogMessage -Message "Resolving quota family..." -Symbol $script:Sym.Info -SymbolColor $script:C.Accent -NoNewline
-            $selectedFamily = Get-QuotaFamilyForVm -VmSize $selectedSku -Location $Location
+            $skuFamily = $null
+            $match = $VmSizes | Where-Object { $_.Name -eq $selectedSku } | Select-Object -First 1
+            if ($match -and $match.ContainsKey('Family')) { $skuFamily = $match.Family }
+            $selectedFamily = Get-QuotaFamilyForVm -VmSize $selectedSku -SkuFamily $skuFamily -Location $Location
             if ($selectedFamily) {
                 Write-Host " $($script:C.Muted)$selectedFamily$($script:C.Reset)"
                 $totalCoresNeeded = $selectedCores * $MaxNodes
                 $quotaResult = Assert-VmQuota -Label $PoolName -Family $selectedFamily -QuotaData $QuotaData -CoresNeeded $totalCoresNeeded
                 if ($quotaResult -in @("zero", "low")) {
-                    $proceed = Read-Host "   Continue with this VM anyway? (y = keep, n = re-select) [n]"
-                    if ($proceed -ne 'y' -and $proceed -ne 'Y') {
-                        Log-Warning "Re-showing menu..."
-                        continue
-                    }
+                    Log-Warning "Re-showing menu..."
+                    continue
                 }
             }
             else {

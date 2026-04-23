@@ -16,8 +16,8 @@ $Script:DEFAULT_WORKLOAD_VM_SIZE    = "Standard_D32a_v4"
 $Script:DEFAULT_DEEPSTREAM_GPU_SIZE = "Standard_NC24ads_A100_v4"
 $Script:DEFAULT_INFERENCE_GPU_SIZE  = "Standard_NC24ads_A100_v4"
 
-# ── VM name-prefix filters (used to split az vm list-sizes into CPU / GPU) ─
-$Script:CPU_VM_PREFIXES = @('Standard_D')
+# ── VM name-prefix filters (used to split az vm list-skus into CPU / GPU) ─
+$Script:CPU_VM_PREFIXES = @('Standard_D', 'Standard_E', 'Standard_F')
 $Script:GPU_VM_PREFIXES = @('Standard_NC', 'Standard_NV', 'Standard_ND')
 
 # ── Recommended VM families per pool ──────────────────────────────────────
@@ -43,6 +43,12 @@ $Script:WORKLOAD_RECOMMENDED_FAMILIES = @(
     'D\d+as_v6$'      # Das v6: Standard_D32as_v6 .. D96as_v6
 )
 $Script:WORKLOAD_MIN_CORES = 16
+
+# Max node counts per pool (must match infra/modules/aks.bicep defaults).
+# Used to size the quota filter on the VM selection menu
+# (total cores needed = vmCores * maxNodes).
+$Script:SYSTEM_MAX_NODE_COUNT   = if ($env:SYSTEM_MAX_NODE_COUNT)   { [int]$env:SYSTEM_MAX_NODE_COUNT }   else { 2 }
+$Script:WORKLOAD_MAX_NODE_COUNT = if ($env:WORKLOAD_MAX_NODE_COUNT) { [int]$env:WORKLOAD_MAX_NODE_COUNT } else { 10 }
 
 # GPU pools: all GPU families
 $Script:GPU_RECOMMENDED_FAMILIES = @(
@@ -70,7 +76,12 @@ $Script:GPU_QUOTA_FAMILY_MAP = [ordered]@{
 # ── Foundry flag & inference node count ──────────────────────────────────
 # createFoundryProject=true  → Foundry handles model serving → 1 inference GPU node
 # createFoundryProject=false → self-hosted inference          → 2 inference GPU nodes
-$Script:CREATE_FOUNDRY_PROJECT = ($env:CREATE_FOUNDRY_PROJECT -eq 'true')
+# Default must match infra/main.parameters.json (${CREATE_FOUNDRY_PROJECT=true}).
+$Script:CREATE_FOUNDRY_PROJECT = if ([string]::IsNullOrEmpty($env:CREATE_FOUNDRY_PROJECT)) {
+    $true
+} else {
+    ($env:CREATE_FOUNDRY_PROJECT -eq 'true')
+}
 $inferenceNodeDefault = if ($CREATE_FOUNDRY_PROJECT) { 1 } else { 2 }
 
 # ── Resolved runtime values (env var wins, then default) ────────────────

@@ -4,8 +4,7 @@
 # Post-Up Script: Deployment health dashboard and next steps
 # =============================================================================
 
-set -e
-
+set -eo pipefail
 source "$(dirname "$0")/common.sh"
 
 TOTAL_STEPS=6
@@ -51,18 +50,21 @@ log_step 1 $TOTAL_STEPS "AKS Cluster Health"
 
 if [ "$HAS_CLUSTER_ACCESS" = "true" ]; then
     AKS_STATE=$(az aks show -g "$AZURE_RESOURCE_GROUP" -n "$AZURE_AKS_CLUSTER_NAME" \
-        --query "provisioningState" -o tsv 2>/dev/null || echo "Unknown")
+        --query "provisioningState" -o tsv 2>/dev/null | tr -d '\r' || echo "Unknown")
     AKS_STATUS="Pass"; [ "$AKS_STATE" != "Succeeded" ] && AKS_STATUS="Fail"
     write_health_row "AKS provisioning state" "$AKS_STATUS" "$AKS_STATE"
     _track_health "$AKS_STATUS"
 
     TOTAL_NODES=$(kubectl --context "$KUBE_CONTEXT" get nodes --no-headers 2>/dev/null | wc -l | tr -d ' ')
-    READY_NODES=$(kubectl --context "$KUBE_CONTEXT" get nodes --no-headers 2>/dev/null | grep -c " Ready " || echo "0")
+    READY_NODES=$(kubectl --context "$KUBE_CONTEXT" get nodes --no-headers 2>/dev/null | grep -c " Ready " ; true)
+    READY_NODES=$(echo "$READY_NODES" | tr -dc '0-9' | head -c 6)
+    READY_NODES=${READY_NODES:-0}
     NODE_STATUS="Pass"; [ "$READY_NODES" != "$TOTAL_NODES" ] && NODE_STATUS="Warn"
     write_health_row "Cluster nodes" "$NODE_STATUS" "${READY_NODES}/${TOTAL_NODES} Ready"
     _track_health "$NODE_STATUS"
 
-    GPU_NODES=$(kubectl --context "$KUBE_CONTEXT" get nodes -l "accelerator=nvidia" --no-headers 2>/dev/null | wc -l | tr -d ' ' || echo "0")
+    GPU_NODES=$(kubectl --context "$KUBE_CONTEXT" get nodes -l "nvidia.com/gpu.present=true" --no-headers 2>/dev/null | wc -l | tr -d ' ')
+    GPU_NODES=${GPU_NODES:-0}
     GPU_NODE_STATUS="Pass"; [ "$GPU_NODES" -eq 0 ] && GPU_NODE_STATUS="Warn"
     GPU_NODE_DETAIL="$GPU_NODES detected"
     [ "$GPU_NODES" -eq 0 ] && GPU_NODE_DETAIL="none detected (may still be provisioning)"
@@ -107,7 +109,7 @@ if [ -n "$ARC_CLUSTER_NAME" ]; then
     ARC_STATUS=$(az connectedk8s show \
         --name "$ARC_CLUSTER_NAME" \
         --resource-group "$AZURE_RESOURCE_GROUP" \
-        --query "connectivityStatus" -o tsv 2>/dev/null || echo "Unknown")
+        --query "connectivityStatus" -o tsv 2>/dev/null | tr -d '\r' || echo "Unknown")
     ARC_HEALTH="Pass"; [ "$ARC_STATUS" != "Connected" ] && ARC_HEALTH="Warn"
     write_health_row "Arc connection" "$ARC_HEALTH" "$ARC_CLUSTER_NAME ($ARC_STATUS)"
     _track_health "$ARC_HEALTH"
@@ -144,8 +146,15 @@ if [ "$HAS_CLUSTER_ACCESS" = "true" ]; then
 
     if [ -n "${AZURE_DNS_LABEL:-}" ] && [ -n "${AZURE_LOCATION:-}" ]; then
         FQDN="${AZURE_DNS_LABEL}.${AZURE_LOCATION}.cloudapp.azure.com"
-        DNS_RESOLVED=$(host "$FQDN" 2>/dev/null | grep -c "has address" || \
-            nslookup "$FQDN" 2>/dev/null | grep -c "Address:" || echo "0")
+        if command -v host >/dev/null 2>&1; then
+            DNS_RESOLVED=$(host "$FQDN" 2>/dev/null | grep -c "has address" ; true)
+        elif command -v nslookup >/dev/null 2>&1; then
+            DNS_RESOLVED=$(nslookup "$FQDN" 2>/dev/null | grep -c "^Address:" ; true)
+        else
+            DNS_RESOLVED=0
+        fi
+        DNS_RESOLVED=$(echo "${DNS_RESOLVED:-0}" | tr -dc '0-9' | head -c 6)
+        DNS_RESOLVED=${DNS_RESOLVED:-0}
         if [ "$DNS_RESOLVED" -gt 0 ]; then
             write_health_row "DNS resolution" "Pass" "$FQDN"
             _track_health "Pass"
@@ -169,7 +178,7 @@ if [ -n "$ARC_CLUSTER_NAME" ]; then
         --cluster-name "$ARC_CLUSTER_NAME" \
         --cluster-type connectedClusters \
         --name videoindexer \
-        --query "provisioningState" -o tsv 2>/dev/null || echo "Unknown")
+        --query "provisioningState" -o tsv 2>/dev/null | tr -d '\r' || echo "Unknown")
     VI_EXT_STATUS="Pass"; [ "$VI_STATE" != "Succeeded" ] && VI_EXT_STATUS="Warn"
     write_health_row "VI Extension" "$VI_EXT_STATUS" "$VI_STATE"
     _track_health "$VI_EXT_STATUS"

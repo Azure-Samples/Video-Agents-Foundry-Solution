@@ -17,8 +17,8 @@ DEFAULT_WORKLOAD_VM_SIZE="Standard_D32a_v4"
 DEFAULT_DEEPSTREAM_GPU_SIZE="Standard_NC24ads_A100_v4"
 DEFAULT_INFERENCE_GPU_SIZE="Standard_NC24ads_A100_v4"
 
-# ── VM name-prefix filters (used to split az vm list-sizes into CPU / GPU) ─
-CPU_VM_PREFIXES=("Standard_D")
+# ── VM name-prefix filters (used to split az vm list-skus into CPU / GPU) ─
+CPU_VM_PREFIXES=("Standard_D" "Standard_E" "Standard_F")
 GPU_VM_PREFIXES=("Standard_NC" "Standard_NV" "Standard_ND")
 
 # ── Recommended VM families (4 families x 3 sizes each = 12 menu items) ──
@@ -47,6 +47,12 @@ WORKLOAD_RECOMMENDED_FAMILIES=(
     "D[0-9]+as_v6$"      # Das v6: Standard_D32as_v6 .. D96as_v6
 )
 WORKLOAD_MIN_CORES=16
+
+# Max node counts per pool (must match infra/modules/aks.bicep defaults).
+# Used to size the quota filter on the VM selection menu
+# (total cores needed = vmCores * maxNodes).
+SYSTEM_MAX_NODE_COUNT="${SYSTEM_MAX_NODE_COUNT:-2}"
+WORKLOAD_MAX_NODE_COUNT="${WORKLOAD_MAX_NODE_COUNT:-10}"
 
 # GPU pools: all GPU families
 GPU_RECOMMENDED_FAMILIES=(
@@ -85,7 +91,8 @@ GPU_QUOTA_FAMILIES=(
 # ── Foundry flag & inference node count ──────────────────────────────────
 # createFoundryProject=true  → Foundry handles model serving → 1 inference GPU node
 # createFoundryProject=false → self-hosted inference          → 2 inference GPU nodes
-CREATE_FOUNDRY_PROJECT="${CREATE_FOUNDRY_PROJECT:-false}"
+# Default must match infra/main.parameters.json (${CREATE_FOUNDRY_PROJECT=true}).
+CREATE_FOUNDRY_PROJECT="${CREATE_FOUNDRY_PROJECT:-true}"
 if [ "$CREATE_FOUNDRY_PROJECT" = "true" ]; then
     _INFERENCE_NODE_DEFAULT=1
 else
