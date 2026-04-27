@@ -293,6 +293,9 @@ select_vm_sizes_for_menu() {
     fi
 }
 
+# Tracks cores already committed by prior GPU pool selections in this session.
+declare -A COMMITTED_QUOTA_CORES
+
 # Looks up quota for a family directly via az CLI (single call).
 VM_QUOTA_LIMIT=0
 VM_QUOTA_USED=0
@@ -431,6 +434,13 @@ assert_vm_quota() {
     if ! lookup_vm_quota "$family" "$location"; then
         printf " %bUNKNOWN (family not found)%b\n" "$C_WARNING" "$C_RESET"
         ASSERT_QUOTA_RESULT="error"; return 1
+    fi
+
+    # Subtract cores already committed by prior GPU pool selections
+    local committed=${COMMITTED_QUOTA_CORES[$family]:-0}
+    if [ "$committed" -gt 0 ]; then
+        VM_QUOTA_AVAILABLE=$((VM_QUOTA_AVAILABLE - committed))
+        [ "$VM_QUOTA_AVAILABLE" -lt 0 ] && VM_QUOTA_AVAILABLE=0
     fi
 
     if [ "$VM_QUOTA_LIMIT" -eq 0 ]; then
@@ -699,6 +709,12 @@ _show_vm_menu_simple() {
                     log_warning "Re-showing menu..."
                     continue
                 fi
+                # Reserve committed cores so subsequent GPU pool selections see reduced availability
+                if [ "$ASSERT_QUOTA_RESULT" = "ok" ] && [ -n "$selected_family" ]; then
+                    COMMITTED_QUOTA_CORES[$selected_family]=$(( ${COMMITTED_QUOTA_CORES[$selected_family]:-0} + total_cores ))
+                    local remaining=$((VM_QUOTA_AVAILABLE - total_cores))
+                    log_info "Reserved $total_cores cores ($selected_family) for $pool_name — $remaining remaining"
+                fi
             else
                 printf " %bnot found (quota check skipped)%b\n" "$C_WARNING" "$C_RESET"
             fi
@@ -911,6 +927,12 @@ _show_vm_menu_interactive() {
                 if [ "$ASSERT_QUOTA_RESULT" = "zero" ] || [ "$ASSERT_QUOTA_RESULT" = "low" ]; then
                     log_warning "Re-showing menu..."
                     continue
+                fi
+                # Reserve committed cores so subsequent GPU pool selections see reduced availability
+                if [ "$ASSERT_QUOTA_RESULT" = "ok" ] && [ -n "$selected_family" ]; then
+                    COMMITTED_QUOTA_CORES[$selected_family]=$(( ${COMMITTED_QUOTA_CORES[$selected_family]:-0} + total_cores ))
+                    local remaining=$((VM_QUOTA_AVAILABLE - total_cores))
+                    log_info "Reserved $total_cores cores ($selected_family) for $pool_name — $remaining remaining"
                 fi
             else
                 printf " %bnot found (quota check skipped)%b\n" "$C_WARNING" "$C_RESET"

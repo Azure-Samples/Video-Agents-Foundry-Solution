@@ -794,6 +794,11 @@ function Show-VmSelectionMenu {
                     Log-Warning "Re-showing menu..."
                     continue
                 }
+                # Reserve committed cores so subsequent GPU pool selections see reduced availability
+                if ($quotaResult -eq "ok" -and $QuotaData.ContainsKey($selectedFamily)) {
+                    $QuotaData[$selectedFamily].Available -= $totalCoresNeeded
+                    Log-Info "Reserved $totalCoresNeeded cores ($selectedFamily) for $PoolName — $($QuotaData[$selectedFamily].Available) remaining"
+                }
             }
             else {
                 Write-Host " $($script:C.Warning)not found (quota check skipped)$($script:C.Reset)"
