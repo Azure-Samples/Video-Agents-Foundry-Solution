@@ -56,6 +56,12 @@ param liveSummarizationEnabled bool = false
 @description('Enable the inference agent (should be disabled when a Foundry project handles model serving)')
 param inferenceAgentEnabled bool = false
 
+@description('Azure OpenAI base URL for agents runtime')
+param agentsRuntimeAzureOpenAIBaseUrl string = ''
+
+@description('Azure OpenAI model for agents runtime')
+param agentsRuntimeAzureOpenAIModel string = ''
+
 // Base config properties
 @description('Storage class for persistent volumes')
 param storageClass string = 'azurefile-csi-premium'
@@ -78,6 +84,8 @@ var baseConfigProperties = {
   'ViAi.deepstream.nodeSelector.workload': deepstreamNodeSelectorValue
   'ViAi.inference.nodeSelector.workload': inferenceNodeSelectorValue
   'ViAi.LiveSummarization.enabled': string(liveSummarizationEnabled)
+  'agentsRuntime.azureOpenAI.baseUrl': agentsRuntimeAzureOpenAIBaseUrl
+  'agentsRuntime.azureOpenAI.model': agentsRuntimeAzureOpenAIModel
 }
 
 resource connectedCluster 'Microsoft.Kubernetes/connectedClusters@2024-01-01' existing = {
