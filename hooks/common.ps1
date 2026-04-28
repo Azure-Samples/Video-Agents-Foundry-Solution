@@ -165,21 +165,31 @@ function Connect-AksCluster {
         --admin `
         --overwrite-existing 2>$null | Out-Null
 
+    if ($LASTEXITCODE -ne 0) {
+        Log-Error "Failed to get AKS credentials for '$ClusterName'."
+        return $null
+    }
+
     # Try to rename context to remove -admin suffix for cleaner UX.
-    # Fall back to the -admin context if rename fails (e.g. name collision).
     $adminContext = "${ClusterName}-admin"
     kubectl config rename-context $adminContext $ClusterName 2>$null | Out-Null
     if ($LASTEXITCODE -eq 0) {
         return $ClusterName
     }
 
-    # Rename failed — verify the admin context exists and return it
-    $current = kubectl config current-context 2>$null
-    if ($current) {
-        return $current
+    # Rename failed — verify the admin context actually exists in kubeconfig
+    $contexts = (kubectl config get-contexts -o name 2>$null) -split "`n"
+    if ($contexts -contains $adminContext) {
+        Log-Warning "Context rename failed (name collision). Using '$adminContext'."
+        kubectl config use-context $adminContext 2>$null | Out-Null
+        return $adminContext
     }
-    Log-Warning "Context rename failed. Falling back to '$adminContext'."
-    return $adminContext
+    if ($contexts -contains $ClusterName) {
+        return $ClusterName
+    }
+
+    Log-Error "No valid context found for cluster '$ClusterName'."
+    return $null
 }
 
 # ── Kubernetes Helpers ──────────────────────────────────────────────────────

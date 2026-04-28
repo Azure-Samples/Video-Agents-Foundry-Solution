@@ -127,27 +127,37 @@ connect_aks_cluster() {
     local cluster_name="${2:-$AZURE_AKS_CLUSTER_NAME}"
     local admin_context="${cluster_name}-admin"
 
-    az aks get-credentials \
+    if ! az aks get-credentials \
         --resource-group "$resource_group" \
         --name "$cluster_name" \
         --admin \
-        --overwrite-existing 2>/dev/null
+        --overwrite-existing 2>/dev/null; then
+        log_error "Failed to get AKS credentials for '$cluster_name'." >&2
+        return 1
+    fi
 
     # Try to rename context to remove -admin suffix for cleaner UX.
-    # Fall back to the -admin context if rename fails (e.g. name collision).
     if kubectl config rename-context "$admin_context" "$cluster_name" 2>/dev/null; then
         echo "$cluster_name"
-    else
-        # Rename failed — return whichever context is current
-        local current
-        current=$(kubectl config current-context 2>/dev/null)
-        if [ -n "$current" ]; then
-            echo "$current"
-        else
-            log_warning "Context rename failed. Falling back to '$admin_context'." >&2
-            echo "$admin_context"
-        fi
+        return 0
     fi
+
+    # Rename failed — validate that a known context exists in kubeconfig
+    local contexts
+    contexts=$(kubectl config get-contexts -o name 2>/dev/null)
+    if echo "$contexts" | grep -qx "$admin_context"; then
+        log_warning "Context rename failed (name collision). Using '$admin_context'." >&2
+        kubectl config use-context "$admin_context" 2>/dev/null
+        echo "$admin_context"
+        return 0
+    fi
+    if echo "$contexts" | grep -qx "$cluster_name"; then
+        echo "$cluster_name"
+        return 0
+    fi
+
+    log_error "No valid context found for cluster '$cluster_name'." >&2
+    return 1
 }
 
 # ── Kubernetes Helpers ──────────────────────────────────────────────────────
