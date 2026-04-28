@@ -54,9 +54,6 @@ param mediaUploadsEnabled bool = true
 @description('Enable live summarization')
 param liveSummarizationEnabled bool = false
 
-@description('Enable the inference agent (should be disabled when a Foundry project handles model serving)')
-param inferenceAgentEnabled bool = false
-
 @description('Azure OpenAI base URL for agents runtime')
 param agentsRuntimeAzureOpenAIBaseUrl string = ''
 
@@ -70,7 +67,6 @@ param storageClass string = 'azurefile-csi-premium'
 var azureOpenAIBaseUrl = trim(agentsRuntimeAzureOpenAIBaseUrl)
 var azureOpenAIModel = trim(agentsRuntimeAzureOpenAIModel)
 var useAzureOpenAIForAgentsRuntime = !empty(azureOpenAIBaseUrl) && !empty(azureOpenAIModel)
-var effectiveInferenceAgentEnabled = useAzureOpenAIForAgentsRuntime ? false : inferenceAgentEnabled
 
 var baseConfigProperties = {
   'videoIndexer.endpointUri': videoIndexerEndpointUri
@@ -83,7 +79,7 @@ var baseConfigProperties = {
   'storage.accessMode': 'ReadWriteMany'
   'agents.agentsRuntime.modelProviders.azureOpenAI.enabled': string(useAzureOpenAIForAgentsRuntime)
   'agents.agentsRuntime.modelProviders.selfHosted.enabled': string(!useAzureOpenAIForAgentsRuntime)
-  'ViAi.inferenceAgent.enabled': string(effectiveInferenceAgentEnabled)
+  'ViAi.inferenceAgent.enabled': string(!useAzureOpenAIForAgentsRuntime)
   'ViAi.gpu.enabled': string(useGpuForSummarization)
   'ViAi.gpu.tolerations.key': tolerationsKeyForGpu
   'ViAi.mediaServerStreams.enabled': string(mediaStreamerEnabled)

@@ -311,7 +311,6 @@ Log-Step -Number 9 -Total $totalSteps -Title "Deploying Video Indexer Arc Extens
 
 # Normalize to true by default; only explicit "false" disables Foundry.
 $createFoundry = if ($env:CREATE_FOUNDRY_PROJECT -eq 'false') { 'false' } else { 'true' }
-$inferenceAgentEnabled = if ($createFoundry -eq 'false') { 'true' } else { 'false' }
 $agentsRuntimeAzureOpenAIModel = if ($createFoundry -eq 'false') { '' } else { $env:AI_MODEL_NAME }
 $mediaStreamerEnabled = if ($env:MEDIA_STREAMER_ENABLED -eq 'false') { 'false' } else { 'true' }
 
@@ -326,7 +325,6 @@ az deployment group create `
     videoIndexerEndpointUri="$VIDEO_INDEXER_ENDPOINT_URI" `
     deepstreamNodeSelectorValue="$env:AZURE_DEEPSTREAM_NODE_SELECTOR_VALUE" `
     inferenceNodeSelectorValue="$env:AZURE_INFERENCE_NODE_SELECTOR_VALUE" `
-    inferenceAgentEnabled="$inferenceAgentEnabled" `
     mediaStreamerEnabled="$mediaStreamerEnabled" `
     agentsRuntimeAzureOpenAIBaseUrl="$env:AI_FOUNDRY_SERVICES_BASE_URL" `
     agentsRuntimeAzureOpenAIModel="$agentsRuntimeAzureOpenAIModel"

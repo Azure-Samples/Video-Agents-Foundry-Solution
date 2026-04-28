@@ -276,10 +276,8 @@ log_step 9 $TOTAL_STEPS "Deploying Video Indexer Arc Extension"
 # Normalize to true by default; only explicit "false" disables Foundry.
 CREATE_FOUNDRY_PROJECT="${CREATE_FOUNDRY_PROJECT:-true}"
 if [ "$CREATE_FOUNDRY_PROJECT" = "false" ]; then
-    INFERENCE_AGENT_ENABLED="true"
     AGENTS_RUNTIME_AZURE_OPENAI_MODEL=""
 else
-    INFERENCE_AGENT_ENABLED="false"
     AGENTS_RUNTIME_AZURE_OPENAI_MODEL="$AI_MODEL_NAME"
 fi
 
@@ -296,7 +294,6 @@ az deployment group create \
         videoIndexerEndpointUri="$VIDEO_INDEXER_ENDPOINT_URI" \
         deepstreamNodeSelectorValue="$AZURE_DEEPSTREAM_NODE_SELECTOR_VALUE" \
         inferenceNodeSelectorValue="$AZURE_INFERENCE_NODE_SELECTOR_VALUE" \
-        inferenceAgentEnabled="$INFERENCE_AGENT_ENABLED" \
         mediaStreamerEnabled="$MEDIA_STREAMER_ENABLED" \
         agentsRuntimeAzureOpenAIBaseUrl="$AI_FOUNDRY_SERVICES_BASE_URL" \
         agentsRuntimeAzureOpenAIModel="$AGENTS_RUNTIME_AZURE_OPENAI_MODEL"
