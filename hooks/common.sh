@@ -137,7 +137,7 @@ connect_aks_cluster() {
     fi
 
     # Try to rename context to remove -admin suffix for cleaner UX.
-    if kubectl config rename-context "$admin_context" "$cluster_name" 2>/dev/null; then
+    if kubectl config rename-context "$admin_context" "$cluster_name" >/dev/null 2>&1; then
         echo "$cluster_name"
         return 0
     fi
@@ -147,7 +147,7 @@ connect_aks_cluster() {
     contexts=$(kubectl config get-contexts -o name 2>/dev/null | tr -d '\r')
     if echo "$contexts" | grep -qx "$admin_context"; then
         log_warning "Context rename failed (name collision). Using '$admin_context'." >&2
-        kubectl config use-context "$admin_context" 2>/dev/null
+        kubectl config use-context "$admin_context" >/dev/null 2>&1
         echo "$admin_context"
         return 0
     fi
