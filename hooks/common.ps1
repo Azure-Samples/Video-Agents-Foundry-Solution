@@ -152,7 +152,7 @@ function Connect-AksCluster {
     .SYNOPSIS
         Fetches AKS admin credentials and returns the kubectl context name.
     .OUTPUTS
-        [string] The kubectl context name (e.g. "mycluster"), or $null on failure.
+        [string] The kubectl context name, or $null on failure.
     #>
     param(
         [string]$ResourceGroup = $env:AZURE_RESOURCE_GROUP,
@@ -165,10 +165,21 @@ function Connect-AksCluster {
         --admin `
         --overwrite-existing 2>$null | Out-Null
 
-    # Rename context to remove -admin suffix for cleaner UX
-    kubectl config rename-context "${ClusterName}-admin" "$ClusterName" 2>$null | Out-Null
+    # Try to rename context to remove -admin suffix for cleaner UX.
+    # Fall back to the -admin context if rename fails (e.g. name collision).
+    $adminContext = "${ClusterName}-admin"
+    kubectl config rename-context $adminContext $ClusterName 2>$null | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+        return $ClusterName
+    }
 
-    return "$ClusterName"
+    # Rename failed — verify the admin context exists and return it
+    $current = kubectl config current-context 2>$null
+    if ($current) {
+        return $current
+    }
+    Log-Warning "Context rename failed. Falling back to '$adminContext'."
+    return $adminContext
 }
 
 # ── Kubernetes Helpers ──────────────────────────────────────────────────────

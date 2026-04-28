@@ -125,6 +125,7 @@ connect_aks_cluster() {
     # Usage: KUBE_CONTEXT=$(connect_aks_cluster [resource_group] [cluster_name])
     local resource_group="${1:-$AZURE_RESOURCE_GROUP}"
     local cluster_name="${2:-$AZURE_AKS_CLUSTER_NAME}"
+    local admin_context="${cluster_name}-admin"
 
     az aks get-credentials \
         --resource-group "$resource_group" \
@@ -132,10 +133,21 @@ connect_aks_cluster() {
         --admin \
         --overwrite-existing 2>/dev/null
 
-    # Rename context to remove -admin suffix for cleaner UX
-    kubectl config rename-context "${cluster_name}-admin" "$cluster_name" 2>/dev/null || true
-
-    echo "$cluster_name"
+    # Try to rename context to remove -admin suffix for cleaner UX.
+    # Fall back to the -admin context if rename fails (e.g. name collision).
+    if kubectl config rename-context "$admin_context" "$cluster_name" 2>/dev/null; then
+        echo "$cluster_name"
+    else
+        # Rename failed — return whichever context is current
+        local current
+        current=$(kubectl config current-context 2>/dev/null)
+        if [ -n "$current" ]; then
+            echo "$current"
+        else
+            log_warning "Context rename failed. Falling back to '$admin_context'." >&2
+            echo "$admin_context"
+        fi
+    fi
 }
 
 # ── Kubernetes Helpers ──────────────────────────────────────────────────────
