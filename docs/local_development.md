@@ -137,8 +137,8 @@ After running `azd up`, environment variables are stored in `.azure/<env-name>/.
 | `AZURE_AKS_CLUSTER_NAME` | AKS cluster name |
 | `AZURE_VIDEO_INDEXER_ACCOUNT_ID` | VI account ID |
 | `AZURE_VIDEO_INDEXER_ACCOUNT_RESOURCE_ID` | VI account resource ID |
-| `AI_FOUNDRY_ENDPOINT` | AI Foundry project endpoint |
-| `AI_FOUNDRY_MODEL_DEPLOYMENT` | AI model deployment name |
+| `AI_FOUNDRY_SERVICES_BASE_URL` | AI Services base endpoint used for agents runtime |
+| `AI_FOUNDRY_PROJECT_NAME` | AI Foundry project name |
 
 ## Redeployment
 

@@ -31,7 +31,6 @@ param principalId string = ''
 param managedIdentityPrincipalId string = ''
 
 var projectName = '${name}-project'
-var deploymentName = '${name}-chat'
 
 // Built-in role definition IDs
 var cognitiveServicesOpenAIUserId = '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd'
@@ -75,7 +74,7 @@ resource aiProject 'Microsoft.CognitiveServices/accounts/projects@2025-06-01' = 
 // ─── Model Deployment ───────────────────────────────────────
 resource modelDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = {
   parent: aiAccount
-  name: deploymentName
+  name: modelName
   sku: {
     name: 'GlobalStandard'
     capacity: modelCapacity
@@ -128,20 +127,11 @@ resource identityOpenAIRole 'Microsoft.Authorization/roleAssignments@2022-04-01'
 @description('AI Services account name')
 output accountName string = aiAccount.name
 
-@description('AI project name')
-output projectName string = aiProject.name
-
-@description('AI Foundry endpoint (project-scoped)')
-output endpoint string = 'https://${name}.cognitiveservices.azure.com/api/projects/${projectName}'
-
-@description('AI Services base endpoint')
-output aiServicesEndpoint string = aiAccount.properties.endpoint
-
-@description('Model deployment name')
-output modelDeploymentName string = modelDeployment.name
-
 @description('AI Services account resource ID')
 output accountId string = aiAccount.id
+
+@description('AI project name')
+output projectName string = aiProject.name
 
 @description('Azure OpenAI base URL for agents runtime')
 output agentsRuntimeAzureOpenAIBaseUrl string = 'https://${name}.cognitiveservices.azure.com/'
