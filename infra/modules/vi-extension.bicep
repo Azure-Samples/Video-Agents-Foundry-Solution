@@ -67,8 +67,8 @@ param agentsRuntimeAzureOpenAIModel string = ''
 @description('Storage class for persistent volumes')
 param storageClass string = 'azurefile-csi-premium'
 
-var azureOpenAIBaseUrl = replace(agentsRuntimeAzureOpenAIBaseUrl, ' ', '')
-var azureOpenAIModel = replace(agentsRuntimeAzureOpenAIModel, ' ', '')
+var azureOpenAIBaseUrl = trim(agentsRuntimeAzureOpenAIBaseUrl)
+var azureOpenAIModel = trim(agentsRuntimeAzureOpenAIModel)
 var useAzureOpenAIForAgentsRuntime = !empty(azureOpenAIBaseUrl) && !empty(azureOpenAIModel)
 var effectiveInferenceAgentEnabled = useAzureOpenAIForAgentsRuntime ? false : inferenceAgentEnabled
 
