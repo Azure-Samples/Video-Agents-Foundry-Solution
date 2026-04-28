@@ -102,7 +102,7 @@ var agentsRuntimeSelfHostedModelProps = !useAzureOpenAIForAgentsRuntime ? {
   'agents.agentsRuntime.modelProviders.selfHosted.availableModels[0]': 'gpt-oss:20b'
 } : {}
 
-var agentsRuntimeAzureOpenAIModelProps = !empty(azureOpenAIModel) ? {
+var agentsRuntimeAzureOpenAIModelProps = useAzureOpenAIForAgentsRuntime ? {
   'agents.agentsRuntime.modelProviders.azureOpenAI.availableModels[0]': azureOpenAIModel
 } : {}
 
