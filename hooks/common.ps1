@@ -152,7 +152,7 @@ function Connect-AksCluster {
     .SYNOPSIS
         Fetches AKS admin credentials and returns the kubectl context name.
     .OUTPUTS
-        [string] The kubectl context name (e.g. "mycluster-admin"), or $null on failure.
+        [string] The kubectl context name (e.g. "mycluster"), or $null on failure.
     #>
     param(
         [string]$ResourceGroup = $env:AZURE_RESOURCE_GROUP,
@@ -165,7 +165,10 @@ function Connect-AksCluster {
         --admin `
         --overwrite-existing 2>$null | Out-Null
 
-    return "${ClusterName}-admin"
+    # Rename context to remove -admin suffix for cleaner UX
+    kubectl config rename-context "${ClusterName}-admin" "$ClusterName" 2>$null | Out-Null
+
+    return "$ClusterName"
 }
 
 # ── Kubernetes Helpers ──────────────────────────────────────────────────────
@@ -677,7 +680,7 @@ function Show-VmSelectionMenu {
             [Console]::Write(" $([char]0x2193)  ")
         }
 
-        [Console]::SetCursorPosition(0, $Top + $maxVisible)
+        [Console]::SetCursorPosition(0, [math]::Min($Top + $maxVisible, [Console]::BufferHeight - 1))
     }
 
     # ── Ensure selection is visible, adjust scrollOffset ───────────
@@ -742,7 +745,8 @@ function Show-VmSelectionMenu {
             [Console]::CursorVisible = $true
         }
 
-        [Console]::SetCursorPosition(0, $menuTopLine + $maxVisible)
+        $targetRow = [math]::Min($menuTopLine + $maxVisible, [Console]::BufferHeight - 1)
+        [Console]::SetCursorPosition(0, $targetRow)
 
         if ($escaped) {
             Write-Host ""
