@@ -276,9 +276,9 @@ log_step 9 $TOTAL_STEPS "Deploying Video Indexer Arc Extension"
 # Normalize to true by default; only explicit "false" disables Foundry.
 CREATE_FOUNDRY_PROJECT="${CREATE_FOUNDRY_PROJECT:-true}"
 if [ "$CREATE_FOUNDRY_PROJECT" = "false" ]; then
-    INFERENCE_AGENT_ENABLED="true"
+    AGENTS_RUNTIME_AZURE_OPENAI_MODEL=""
 else
-    INFERENCE_AGENT_ENABLED="false"
+    AGENTS_RUNTIME_AZURE_OPENAI_MODEL="$AI_MODEL_NAME"
 fi
 
 MEDIA_STREAMER_ENABLED="${MEDIA_STREAMER_ENABLED:-true}"
@@ -294,9 +294,8 @@ az deployment group create \
         videoIndexerEndpointUri="$VIDEO_INDEXER_ENDPOINT_URI" \
         deepstreamNodeSelectorValue="$AZURE_DEEPSTREAM_NODE_SELECTOR_VALUE" \
         inferenceNodeSelectorValue="$AZURE_INFERENCE_NODE_SELECTOR_VALUE" \
-        inferenceAgentEnabled="$INFERENCE_AGENT_ENABLED" \
         mediaStreamerEnabled="$MEDIA_STREAMER_ENABLED" \
-        agentsRuntimeAzureOpenAIBaseUrl="$AGENTS_RUNTIME_AZURE_OPENAI_BASE_URL" \
+        agentsRuntimeAzureOpenAIBaseUrl="$AI_FOUNDRY_SERVICES_BASE_URL" \
         agentsRuntimeAzureOpenAIModel="$AGENTS_RUNTIME_AZURE_OPENAI_MODEL"
 log_success "Video Indexer Arc extension deployed"
 
@@ -539,8 +538,7 @@ write_key_value "VI Account"      "${AZURE_VIDEO_INDEXER_ACCOUNT_NAME:-n/a}"
 write_key_value "Storage Account" "${AZURE_STORAGE_ACCOUNT_NAME:-n/a}"
 if [ -n "${AI_FOUNDRY_ACCOUNT_NAME:-}" ]; then
     write_key_value "AI Foundry Hub"   "$AI_FOUNDRY_ACCOUNT_NAME"
-    write_key_value "AI Foundry Model" "${AI_FOUNDRY_MODEL_DEPLOYMENT:-n/a}"
-    write_key_value "AI Endpoint"      "${AI_FOUNDRY_AI_SERVICES_ENDPOINT:-n/a}"
+    write_key_value "AI Foundry Endpoint"      "${AI_FOUNDRY_SERVICES_BASE_URL:-n/a}"
     if [ -n "${FOUNDRY_ACCOUNT_RESOURCE_ID:-}" ]; then
         write_key_value "AI Foundry Resource ID" "$FOUNDRY_ACCOUNT_RESOURCE_ID"
     fi

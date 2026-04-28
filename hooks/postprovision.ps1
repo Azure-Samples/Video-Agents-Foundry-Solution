@@ -311,7 +311,7 @@ Log-Step -Number 9 -Total $totalSteps -Title "Deploying Video Indexer Arc Extens
 
 # Normalize to true by default; only explicit "false" disables Foundry.
 $createFoundry = if ($env:CREATE_FOUNDRY_PROJECT -eq 'false') { 'false' } else { 'true' }
-$inferenceAgentEnabled = if ($createFoundry -eq 'false') { 'true' } else { 'false' }
+$agentsRuntimeAzureOpenAIModel = if ($createFoundry -eq 'false') { '' } else { $env:AI_MODEL_NAME }
 $mediaStreamerEnabled = if ($env:MEDIA_STREAMER_ENABLED -eq 'false') { 'false' } else { 'true' }
 
 Log-Info "Deploying VI Arc extension (this may take several minutes)..."
@@ -325,10 +325,9 @@ az deployment group create `
     videoIndexerEndpointUri="$VIDEO_INDEXER_ENDPOINT_URI" `
     deepstreamNodeSelectorValue="$env:AZURE_DEEPSTREAM_NODE_SELECTOR_VALUE" `
     inferenceNodeSelectorValue="$env:AZURE_INFERENCE_NODE_SELECTOR_VALUE" `
-    inferenceAgentEnabled="$inferenceAgentEnabled" `
     mediaStreamerEnabled="$mediaStreamerEnabled" `
-    agentsRuntimeAzureOpenAIBaseUrl="$env:AGENTS_RUNTIME_AZURE_OPENAI_BASE_URL" `
-    agentsRuntimeAzureOpenAIModel="$env:AGENTS_RUNTIME_AZURE_OPENAI_MODEL"
+    agentsRuntimeAzureOpenAIBaseUrl="$env:AI_FOUNDRY_SERVICES_BASE_URL" `
+    agentsRuntimeAzureOpenAIModel="$agentsRuntimeAzureOpenAIModel"
 Log-Success "Video Indexer Arc extension deployed"
 
 
@@ -648,8 +647,7 @@ Write-KeyValue "VI Account"      $env:AZURE_VIDEO_INDEXER_ACCOUNT_NAME
 Write-KeyValue "Storage Account" $env:AZURE_STORAGE_ACCOUNT_NAME
 if ($env:AI_FOUNDRY_ACCOUNT_NAME) {
     Write-KeyValue "AI Foundry Hub"   $env:AI_FOUNDRY_ACCOUNT_NAME
-    Write-KeyValue "AI Foundry Model" $env:AI_FOUNDRY_MODEL_DEPLOYMENT
-    Write-KeyValue "AI Endpoint"      $env:AI_FOUNDRY_AI_SERVICES_ENDPOINT
+    Write-KeyValue "AI Foundry Endpoint"      $env:AI_FOUNDRY_SERVICES_BASE_URL
     if ($foundryAccountResourceId) {
         Write-KeyValue "AI Foundry Resource ID" $foundryAccountResourceId
     }
