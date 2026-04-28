@@ -178,7 +178,7 @@ function Connect-AksCluster {
     }
 
     # Rename failed — verify the admin context actually exists in kubeconfig
-    $contexts = (kubectl config get-contexts -o name 2>$null) -split "`n"
+    $contexts = (kubectl config get-contexts -o name 2>$null) -split "\r?\n" | ForEach-Object { $_.Trim() } | Where-Object { $_ }
     if ($contexts -contains $adminContext) {
         Log-Warning "Context rename failed (name collision). Using '$adminContext'."
         kubectl config use-context $adminContext 2>$null | Out-Null

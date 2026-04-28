@@ -144,7 +144,7 @@ connect_aks_cluster() {
 
     # Rename failed — validate that a known context exists in kubeconfig
     local contexts
-    contexts=$(kubectl config get-contexts -o name 2>/dev/null)
+    contexts=$(kubectl config get-contexts -o name 2>/dev/null | tr -d '\r')
     if echo "$contexts" | grep -qx "$admin_context"; then
         log_warning "Context rename failed (name collision). Using '$admin_context'." >&2
         kubectl config use-context "$admin_context" 2>/dev/null
