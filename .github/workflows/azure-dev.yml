@@ -47,8 +47,8 @@ jobs:
       MEDIA_STREAMER_ENABLED: ${{ vars.MEDIA_STREAMER_ENABLED }}
 
       # ── Hook control ────────────────────────────────────────
-      # Skip interactive preprovision wizard in CI
       CREATE_IN_LOCAL: "false"
+      SKIP_POST_PROVISION: "true"
 
     steps:
       - name: Checkout

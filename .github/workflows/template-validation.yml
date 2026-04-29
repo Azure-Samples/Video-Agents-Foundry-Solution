@@ -55,6 +55,7 @@ jobs:
           MEDIA_STREAMER_ENABLED: ${{ vars.MEDIA_STREAMER_ENABLED }}
           STORAGE_SKU_NAME: ${{ vars.STORAGE_SKU_NAME }}
           CREATE_IN_LOCAL: "false"
+          SKIP_POST_PROVISION: "true"
 
       - name: print result
         shell: bash

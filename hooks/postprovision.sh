@@ -11,6 +11,11 @@ TOTAL_STEPS=12
 
 write_foundry_banner "Post-Provision Setup"
 
+if [ "$SKIP_POST_PROVISION" = "true" ]; then
+    log_info "Skipping postprovision script (SKIP_POST_PROVISION=true)."
+    exit 0
+fi
+
 # =====================================================
 # Validate required environment variables
 # =====================================================

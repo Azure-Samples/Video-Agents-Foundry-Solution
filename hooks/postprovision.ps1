@@ -10,6 +10,11 @@ $totalSteps = 12
 
 Write-FoundryBanner -Phase "Post-Provision Setup"
 
+if ($env:SKIP_POST_PROVISION -eq "true") {
+    Log-Info "Skipping postprovision script (SKIP_POST_PROVISION=true)."
+    exit 0
+}
+
 # =====================================================
 # Validate required environment variables
 # =====================================================
