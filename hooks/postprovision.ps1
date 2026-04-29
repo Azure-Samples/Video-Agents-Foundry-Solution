@@ -10,13 +10,6 @@ $totalSteps = 12
 
 Write-FoundryBanner -Phase "Post-Provision Setup"
 
-if ($env:CREATE_IN_LOCAL -eq "false") {
-    # CREATE_IN_LOCAL=false is set by CI workflows that provision infra via
-    # dedicated pipelines and do not want the local azd hook to run.
-    Log-Info "Skipping postprovision script for non-local deployment."
-    exit 0
-}
-
 # =====================================================
 # Validate required environment variables
 # =====================================================

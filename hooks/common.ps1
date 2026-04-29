@@ -536,6 +536,13 @@ function Resolve-ModelQuota {
 
     if ($available -ge 1) {
         Log-Warning "Insufficient quota: $available available (in thousands of TPM), need $Capacity."
+        if (-not $INTERACTIVE) {
+            # Non-interactive: auto-reduce capacity to available quota
+            Log-Info "Non-interactive mode. Auto-adjusting capacity to $available."
+            [void](Invoke-AzdEnvSet -Name $CapacityEnvVarName -Value "$available")
+            Log-Success "Capacity adjusted to $available (saved to $CapacityEnvVarName)"
+            return
+        }
         $validInput = $false
         do {
             $userInput = Read-Host "Enter a new capacity between 1 and $available (or 'q' to abort)"

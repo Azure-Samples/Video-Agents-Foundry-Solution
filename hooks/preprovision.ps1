@@ -66,6 +66,7 @@ foreach ($var in $preProvisionVars) {
         Write-HealthRow -Name $var -Status "Fail" -Detail "not set"
     }
 }
+Write-KeyValue "CREATE_IN_LOCAL" $(if ($INTERACTIVE) { "true (interactive)" } else { "false (non-interactive)" })
 # Use the shared assertion for the actual error check
 Assert-EnvVars $preProvisionVars
 
@@ -221,27 +222,84 @@ $workloadVmSizes = Select-VmSizesForMenu -AllSizes $allVmSizes -Prefixes $CPU_VM
 $deepstreamVmSizes = Select-VmSizesForMenu -AllSizes $allVmSizes -Prefixes $GPU_VM_PREFIXES -RecommendedFamilies $GPU_RECOMMENDED_FAMILIES    -DefaultSku $currentDeepstreamVm -SizesPerFamily $SIZES_PER_FAMILY                              -QuotaData $quotaData -MaxNodes $DEEPSTREAM_GPU_MAX_NODE_COUNT
 $inferenceVmSizes  = Select-VmSizesForMenu -AllSizes $allVmSizes -Prefixes $GPU_VM_PREFIXES -RecommendedFamilies $GPU_RECOMMENDED_FAMILIES    -DefaultSku $currentInferenceVm  -SizesPerFamily $SIZES_PER_FAMILY                              -QuotaData $quotaData -MaxNodes $INFERENCE_GPU_MAX_NODE_COUNT
 
-# Resolve defaults — if the configured default isn't available, pick the closest match
-$currentSystemVm     = Resolve-DefaultSku -DefaultSku $currentSystemVm     -AvailableSizes $systemVmSizes     -PreferCores 4
-$currentWorkloadVm   = Resolve-DefaultSku -DefaultSku $currentWorkloadVm   -AvailableSizes $workloadVmSizes   -PreferCores 32
-$currentDeepstreamVm = Resolve-DefaultSku -DefaultSku $currentDeepstreamVm -AvailableSizes $deepstreamVmSizes -PreferCores 24
-$currentInferenceVm  = Resolve-DefaultSku -DefaultSku $currentInferenceVm  -AvailableSizes $inferenceVmSizes  -PreferCores 24
+# Resolve defaults — in interactive mode, pick closest available if default unavailable.
+# In non-interactive mode, skip fallback — validation will fail hard if SKU doesn't exist.
+if ($INTERACTIVE) {
+    $currentSystemVm     = Resolve-DefaultSku -DefaultSku $currentSystemVm     -AvailableSizes $systemVmSizes     -PreferCores 4
+    $currentWorkloadVm   = Resolve-DefaultSku -DefaultSku $currentWorkloadVm   -AvailableSizes $workloadVmSizes   -PreferCores 32
+    $currentDeepstreamVm = Resolve-DefaultSku -DefaultSku $currentDeepstreamVm -AvailableSizes $deepstreamVmSizes -PreferCores 24
+    $currentInferenceVm  = Resolve-DefaultSku -DefaultSku $currentInferenceVm  -AvailableSizes $inferenceVmSizes  -PreferCores 24
+}
 
 Write-KeyValue "System pool"     "$($systemVmSizes.Count) sizes (with quota)"
 Write-KeyValue "Workload pool"   "$($workloadVmSizes.Count) sizes (with quota)"
 Write-KeyValue "Deepstream pool" "$($deepstreamVmSizes.Count) sizes (with quota)"
 Write-KeyValue "Inference pool"  "$($inferenceVmSizes.Count) sizes (with quota)"
 
-Write-Section "Choose a VM SKU for each AKS node pool"
-Log-Info "The default is highlighted. Press Enter to accept, C for custom."
+if ($INTERACTIVE) {
+    Write-Section "Choose a VM SKU for each AKS node pool"
+    Log-Info "The default is highlighted. Press Enter to accept, C for custom."
 
-# CPU pools (quota-filtered lists, node count determines total cores checked)
-$selectedSystem   = Show-VmSelectionMenu -PoolName "System (CPU)"   -EnvVarName "SYSTEM_VM_SIZE"   -VmSizes $systemVmSizes   -DefaultSku $currentSystemVm   -Location $env:AZURE_LOCATION -MaxNodes $SYSTEM_MAX_NODE_COUNT   -QuotaData $quotaData
-$selectedWorkload = Show-VmSelectionMenu -PoolName "Workload (CPU)" -EnvVarName "WORKLOAD_VM_SIZE" -VmSizes $workloadVmSizes -DefaultSku $currentWorkloadVm -Location $env:AZURE_LOCATION -MaxNodes $WORKLOAD_MAX_NODE_COUNT -QuotaData $quotaData
+    # CPU pools (quota-filtered lists, node count determines total cores checked)
+    $selectedSystem   = Show-VmSelectionMenu -PoolName "System (CPU)"   -EnvVarName "SYSTEM_VM_SIZE"   -VmSizes $systemVmSizes   -DefaultSku $currentSystemVm   -Location $env:AZURE_LOCATION -MaxNodes $SYSTEM_MAX_NODE_COUNT   -QuotaData $quotaData
+    $selectedWorkload = Show-VmSelectionMenu -PoolName "Workload (CPU)" -EnvVarName "WORKLOAD_VM_SIZE" -VmSizes $workloadVmSizes -DefaultSku $currentWorkloadVm -Location $env:AZURE_LOCATION -MaxNodes $WORKLOAD_MAX_NODE_COUNT -QuotaData $quotaData
 
-# GPU pools (quota validated inline, node count determines total cores checked)
-$selectedDeepstream = Show-VmSelectionMenu -PoolName "Deepstream (GPU)" -EnvVarName "DEEPSTREAM_GPU_VM_SIZE" -VmSizes $deepstreamVmSizes -DefaultSku $currentDeepstreamVm -Location $env:AZURE_LOCATION -IsGpu -MaxNodes $DEEPSTREAM_GPU_MAX_NODE_COUNT -QuotaData $quotaData
-$selectedInference  = Show-VmSelectionMenu -PoolName "Inference (GPU)"  -EnvVarName "INFERENCE_GPU_VM_SIZE"  -VmSizes $inferenceVmSizes  -DefaultSku $currentInferenceVm  -Location $env:AZURE_LOCATION -IsGpu -MaxNodes $INFERENCE_GPU_MAX_NODE_COUNT  -QuotaData $quotaData
+    # GPU pools (quota validated inline, node count determines total cores checked)
+    $selectedDeepstream = Show-VmSelectionMenu -PoolName "Deepstream (GPU)" -EnvVarName "DEEPSTREAM_GPU_VM_SIZE" -VmSizes $deepstreamVmSizes -DefaultSku $currentDeepstreamVm -Location $env:AZURE_LOCATION -IsGpu -MaxNodes $DEEPSTREAM_GPU_MAX_NODE_COUNT -QuotaData $quotaData
+    $selectedInference  = Show-VmSelectionMenu -PoolName "Inference (GPU)"  -EnvVarName "INFERENCE_GPU_VM_SIZE"  -VmSizes $inferenceVmSizes  -DefaultSku $currentInferenceVm  -Location $env:AZURE_LOCATION -IsGpu -MaxNodes $INFERENCE_GPU_MAX_NODE_COUNT  -QuotaData $quotaData
+}
+else {
+    # Non-interactive: validate configured SKUs exist and have quota, fail if not.
+    Log-Info "Non-interactive mode (CREATE_IN_LOCAL=false). Validating configured VM sizes."
+
+    # Validate each configured SKU exists in region
+    $vmChecks = @(
+        @{ Label = 'System CPU';     Sku = $currentSystemVm;     Pool = $allVmSizes; EnvVar = 'SYSTEM_VM_SIZE' }
+        @{ Label = 'Workload CPU';   Sku = $currentWorkloadVm;   Pool = $allVmSizes; EnvVar = 'WORKLOAD_VM_SIZE' }
+        @{ Label = 'Deepstream GPU'; Sku = $currentDeepstreamVm; Pool = $allVmSizes; EnvVar = 'DEEPSTREAM_GPU_VM_SIZE'; IsGpu = $true; MaxNodes = $DEEPSTREAM_GPU_MAX_NODE_COUNT }
+        @{ Label = 'Inference GPU';  Sku = $currentInferenceVm;  Pool = $allVmSizes; EnvVar = 'INFERENCE_GPU_VM_SIZE';  IsGpu = $true; MaxNodes = $INFERENCE_GPU_MAX_NODE_COUNT }
+    )
+
+    $errors = @()
+    foreach ($check in $vmChecks) {
+        $match = $check.Pool | Where-Object { $_.Name -eq $check.Sku } | Select-Object -First 1
+        if (-not $match) {
+            $errors += "'$($check.Sku)' ($($check.Label)) is not available in region '$($env:AZURE_LOCATION)'. Set $($check.EnvVar) to a valid SKU."
+            continue
+        }
+        Write-KeyValue $check.Label "$($check.Sku) ($($match.Cores) vCPUs)"
+
+        # GPU quota check
+        if ($check.IsGpu -and $quotaData.Count -gt 0) {
+            $family = Get-QuotaFamilyForVm -VmSize $check.Sku
+            if ($family -and $quotaData.ContainsKey($family)) {
+                $needed = $match.Cores * $check.MaxNodes
+                if ($quotaData[$family].Available -lt $needed) {
+                    $errors += "'$($check.Sku)' ($($check.Label)): insufficient quota for family '$family' — need $needed cores, have $($quotaData[$family].Available). Request quota at: $QUOTA_URL"
+                }
+                else {
+                    # Reserve for cumulative tracking
+                    $quotaData[$family].Available -= $needed
+                }
+            }
+        }
+    }
+
+    if ($errors.Count -gt 0) {
+        foreach ($err in $errors) { Log-Error $err }
+        exit 1
+    }
+
+    $selectedSystem     = @{ Sku = $currentSystemVm;     Cores = 0; Family = $null }
+    $selectedWorkload   = @{ Sku = $currentWorkloadVm;   Cores = 0; Family = $null }
+    $selectedDeepstream = @{ Sku = $currentDeepstreamVm; Cores = 0; Family = $null }
+    $selectedInference  = @{ Sku = $currentInferenceVm;  Cores = 0; Family = $null }
+
+    # Persist to azd env
+    foreach ($pair in @(@('SYSTEM_VM_SIZE', $currentSystemVm), @('WORKLOAD_VM_SIZE', $currentWorkloadVm), @('DEEPSTREAM_GPU_VM_SIZE', $currentDeepstreamVm), @('INFERENCE_GPU_VM_SIZE', $currentInferenceVm))) {
+        try { azd env set $pair[0] $pair[1] 2>$null } catch {}
+    }
+}
 
 # Update script-scope variables for downstream consumers
 $DEEPSTREAM_GPU_VM_SIZE = $selectedDeepstream.Sku

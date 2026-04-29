@@ -11,13 +11,6 @@ TOTAL_STEPS=12
 
 write_foundry_banner "Post-Provision Setup"
 
-if [ "$CREATE_IN_LOCAL" = "false" ]; then
-    # CREATE_IN_LOCAL=false is set by CI workflows that provision infra via
-    # dedicated pipelines and do not want the local azd hook to run.
-    log_info "Skipping postprovision script for non-local deployment."
-    exit 0
-fi
-
 # =====================================================
 # Validate required environment variables
 # =====================================================
