@@ -84,7 +84,6 @@ var baseConfigProperties = {
   'ViAi.deepstream.nodeSelector.workload': deepstreamNodeSelectorValue
   'ViAi.inference.nodeSelector.workload': inferenceNodeSelectorValue
   'ViAi.LiveSummarization.enabled': string(liveSummarizationEnabled)
-  'ViAi.eventInvestigatorMcpServer.viInsecureRequests': 'true'
   'agentsRuntime.azureOpenAI.baseUrl': agentsRuntimeAzureOpenAIBaseUrl
   'agentsRuntime.azureOpenAI.model': agentsRuntimeAzureOpenAIModel
 }
