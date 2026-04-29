@@ -100,9 +100,8 @@ resource extension 'Microsoft.KubernetesConfiguration/extensions@2022-11-01' = {
   }
   properties: {
     extensionType: 'microsoft.videoindexer'
-    autoUpgradeMinorVersion: false
-    version: '1.6.143-nassiharel-pr'
-    releaseTrain: 'dev'
+    autoUpgradeMinorVersion: true
+    releaseTrain: releaseTrain
     scope: {
       cluster: {
         releaseNamespace: 'video-indexer'
