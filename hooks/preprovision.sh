@@ -273,7 +273,7 @@ else
             return
         fi
 
-        local needed=$((found_cores * max_nodes))
+        local needed=$((found_cores))
         if lookup_vm_quota "$family" "$AZURE_LOCATION"; then
             local committed=${COMMITTED_QUOTA_CORES[$family]:-0}
             local avail=$((VM_QUOTA_AVAILABLE - committed))

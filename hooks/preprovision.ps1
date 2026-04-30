@@ -297,7 +297,7 @@ else {
             continue
         }
 
-        $needed = $match.Cores * $check.MaxNodes
+        $needed = $match.Cores
         if ($quotaData[$family].Available -lt $needed) {
             $errors += "'$($check.Sku)' ($($check.Label)): insufficient quota for '$family' — need $needed cores, have $($quotaData[$family].Available). Request quota at: $QUOTA_URL"
         }
