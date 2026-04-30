@@ -14,6 +14,7 @@ param arcConnectedClusterName string
 param extensionName string = 'videoindexer'
 
 @allowed([
+  'dev'
   'preview'
   'stable'
 ])
@@ -53,9 +54,6 @@ param mediaUploadsEnabled bool = true
 @description('Enable live summarization')
 param liveSummarizationEnabled bool = false
 
-@description('Enable the inference agent (should be disabled when a Foundry project handles model serving)')
-param inferenceAgentEnabled bool = false
-
 @description('Azure OpenAI base URL for agents runtime')
 param agentsRuntimeAzureOpenAIBaseUrl string = ''
 
@@ -66,6 +64,10 @@ param agentsRuntimeAzureOpenAIModel string = ''
 @description('Storage class for persistent volumes')
 param storageClass string = 'azurefile-csi-premium'
 
+var azureOpenAIBaseUrl = trim(agentsRuntimeAzureOpenAIBaseUrl)
+var azureOpenAIModel = trim(agentsRuntimeAzureOpenAIModel)
+var useAzureOpenAIForAgentsRuntime = !empty(azureOpenAIBaseUrl) && !empty(azureOpenAIModel)
+
 var baseConfigProperties = {
   'videoIndexer.endpointUri': videoIndexerEndpointUri
   'videoIndexer.accountId': accountId
@@ -75,7 +77,9 @@ var baseConfigProperties = {
   'videoIndexer.agents.enabled': string(agentsEnabled)
   'storage.storageClass': storageClass
   'storage.accessMode': 'ReadWriteMany'
-  'ViAi.inferenceAgent.enabled': string(inferenceAgentEnabled)
+  'agents.agentsRuntime.modelProviders.azureOpenAI.enabled': string(useAzureOpenAIForAgentsRuntime)
+  'agents.agentsRuntime.modelProviders.selfHosted.enabled': string(!useAzureOpenAIForAgentsRuntime)
+  'ViAi.inferenceAgent.enabled': string(!useAzureOpenAIForAgentsRuntime)
   'ViAi.gpu.enabled': string(useGpuForSummarization)
   'ViAi.gpu.tolerations.key': tolerationsKeyForGpu
   'ViAi.mediaServerStreams.enabled': string(mediaStreamerEnabled)
@@ -84,9 +88,26 @@ var baseConfigProperties = {
   'ViAi.deepstream.nodeSelector.workload': deepstreamNodeSelectorValue
   'ViAi.inference.nodeSelector.workload': inferenceNodeSelectorValue
   'ViAi.LiveSummarization.enabled': string(liveSummarizationEnabled)
-  'agentsRuntime.azureOpenAI.baseUrl': agentsRuntimeAzureOpenAIBaseUrl
-  'agentsRuntime.azureOpenAI.model': agentsRuntimeAzureOpenAIModel
 }
+
+var agentsRuntimeAzureOpenAIProps = useAzureOpenAIForAgentsRuntime ? {
+  'agents.agentsRuntime.modelProviders.azureOpenAI.overrideBaseUrl': azureOpenAIBaseUrl
+} : {}
+
+var agentsRuntimeSelfHostedModelProps = !useAzureOpenAIForAgentsRuntime ? {
+  'agents.agentsRuntime.modelProviders.selfHosted.availableModels[0]': 'gpt-oss:20b'
+} : {}
+
+var agentsRuntimeAzureOpenAIModelProps = useAzureOpenAIForAgentsRuntime ? {
+  'agents.agentsRuntime.modelProviders.azureOpenAI.availableModels[0]': azureOpenAIModel
+} : {}
+
+var extensionConfigProperties = union(
+  baseConfigProperties,
+  agentsRuntimeAzureOpenAIProps,
+  agentsRuntimeSelfHostedModelProps,
+  agentsRuntimeAzureOpenAIModelProps
+)
 
 resource connectedCluster 'Microsoft.Kubernetes/connectedClusters@2024-01-01' existing = {
   name: arcConnectedClusterName
@@ -108,7 +129,7 @@ resource extension 'Microsoft.KubernetesConfiguration/extensions@2022-11-01' = {
         releaseNamespace: 'video-indexer'
       }
     }
-    configurationSettings: baseConfigProperties
+    configurationSettings: extensionConfigProperties
   }
 }
 
