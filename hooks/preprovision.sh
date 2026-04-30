@@ -57,10 +57,11 @@ for var in AZURE_SUBSCRIPTION_ID AZURE_LOCATION AZURE_ENV_NAME; do
         write_key_value "$var" "$val"
     fi
 done
+write_key_value "CREATE_IN_LOCAL" "${CREATE_IN_LOCAL:-(unset)}"
 if [ "$INTERACTIVE" = "true" ]; then
-    write_key_value "CREATE_IN_LOCAL" "true (interactive)"
+    write_key_value "Mode" "interactive"
 else
-    write_key_value "CREATE_IN_LOCAL" "false (non-interactive)"
+    write_key_value "Mode" "non-interactive"
 fi
 # Use the shared assertion for the actual error check
 assert_env_vars AZURE_SUBSCRIPTION_ID AZURE_LOCATION AZURE_ENV_NAME
@@ -231,17 +232,21 @@ else
 
     _errors=()
 
-    # Validate a VM SKU exists in the fetched list and check GPU quota if applicable.
-    # Usage: _validate_vm "Label" "SKU" "ARRAY_NAME" "ENV_VAR" ["gpu" max_nodes]
+    # Validate a VM SKU exists and has quota. Checks both CPU and GPU families.
+    # Usage: _validate_vm "Label" "SKU" "ARRAY_NAME" "ENV_VAR" max_nodes ["gpu"]
     _validate_vm() {
-        local label="$1" sku="$2" arr_name="$3" env_var="$4" is_gpu="${5:-}" max_nodes="${6:-1}"
+        local label="$1" sku="$2" arr_name="$3" env_var="$4" max_nodes="${5:-1}" is_gpu="${6:-}"
         local -n _arr=$arr_name
-        local found_cores=""
+        local found_cores="" found_family=""
         for entry in "${_arr[@]}"; do
             local entry_sku="${entry%%|*}"
             if [ "$entry_sku" = "$sku" ]; then
                 local rest="${entry#*|}"
                 found_cores="${rest%%|*}"
+                rest="${rest#*|}"
+                # Skip memGB field to get family (4th field: name|cores|memGB|family)
+                rest="${rest#*|}"
+                found_family="${rest%%|*}"
                 break
             fi
         done
@@ -251,33 +256,45 @@ else
         fi
         write_key_value "$label" "$sku ($found_cores vCPUs)"
 
+        # Resolve quota family — GPU uses pattern map, CPU uses SKU family field
+        local family=""
         if [ "$is_gpu" = "gpu" ]; then
             get_quota_family_for_vm "$sku"
-            local family="$GET_QUOTA_FAMILY_RESULT"
-            if [ -n "$family" ]; then
-                local needed=$((found_cores * max_nodes))
-                # Use lookup_vm_quota which respects COMMITTED_QUOTA_CORES
-                if lookup_vm_quota "$family" "$AZURE_LOCATION"; then
-                    local committed=${COMMITTED_QUOTA_CORES[$family]:-0}
-                    local avail=$((VM_QUOTA_AVAILABLE - committed))
-                    if [ "$avail" -lt "$needed" ]; then
-                        _errors+=("'$sku' ($label): insufficient quota for '$family' — need $needed cores, have $avail. Request quota at: $QUOTA_URL")
-                    else
-                        COMMITTED_QUOTA_CORES[$family]=$((committed + needed))
-                    fi
-                else
-                    _errors+=("'$sku' ($label): failed to query quota for '$family'. Cannot verify GPU quota in non-interactive mode.")
-                fi
+            family="$GET_QUOTA_FAMILY_RESULT"
+        else
+            family="$found_family"
+        fi
+
+        if [ -z "$family" ]; then
+            if [ "$is_gpu" = "gpu" ]; then
+                _errors+=("'$sku' ($label): could not resolve quota family. Cannot verify quota in non-interactive mode.")
+            fi
+            # CPU without family: skip quota check (non-critical)
+            return
+        fi
+
+        local needed=$((found_cores * max_nodes))
+        if lookup_vm_quota "$family" "$AZURE_LOCATION"; then
+            local committed=${COMMITTED_QUOTA_CORES[$family]:-0}
+            local avail=$((VM_QUOTA_AVAILABLE - committed))
+            if [ "$avail" -lt "$needed" ]; then
+                _errors+=("'$sku' ($label): insufficient quota for '$family' — need $needed cores, have $avail. Request quota at: $QUOTA_URL")
             else
-                _errors+=("'$sku' ($label): could not resolve quota family. Cannot verify GPU quota in non-interactive mode.")
+                COMMITTED_QUOTA_CORES[$family]=$((committed + needed))
+            fi
+        else
+            if [ "$is_gpu" = "gpu" ]; then
+                _errors+=("'$sku' ($label): failed to query quota for '$family'. Cannot verify quota in non-interactive mode.")
+            else
+                log_warning "'$sku' ($label): quota data unavailable for '$family'. Skipping CPU quota check." >&2
             fi
         fi
     }
 
-    _validate_vm "System CPU"     "$CURRENT_SYSTEM_VM"     ALL_CPU_VMS "SYSTEM_VM_SIZE"
-    _validate_vm "Workload CPU"   "$CURRENT_WORKLOAD_VM"   ALL_CPU_VMS "WORKLOAD_VM_SIZE"
-    _validate_vm "Deepstream GPU" "$CURRENT_DEEPSTREAM_VM" ALL_GPU_VMS "DEEPSTREAM_GPU_VM_SIZE" "gpu" "$DEEPSTREAM_GPU_MAX_NODE_COUNT"
-    _validate_vm "Inference GPU"  "$CURRENT_INFERENCE_VM"  ALL_GPU_VMS "INFERENCE_GPU_VM_SIZE"  "gpu" "$INFERENCE_GPU_MAX_NODE_COUNT"
+    _validate_vm "System CPU"     "$CURRENT_SYSTEM_VM"     ALL_CPU_VMS "SYSTEM_VM_SIZE"            "$SYSTEM_MAX_NODE_COUNT"
+    _validate_vm "Workload CPU"   "$CURRENT_WORKLOAD_VM"   ALL_CPU_VMS "WORKLOAD_VM_SIZE"          "$WORKLOAD_MAX_NODE_COUNT"
+    _validate_vm "Deepstream GPU" "$CURRENT_DEEPSTREAM_VM" ALL_GPU_VMS "DEEPSTREAM_GPU_VM_SIZE"    "$DEEPSTREAM_GPU_MAX_NODE_COUNT" "gpu"
+    _validate_vm "Inference GPU"  "$CURRENT_INFERENCE_VM"  ALL_GPU_VMS "INFERENCE_GPU_VM_SIZE"     "$INFERENCE_GPU_MAX_NODE_COUNT"  "gpu"
 
     if [ ${#_errors[@]} -gt 0 ]; then
         for err in "${_errors[@]}"; do log_error "$err"; done

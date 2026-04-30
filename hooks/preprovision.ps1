@@ -66,7 +66,8 @@ foreach ($var in $preProvisionVars) {
         Write-HealthRow -Name $var -Status "Fail" -Detail "not set"
     }
 }
-Write-KeyValue "CREATE_IN_LOCAL" $(if ($INTERACTIVE) { "true (interactive)" } else { "false (non-interactive)" })
+Write-KeyValue "CREATE_IN_LOCAL" $(if ($env:CREATE_IN_LOCAL) { $env:CREATE_IN_LOCAL } else { "(unset)" })
+Write-KeyValue "Mode" $(if ($INTERACTIVE) { "interactive" } else { "non-interactive" })
 # Use the shared assertion for the actual error check
 Assert-EnvVars $preProvisionVars
 
@@ -254,10 +255,10 @@ else {
 
     # Validate each configured SKU exists in region
     $vmChecks = @(
-        @{ Label = 'System CPU';     Sku = $currentSystemVm;     Pool = $allVmSizes; EnvVar = 'SYSTEM_VM_SIZE' }
-        @{ Label = 'Workload CPU';   Sku = $currentWorkloadVm;   Pool = $allVmSizes; EnvVar = 'WORKLOAD_VM_SIZE' }
-        @{ Label = 'Deepstream GPU'; Sku = $currentDeepstreamVm; Pool = $allVmSizes; EnvVar = 'DEEPSTREAM_GPU_VM_SIZE'; IsGpu = $true; MaxNodes = $DEEPSTREAM_GPU_MAX_NODE_COUNT }
-        @{ Label = 'Inference GPU';  Sku = $currentInferenceVm;  Pool = $allVmSizes; EnvVar = 'INFERENCE_GPU_VM_SIZE';  IsGpu = $true; MaxNodes = $INFERENCE_GPU_MAX_NODE_COUNT }
+        @{ Label = 'System CPU';     Sku = $currentSystemVm;     Pool = $allVmSizes; EnvVar = 'SYSTEM_VM_SIZE';            MaxNodes = $SYSTEM_MAX_NODE_COUNT }
+        @{ Label = 'Workload CPU';   Sku = $currentWorkloadVm;   Pool = $allVmSizes; EnvVar = 'WORKLOAD_VM_SIZE';          MaxNodes = $WORKLOAD_MAX_NODE_COUNT }
+        @{ Label = 'Deepstream GPU'; Sku = $currentDeepstreamVm; Pool = $allVmSizes; EnvVar = 'DEEPSTREAM_GPU_VM_SIZE';    MaxNodes = $DEEPSTREAM_GPU_MAX_NODE_COUNT; IsGpu = $true }
+        @{ Label = 'Inference GPU';  Sku = $currentInferenceVm;  Pool = $allVmSizes; EnvVar = 'INFERENCE_GPU_VM_SIZE';     MaxNodes = $INFERENCE_GPU_MAX_NODE_COUNT;  IsGpu = $true }
     )
 
     $errors = @()
@@ -269,25 +270,39 @@ else {
         }
         Write-KeyValue $check.Label "$($check.Sku) ($($match.Cores) vCPUs)"
 
-        # GPU quota check
+        # Quota check — use GPU_QUOTA_FAMILY_MAP for GPU SKUs, SKU family field for CPU
+        $family = $null
         if ($check.IsGpu) {
             $family = Get-QuotaFamilyForVm -VmSize $check.Sku
-            if (-not $family) {
-                $errors += "'$($check.Sku)' ($($check.Label)): could not resolve quota family. Cannot verify GPU quota in non-interactive mode."
+        }
+        elseif ($match.Family) {
+            $family = $match.Family
+        }
+
+        if (-not $family) {
+            if ($check.IsGpu) {
+                $errors += "'$($check.Sku)' ($($check.Label)): could not resolve quota family. Cannot verify quota in non-interactive mode."
             }
-            elseif ($quotaData.Count -eq 0 -or -not $quotaData.ContainsKey($family)) {
-                $errors += "'$($check.Sku)' ($($check.Label)): failed to query quota for '$family'. Cannot verify GPU quota in non-interactive mode."
+            # CPU without family: skip quota check (non-critical)
+            continue
+        }
+
+        if ($quotaData.Count -eq 0 -or -not $quotaData.ContainsKey($family)) {
+            if ($check.IsGpu) {
+                $errors += "'$($check.Sku)' ($($check.Label)): quota data unavailable for '$family'. Cannot verify quota in non-interactive mode."
             }
             else {
-                $needed = $match.Cores * $check.MaxNodes
-                if ($quotaData[$family].Available -lt $needed) {
-                    $errors += "'$($check.Sku)' ($($check.Label)): insufficient quota for family '$family' — need $needed cores, have $($quotaData[$family].Available). Request quota at: $QUOTA_URL"
-                }
-                else {
-                    # Reserve for cumulative tracking
-                    $quotaData[$family].Available -= $needed
-                }
+                Log-Warning "'$($check.Sku)' ($($check.Label)): quota data unavailable for '$family'. Skipping CPU quota check."
             }
+            continue
+        }
+
+        $needed = $match.Cores * $check.MaxNodes
+        if ($quotaData[$family].Available -lt $needed) {
+            $errors += "'$($check.Sku)' ($($check.Label)): insufficient quota for '$family' — need $needed cores, have $($quotaData[$family].Available). Request quota at: $QUOTA_URL"
+        }
+        else {
+            $quotaData[$family].Available -= $needed
         }
     }
 
