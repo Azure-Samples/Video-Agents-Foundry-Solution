@@ -199,8 +199,8 @@ annotate_vm_sizes_with_quota INFERENCE_VMS  "$CURRENT_INFERENCE_VM"  "$INFERENCE
 if [ "$INTERACTIVE" = "true" ]; then
     CURRENT_SYSTEM_VM=$(resolve_default_sku "$CURRENT_SYSTEM_VM" SYSTEM_VMS 4)
     CURRENT_WORKLOAD_VM=$(resolve_default_sku "$CURRENT_WORKLOAD_VM" WORKLOAD_VMS 32)
-    CURRENT_DEEPSTREAM_VM=$(resolve_default_sku "$CURRENT_DEEPSTREAM_VM" DEEPSTREAM_VMS 24)
-    CURRENT_INFERENCE_VM=$(resolve_default_sku "$CURRENT_INFERENCE_VM" INFERENCE_VMS 24)
+    CURRENT_DEEPSTREAM_VM=$(resolve_default_sku "$CURRENT_DEEPSTREAM_VM" DEEPSTREAM_VMS 6)
+    CURRENT_INFERENCE_VM=$(resolve_default_sku "$CURRENT_INFERENCE_VM" INFERENCE_VMS 40)
 fi
 
 write_key_value "System pool"     "${#SYSTEM_VMS[@]} sizes (with quota)"
@@ -265,7 +265,11 @@ else
                     else
                         COMMITTED_QUOTA_CORES[$family]=$((committed + needed))
                     fi
+                else
+                    _errors+=("'$sku' ($label): failed to query quota for '$family'. Cannot verify GPU quota in non-interactive mode.")
                 fi
+            else
+                _errors+=("'$sku' ($label): could not resolve quota family. Cannot verify GPU quota in non-interactive mode.")
             fi
         fi
     }

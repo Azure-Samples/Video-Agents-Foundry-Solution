@@ -227,8 +227,8 @@ $inferenceVmSizes  = Select-VmSizesForMenu -AllSizes $allVmSizes -Prefixes $GPU_
 if ($INTERACTIVE) {
     $currentSystemVm     = Resolve-DefaultSku -DefaultSku $currentSystemVm     -AvailableSizes $systemVmSizes     -PreferCores 4
     $currentWorkloadVm   = Resolve-DefaultSku -DefaultSku $currentWorkloadVm   -AvailableSizes $workloadVmSizes   -PreferCores 32
-    $currentDeepstreamVm = Resolve-DefaultSku -DefaultSku $currentDeepstreamVm -AvailableSizes $deepstreamVmSizes -PreferCores 24
-    $currentInferenceVm  = Resolve-DefaultSku -DefaultSku $currentInferenceVm  -AvailableSizes $inferenceVmSizes  -PreferCores 24
+    $currentDeepstreamVm = Resolve-DefaultSku -DefaultSku $currentDeepstreamVm -AvailableSizes $deepstreamVmSizes -PreferCores 6
+    $currentInferenceVm  = Resolve-DefaultSku -DefaultSku $currentInferenceVm  -AvailableSizes $inferenceVmSizes  -PreferCores 40
 }
 
 Write-KeyValue "System pool"     "$($systemVmSizes.Count) sizes (with quota)"
@@ -270,9 +270,15 @@ else {
         Write-KeyValue $check.Label "$($check.Sku) ($($match.Cores) vCPUs)"
 
         # GPU quota check
-        if ($check.IsGpu -and $quotaData.Count -gt 0) {
+        if ($check.IsGpu) {
             $family = Get-QuotaFamilyForVm -VmSize $check.Sku
-            if ($family -and $quotaData.ContainsKey($family)) {
+            if (-not $family) {
+                $errors += "'$($check.Sku)' ($($check.Label)): could not resolve quota family. Cannot verify GPU quota in non-interactive mode."
+            }
+            elseif ($quotaData.Count -eq 0 -or -not $quotaData.ContainsKey($family)) {
+                $errors += "'$($check.Sku)' ($($check.Label)): failed to query quota for '$family'. Cannot verify GPU quota in non-interactive mode."
+            }
+            else {
                 $needed = $match.Cores * $check.MaxNodes
                 if ($quotaData[$family].Available -lt $needed) {
                     $errors += "'$($check.Sku)' ($($check.Label)): insufficient quota for family '$family' — need $needed cores, have $($quotaData[$family].Available). Request quota at: $QUOTA_URL"

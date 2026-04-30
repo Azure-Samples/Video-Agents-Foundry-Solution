@@ -669,14 +669,16 @@ elseif ($env:AZURE_VIDEO_INDEXER_ACCOUNT_ID) {
     try { azd env set AZURE_VI_PORTAL_URL "$portalUrl" 2>$null } catch {}
 }
 
-# SSL certificate warning
-Write-Host ""
-Log-Warning "SSL Certificate Notice"
-Log-Info "The VI endpoint ($VIDEO_INDEXER_ENDPOINT_URI) uses a self-signed certificate."
-Log-Info "Before using the VI Portal (https://www.videoindexer.ai), you must trust the certificate:"
-Log-Info "  1. Open $VIDEO_INDEXER_ENDPOINT_URI in your browser"
-Log-Info "  2. Accept the certificate warning / proceed to the site"
-Log-Info "  3. Return to the VI Portal - it will now connect to your endpoint"
-Log-Info "For production use, configure a trusted TLS certificate via cert-manager."
+# SSL certificate warning (only when VI endpoint was created)
+if ($VIDEO_INDEXER_ENDPOINT_URI) {
+    Write-Host ""
+    Log-Warning "SSL Certificate Notice"
+    Log-Info "The VI endpoint ($VIDEO_INDEXER_ENDPOINT_URI) uses a self-signed certificate."
+    Log-Info "Before using the VI Portal (https://www.videoindexer.ai), you must trust the certificate:"
+    Log-Info "  1. Open $VIDEO_INDEXER_ENDPOINT_URI in your browser"
+    Log-Info "  2. Accept the certificate warning / proceed to the site"
+    Log-Info "  3. Return to the VI Portal - it will now connect to your endpoint"
+    Log-Info "For production use, configure a trusted TLS certificate via cert-manager."
+}
 
 Write-Host ""
