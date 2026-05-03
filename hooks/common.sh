@@ -127,11 +127,14 @@ connect_aks_cluster() {
     local cluster_name="${2:-$AZURE_AKS_CLUSTER_NAME}"
     local kube_context="${cluster_name}-admin"
 
-    az aks get-credentials \
+    if ! az aks get-credentials \
         --resource-group "$resource_group" \
         --name "$cluster_name" \
         --admin \
-        --overwrite-existing 2>/dev/null
+        --overwrite-existing 2>/dev/null; then
+        log_error "Failed to get AKS credentials for '$cluster_name'." >&2
+        return 1
+    fi
 
     echo "$kube_context"
 }
@@ -510,6 +513,13 @@ resolve_model_quota() {
 
     if [ "$available" -ge 1 ]; then
         log_warning "Insufficient quota: $available available (in thousands of TPM), need $capacity."
+        if [ "$INTERACTIVE" != "true" ]; then
+            # Non-interactive: auto-reduce capacity to available quota
+            log_info "Non-interactive mode. Auto-adjusting capacity to $available."
+            azd env set "$capacity_env_var" "$available" 2>/dev/null || true
+            log_success "Capacity adjusted to $available (saved to $capacity_env_var)"
+            return 0
+        fi
         local valid_input=false
         while [ "$valid_input" = false ]; do
             printf "   Enter a new capacity between 1 and %d (or 'q' to abort): " "$available"

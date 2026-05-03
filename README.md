@@ -100,6 +100,17 @@ To prevent incurring unnecessary charges, it's important to clean up your Azure 
 
 ⚠️ Alternatively, you can delete the resource group directly from the Azure Portal to clean up resources.
 
+### ⚠️ SSL Certificate Notice
+
+After deployment, the VI Arc endpoint (`https://<env>.<region>.cloudapp.azure.com`) uses a self-signed certificate. When accessing the [VI Portal](https://www.videoindexer.ai), your browser will connect to this endpoint and show a certificate warning.
+
+**To use the portal, you must manually trust the certificate in your browser:**
+1. Navigate directly to your endpoint URL (e.g. `https://myenv12345.eastus2.cloudapp.azure.com`)
+2. Accept the browser's certificate warning / proceed to the site
+3. Return to the [VI Portal](https://www.videoindexer.ai) — it will now be able to connect to your endpoint
+
+> This is a one-time step per browser. For production use, configure a trusted TLS certificate via cert-manager and a ClusterIssuer on the Nginx Ingress Controller.
+
 ### Prerequisites
 - **Azure Subscription** — An active Azure subscription. [Create one for free](https://azure.microsoft.com/free/).
 - **VI Arc Extension Approval** — Submit your subscription for approval via [this form](https://aka.ms/vi-register) before deploying.
