@@ -14,7 +14,6 @@ param arcConnectedClusterName string
 param extensionName string = 'videoindexer'
 
 @allowed([
-  'dev'
   'preview'
   'stable'
 ])
