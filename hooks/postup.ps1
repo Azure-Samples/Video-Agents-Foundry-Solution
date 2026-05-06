@@ -339,4 +339,15 @@ Write-KeyValue "2. Test chat" "Chat with video agent"
 Write-KeyValue "3. Add camera"        "add custom cameras from RTSP streams"
 Write-KeyValue "4. Tear down"         "azd down"
 
+# SSL certificate warning
+if ($env:AZURE_VIDEO_INDEXER_ENDPOINT_URI) {
+    Write-Host ""
+    Log-Warning "SSL Certificate Notice"
+    Log-Info "The VI endpoint ($env:AZURE_VIDEO_INDEXER_ENDPOINT_URI) uses a self-signed certificate."
+    Log-Info "Before using the VI Portal, you must trust the certificate in your browser:"
+    Log-Info "  1. Open $env:AZURE_VIDEO_INDEXER_ENDPOINT_URI in your browser"
+    Log-Info "  2. Accept the certificate warning / proceed to the site"
+    Log-Info "  3. Return to the VI Portal - it will now connect to your endpoint"
+}
+
 Write-Host ""

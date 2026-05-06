@@ -260,5 +260,15 @@ write_key_value "2. Test chat" "Chat with video agent"
 write_key_value "3. Add camera"        "add custom cameras from RTSP streams"
 write_key_value "4. Tear down"         "azd down"
 
+# SSL certificate warning
+if [ -n "$AZURE_VIDEO_INDEXER_ENDPOINT_URI" ]; then
+    echo ""
+    log_warning "SSL Certificate Notice"
+    log_info "The VI endpoint ($AZURE_VIDEO_INDEXER_ENDPOINT_URI) uses a self-signed certificate."
+    log_info "Before using the VI Portal, you must trust the certificate in your browser:"
+    log_info "  1. Open $AZURE_VIDEO_INDEXER_ENDPOINT_URI in your browser"
+    log_info "  2. Accept the certificate warning / proceed to the site"
+    log_info "  3. Return to the VI Portal - it will now connect to your endpoint"
+fi
 
 echo ""

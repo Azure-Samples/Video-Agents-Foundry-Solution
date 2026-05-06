@@ -8,14 +8,22 @@
 FOUNDRY_VERSION="1.0.0"
 FOUNDRY_NAME="Video Agents Foundry Solution"
 
+# ── Interactive mode ───────────────────────────────────────────────────────
+# When CREATE_IN_LOCAL=false (CI / --no-prompt), skip interactive menus and auto-accept defaults.
+if [ "$CREATE_IN_LOCAL" = "false" ]; then
+    INTERACTIVE=false
+else
+    INTERACTIVE=true
+fi
+
 # ── VM Size Defaults ─────────────────────────────────────────────────────
 # These are the fallback values when no env var is set.
 # The interactive menu (Step 4) lets the user override them.
 
 DEFAULT_SYSTEM_VM_SIZE="Standard_D4a_v4"
 DEFAULT_WORKLOAD_VM_SIZE="Standard_D32a_v4"
-DEFAULT_DEEPSTREAM_GPU_SIZE="Standard_NC24ads_A100_v4"
-DEFAULT_INFERENCE_GPU_SIZE="Standard_NC24ads_A100_v4"
+DEFAULT_DEEPSTREAM_GPU_SIZE="Standard_NC6s_v3"
+DEFAULT_INFERENCE_GPU_SIZE="Standard_NC40ads_H100_v5"
 
 # ── VM name-prefix filters (used to split az vm list-skus into CPU / GPU) ─
 CPU_VM_PREFIXES=("Standard_D" "Standard_E" "Standard_F")

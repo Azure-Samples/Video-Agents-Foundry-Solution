@@ -165,6 +165,11 @@ function Connect-AksCluster {
         --admin `
         --overwrite-existing 2>$null | Out-Null
 
+    if ($LASTEXITCODE -ne 0) {
+        Log-Error "Failed to get AKS credentials for '$ClusterName'."
+        return $null
+    }
+
     return "${ClusterName}-admin"
 }
 
@@ -512,6 +517,13 @@ function Resolve-ModelQuota {
 
     if ($available -ge 1) {
         Log-Warning "Insufficient quota: $available available (in thousands of TPM), need $Capacity."
+        if (-not $INTERACTIVE) {
+            # Non-interactive: auto-reduce capacity to available quota
+            Log-Info "Non-interactive mode. Auto-adjusting capacity to $available."
+            [void](Invoke-AzdEnvSet -Name $CapacityEnvVarName -Value "$available")
+            Log-Success "Capacity adjusted to $available (saved to $CapacityEnvVarName)"
+            return
+        }
         $validInput = $false
         do {
             $userInput = Read-Host "Enter a new capacity between 1 and $available (or 'q' to abort)"
@@ -677,7 +689,7 @@ function Show-VmSelectionMenu {
             [Console]::Write(" $([char]0x2193)  ")
         }
 
-        [Console]::SetCursorPosition(0, $Top + $maxVisible)
+        [Console]::SetCursorPosition(0, [math]::Min($Top + $maxVisible, [Console]::BufferHeight - 1))
     }
 
     # ── Ensure selection is visible, adjust scrollOffset ───────────
@@ -742,7 +754,8 @@ function Show-VmSelectionMenu {
             [Console]::CursorVisible = $true
         }
 
-        [Console]::SetCursorPosition(0, $menuTopLine + $maxVisible)
+        $targetRow = [math]::Min($menuTopLine + $maxVisible, [Console]::BufferHeight - 1)
+        [Console]::SetCursorPosition(0, $targetRow)
 
         if ($escaped) {
             Write-Host ""
