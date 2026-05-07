@@ -7,7 +7,6 @@ Here are some example prompts you can use with the AI agents in the Video-Agents
 - Summarize the key events in this video and provide timestamps for each
 - What objects or people appear in the first 30 seconds of the video?
 - Are there any safety violations visible in this video footage?
-- Identify and describe all text visible in the video (OCR)
 
 ## Retail Analytics Prompts
 
