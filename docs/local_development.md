@@ -19,7 +19,7 @@ The fastest way to get a consistent development environment is using the include
 
 1. Click the button below to open in GitHub Codespaces:
 
-    [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/microsoft/Video-Agents-Foundry-Solution)
+    [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/Azure-Samples/Video-Agents-Foundry-Solution)
 
 2. Wait for the container to build (this may take several minutes)
 3. A terminal will be available with all tools pre-installed

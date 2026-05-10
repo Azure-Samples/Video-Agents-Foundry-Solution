@@ -35,7 +35,7 @@ This solution optionally creates a Microsoft Foundry project and Foundry Tools (
 
 - **Edge-Deployed Video Analysis** — Run Azure Video Indexer on Arc-enabled Kubernetes clusters at the edge, bringing AI-powered video analysis closer to data sources for low-latency processing.
 - **Real-Time & Batch Video Processing** — Support for both live video pipeline ingestion (RTSP streams) and batch processing of recorded video files.
-- **Multimodal AI Insights** — Extract rich insights from video content including speech transcription, OCR, face detection, object tracking, scene detection, and action recognition.
+- **Multimodal AI Insights** — Extract rich insights from video content including speech transcription, face detection, object tracking, scene detection, and action recognition.
 - **AI Agent–Based Automation** — Leverage intelligent agents powered by Azure OpenAI to automate complex video analysis workflows, enabling automated decision-making and action triggering.
 - **Cloud-Managed Edge Deployments** — Manage and monitor edge deployments centrally through Azure Arc while processing video data locally.
 - **Data Sovereignty & Compliance** — Process sensitive video data on-premises or at the edge, ensuring data residency and compliance requirements are met.
@@ -55,8 +55,8 @@ Follow the quick deploy steps on the deployment guide to deploy this solution to
 [Click here to launch the deployment guide](./docs/deployment.md)
 <br/>
 
-| [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/microsoft/Video-Agents-Foundry-Solution) | [![Open in Dev Containers](https://img.shields.io/static/v1?style=for-the-badge&label=Dev%20Containers&message=Open&color=blue&logo=visualstudiocode)](https://vscode.dev/redirect?url=vscode://ms-vscode-remote.remote-containers/cloneInVolume?url=https://github.com/Azure-Samples/Video-Agents-Foundry-Solution) | [![Open in Visual Studio Code Web](https://img.shields.io/static/v1?style=for-the-badge&label=Visual%20Studio%20Code%20(Web)&message=Open&color=blue&logo=visualstudiocode&logoColor=white)](https://vscode.dev/azure/?vscode-azure-exp=foundry&agentPayload=eyJiYXNlVXJsIjogImh0dHBzOi8vcmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbS9taWNyb3NvZnQvTXVsdGktQWdlbnQtQ3VzdG9tLUF1dG9tYXRpb24tRW5naW5lLVNvbHV0aW9uLUFjY2VsZXJhdG9yL3JlZnMvaGVhZHMvbWFpbi9pbmZyYS92c2NvZGVfd2ViIiwgImluZGV4VXJsIjogIi9pbmRleC5qc29uIiwgInZhcmlhYmxlcyI6IHsiYWdlbnRJZCI6ICIiLCAiY29ubmVjdGlvblN0cmluZyI6ICIiLCAidGhyZWFkSWQiOiAiIiwgInVzZXJNZXNzYWdlIjogIiIsICJwbGF5Z3JvdW5kTmFtZSI6ICIiLCAibG9jYXRpb24iOiAiIiwgInN1YnNjcmlwdGlvbklkIjogIiIsICJyZXNvdXJjZUlkIjogIiIsICJwcm9qZWN0UmVzb3VyY2VJZCI6ICIiLCAiZW5kcG9pbnQiOiAiIn0sICJjb2RlUm91dGUiOiBbImFpLXByb2plY3RzLXNkayIsICJweXRob24iLCAiZGVmYXVsdC1henVyZS1hdXRoIiwgImVuZHBvaW50Il19) |
-|---|---|---|
+| [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/Azure-Samples/Video-Agents-Foundry-Solution) | [![Open in Dev Containers](https://img.shields.io/static/v1?style=for-the-badge&label=Dev%20Containers&message=Open&color=blue&logo=visualstudiocode)](https://vscode.dev/redirect?url=vscode%3A%2F%2Fms-vscode-remote.remote-containers%2FcloneInVolume%3Furl%3Dhttps%3A%2F%2Fgithub.com%2FAzure-Samples%2FVideo-Agents-Foundry-Solution) |
+|---|---|
 
 
 > ⚠️ **Important: Check Azure OpenAI Quota Availability**
@@ -69,7 +69,7 @@ This template creates everything you need to get started with Microsoft Foundry 
 | Resource | Description |
 |----------|-------------|
 | [Azure AKS](https://learn.microsoft.com/azure/aks/) | Provides the Kubernetes cluster infrastructure with GPU support for running edge video processing workloads |
-| [Video Indexer Account](https://learn.microsoft.com/azure/azure-video-indexer/) | Azure Video Indexer account for AI-powered video analysis, extracting insights such as speech transcription, OCR, face detection, and object tracking |
+| [Video Indexer Account](https://learn.microsoft.com/azure/azure-video-indexer/) | Azure Video Indexer account for AI-powered video analysis, extracting insights such as speech transcription, face detection, and object tracking |
 | [Video Indexer Enabled by Arc](https://learn.microsoft.com/azure/azure-video-indexer/azure-video-indexer-enabled-by-arc-overview) | Extends Azure Video Indexer capabilities to edge environments via Azure Arc, enabling real-time video processing on Arc-enabled Kubernetes clusters |
 | [Azure AI Project](https://learn.microsoft.com/azure/ai-studio/how-to/create-projects) | Provides a collaborative workspace for AI development with access to models, data, and compute resources |
 | [Azure OpenAI Service](https://learn.microsoft.com/azure/ai-services/openai/) | Powers the AI model. Supports only gpt-5.2 |

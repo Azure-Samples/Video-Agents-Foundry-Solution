@@ -7,7 +7,7 @@ The Video-Agents-Foundry-Solution is an Azure solution accelerator that deploys 
 ## What can the Video-Agents-Foundry-Solution do?
 
 - Process and analyze live and recorded video streams at the edge
-- Extract multimodal AI insights including speech transcription, OCR, face detection, object tracking, scene detection, and action recognition
+- Extract multimodal AI insights including speech transcription, face detection, object tracking, scene detection, and action recognition
 - Leverage AI agents to automate complex video analysis workflows
 - Enable real-time decision-making with low latency and full data sovereignty
 
