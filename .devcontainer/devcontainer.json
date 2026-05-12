@@ -8,9 +8,9 @@
         },
         "ghcr.io/devcontainers/features/kubectl-helm-minikube:1": {
             "minikube": "none"
-        },
-        "ghcr.io/dhoeric/features/kubelogin:1": {}
+        }
     },
+    "postCreateCommand": "sudo az aks install-cli",
     "customizations": {
         "vscode": {
             "extensions": [
