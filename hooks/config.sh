@@ -10,7 +10,9 @@ FOUNDRY_NAME="Video Agents Foundry Solution"
 
 # ── Interactive mode ───────────────────────────────────────────────────────
 # When CREATE_IN_LOCAL=false (CI / --no-prompt), skip interactive menus and auto-accept defaults.
-if [ "$CREATE_IN_LOCAL" = "false" ]; then
+# Also force non-interactive when stdin is not a TTY (e.g. azd hook under devcontainer
+# pipes stdin) — otherwise `read` hits EOF, returns 1, and `set -e` kills the script.
+if [ "$CREATE_IN_LOCAL" = "false" ] || [ ! -t 0 ]; then
     INTERACTIVE=false
 else
     INTERACTIVE=true
