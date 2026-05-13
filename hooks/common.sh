@@ -615,15 +615,42 @@ show_vm_selection_menu() {
             if [ "$n" = "$default_sku" ]; then
                 local rest="${entry#*|}"
                 SELECTED_VM_CORES="${rest%%|*}"
+                rest="${rest#*|}"      # drop cores
+                rest="${rest#*|}"      # drop memGB
+                SELECTED_VM_FAMILY="${rest%%|*}"
                 break
             fi
         done
         azd env set "$env_var_name" "$default_sku" 2>/dev/null || true
+
+        # GPU pools: still validate + reserve quota so we don't proceed silently
+        # with an unfunded default SKU.
+        if [ "$is_gpu" = "gpu" ] && [ "$SELECTED_VM_CORES" -gt 0 ]; then
+            get_quota_family_for_vm "$default_sku" "$SELECTED_VM_FAMILY"
+            local _fam="$GET_QUOTA_FAMILY_RESULT"
+            if [ -n "$_fam" ]; then
+                SELECTED_VM_FAMILY="$_fam"
+                local _total=$((SELECTED_VM_CORES * max_nodes))
+                assert_vm_quota "$pool_name" "$_fam" "$location" "$_total" || true
+                if [ "$ASSERT_QUOTA_RESULT" = "ok" ]; then
+                    COMMITTED_QUOTA_CORES[$_fam]=$(( ${COMMITTED_QUOTA_CORES[$_fam]:-0} + _total ))
+                elif [ "$ASSERT_QUOTA_RESULT" = "zero" ] || [ "$ASSERT_QUOTA_RESULT" = "low" ]; then
+                    log_error "Default GPU SKU '${default_sku}' for ${pool_name} has insufficient quota — set '$env_var_name' to a SKU with quota or request quota."
+                    exit 1
+                fi
+            else
+                log_warning "Could not resolve quota family for default GPU SKU '${default_sku}'. Skipping quota check."
+            fi
+        fi
         return 0
     fi
 
     # Disable set -e around menu so a read EOF or terminal glitch cannot kill
     # the parent hook. Capture exit, fall back to default SKU on failure.
+    # Save current errexit state — restoring unconditionally would change shell
+    # options for callers that didn't have `set -e` enabled.
+    local _had_e=0
+    case "$-" in *e*) _had_e=1 ;; esac
     local menu_ok=0
     set +e
     if _test_terminal_raw_mode; then
@@ -633,7 +660,7 @@ show_vm_selection_menu() {
         _show_vm_menu_simple "$pool_name" "$env_var_name" "$_vm_array_name" "$default_sku" "$location" "$max_nodes" "$is_gpu"
         menu_ok=$?
     fi
-    set -e
+    [ "$_had_e" -eq 1 ] && set -e
 
     if [ "$menu_ok" -ne 0 ] || [ -z "$SELECTED_VM_SKU" ]; then
         log_warning "VM menu failed (exit $menu_ok) — falling back to default '${default_sku}' for ${pool_name}."
