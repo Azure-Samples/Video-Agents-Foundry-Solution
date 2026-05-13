@@ -9,7 +9,9 @@ $script:FoundryName    = "Video Agents Foundry Solution"
 
 # ── Interactive mode ───────────────────────────────────────────────────────
 # When CREATE_IN_LOCAL=false (CI / --no-prompt), skip interactive menus and auto-accept defaults.
-$Script:INTERACTIVE = ($env:CREATE_IN_LOCAL -ne 'false')
+# Also force non-interactive when stdin is redirected (e.g. azd hook under devcontainer
+# pipes stdin) — otherwise Read-Host would block / fail unexpectedly.
+$Script:INTERACTIVE = ($env:CREATE_IN_LOCAL -ne 'false') -and (-not [Console]::IsInputRedirected)
 
 # ── VM Size Defaults ─────────────────────────────────────────────────────
 # These are the fallback values when no env var is set.

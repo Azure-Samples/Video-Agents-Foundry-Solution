@@ -58,6 +58,13 @@ Follow the quick deploy steps on the deployment guide to deploy this solution to
 | [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/Azure-Samples/Video-Agents-Foundry-Solution) | [![Open in Dev Containers](https://img.shields.io/static/v1?style=for-the-badge&label=Dev%20Containers&message=Open&color=blue&logo=visualstudiocode)](https://vscode.dev/redirect?url=vscode%3A%2F%2Fms-vscode-remote.remote-containers%2FcloneInVolume%3Furl%3Dhttps%3A%2F%2Fgithub.com%2FAzure-Samples%2FVideo-Agents-Foundry-Solution) |
 |---|---|
 
+> 📝 **Dev Container / Codespaces users:** the container defaults to non-interactive mode and skips post-provision steps. Before running `azd up`, enable the interactive VM-selection menu and post-provision Kubernetes setup:
+>
+> ```bash
+> azd env set CREATE_IN_LOCAL true
+> azd env set SKIP_POST_PROVISION false
+> ```
+
 
 > ⚠️ **Important: Check Azure OpenAI Quota Availability**
  <br/>To ensure sufficient quota is available in your subscription, please follow [quota check instructions guide](./docs/quota_check.md) before you deploy the solution.
