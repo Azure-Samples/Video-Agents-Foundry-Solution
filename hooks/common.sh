@@ -602,11 +602,47 @@ show_vm_selection_menu() {
         exit 1
     fi
 
+    # If stdin is not a real TTY (azd hook pipes stdin in devcontainer), skip
+    # interactive menu entirely — `read` would hit EOF and `set -e` would abort.
+    if [ ! -t 0 ] || [ ! -t 1 ]; then
+        log_warning "Non-TTY stdin detected — auto-selecting default '${default_sku}' for ${pool_name}."
+        log_info "To choose interactively, run 'bash hooks/preprovision.sh' directly, or set the SKU via 'azd env set ${env_var_name} <SKU>'."
+        SELECTED_VM_SKU="$default_sku"
+        SELECTED_VM_CORES=0
+        SELECTED_VM_FAMILY=""
+        for entry in "${_vm_array_ref[@]}"; do
+            local n="${entry%%|*}"
+            if [ "$n" = "$default_sku" ]; then
+                local rest="${entry#*|}"
+                SELECTED_VM_CORES="${rest%%|*}"
+                break
+            fi
+        done
+        azd env set "$env_var_name" "$default_sku" 2>/dev/null || true
+        return 0
+    fi
+
+    # Disable set -e around menu so a read EOF or terminal glitch cannot kill
+    # the parent hook. Capture exit, fall back to default SKU on failure.
+    local menu_ok=0
+    set +e
     if _test_terminal_raw_mode; then
         _show_vm_menu_interactive "$pool_name" "$env_var_name" "$_vm_array_name" "$default_sku" "$location" "$max_nodes" "$is_gpu"
+        menu_ok=$?
     else
         _show_vm_menu_simple "$pool_name" "$env_var_name" "$_vm_array_name" "$default_sku" "$location" "$max_nodes" "$is_gpu"
+        menu_ok=$?
     fi
+    set -e
+
+    if [ "$menu_ok" -ne 0 ] || [ -z "$SELECTED_VM_SKU" ]; then
+        log_warning "VM menu failed (exit $menu_ok) — falling back to default '${default_sku}' for ${pool_name}."
+        SELECTED_VM_SKU="$default_sku"
+        SELECTED_VM_CORES=0
+        SELECTED_VM_FAMILY=""
+        azd env set "$env_var_name" "$default_sku" 2>/dev/null || true
+    fi
+    return 0
 }
 
 # ── Simple numbered-list fallback (works without raw terminal) ────────────
@@ -735,6 +771,7 @@ _show_vm_menu_simple() {
 
         log_success "Selected: $selected_sku"
         echo ""
+        printf "  %b────────────────────────────────────────────────────────────%b\n\n" "$C_MUTED" "$C_RESET"
         SELECTED_VM_SKU="$selected_sku"
         SELECTED_VM_CORES="$selected_cores"
         SELECTED_VM_FAMILY="$selected_family"
@@ -796,7 +833,9 @@ _show_vm_menu_interactive() {
 
     _render_menu() {
         local selected=$1 top=$2 offset=$3
-        printf "\033[%d;1H" "$top"
+        # Use relative positioning: caller ensures cursor is at menu top row.
+        # `top` arg kept for compatibility but no longer used.
+        printf "\r"
         for ((row=0; row<max_visible; row++)); do
             local idx=$((offset + row))
             if [ "$idx" -eq "$vm_count" ]; then
@@ -842,57 +881,49 @@ _show_vm_menu_interactive() {
         fi
         echo ""
 
-        # Get cursor row via ANSI DSR.
-        # The stty/dd sequence can fail on Windows pseudo-terminals or when azd
-        # pipes stdin, so guard against set -e by using a subshell with || true.
-        local cursor_row=""
-        if [ -t 0 ] && [ -t 1 ]; then
-            cursor_row=$(
-                old_stty=$(stty -g 2>/dev/null) || true
-                stty raw -echo min 0 2>/dev/null || true
-                printf "\033[6n" > /dev/tty 2>/dev/null || true
-                resp=""
-                for _i in $(seq 1 20); do
-                    ch=$(dd bs=1 count=1 2>/dev/null) || break
-                    resp="${resp}${ch}"
-                    case "$resp" in *R) break ;; esac
-                done
-                [ -n "$old_stty" ] && stty "$old_stty" 2>/dev/null || true
-                echo "$resp" | sed 's/.*\[//;s/;.*//'
-            ) 2>/dev/null || true
-        fi
-        # Fall back if DSR failed or returned garbage
-        if ! [[ "$cursor_row" =~ ^[0-9]+$ ]]; then
-            cursor_row=10
-        fi
-
-        # Reserve viewport lines
+        # Relative positioning: print blank lines for viewport, move cursor back
+        # to top of viewport, then render in place. Avoids unreliable cursor-DSR
+        # query that breaks in devcontainer / azd pseudo-terminals.
         for ((r=0; r<max_visible; r++)); do echo ""; done
-        local menu_top=$cursor_row
+        printf "\033[%dA" "$max_visible"  # move cursor up to viewport top
+        local menu_top=0  # unused with relative positioning
 
         _update_scroll
         _render_menu "$current_index" "$menu_top" "$scroll_offset"
+        # After render, cursor is on line after viewport. Move back up to top.
+        _rerender() {
+            printf "\033[%dA" "$max_visible"
+            _render_menu "$current_index" "$menu_top" "$scroll_offset"
+        }
 
         local confirmed=false escaped=false
         while [ "$confirmed" = false ] && [ "$escaped" = false ]; do
-            local key; IFS= read -rsn1 key
+            local key=""
+            if ! IFS= read -rsn1 key; then
+                # read failed (EOF / non-TTY). Abort menu — caller falls back.
+                echo ""
+                log_warning "Interactive menu input unavailable (read EOF)."
+                return 2
+            fi
             if [ "$key" = $'\x1b' ]; then
-                local seq=""; IFS= read -rsn1 -t 0.1 seq
+                local seq=""; IFS= read -rsn1 -t 0.1 seq || true
                 if [ -z "$seq" ]; then escaped=true
                 elif [ "$seq" = "[" ]; then
                     local arrow; IFS= read -rsn1 arrow
                     case "$arrow" in
-                        A) [ "$current_index" -gt 0 ] && current_index=$((current_index - 1)); _update_scroll; _render_menu "$current_index" "$menu_top" "$scroll_offset" ;;
-                        B) [ "$current_index" -lt $((item_count - 1)) ] && current_index=$((current_index + 1)); _update_scroll; _render_menu "$current_index" "$menu_top" "$scroll_offset" ;;
+                        A) [ "$current_index" -gt 0 ] && current_index=$((current_index - 1)); _update_scroll; _rerender ;;
+                        B) [ "$current_index" -lt $((item_count - 1)) ] && current_index=$((current_index + 1)); _update_scroll; _rerender ;;
                     esac
                 fi
             elif [ "$key" = "" ]; then confirmed=true
             elif [ "$key" = "c" ] || [ "$key" = "C" ]; then
-                current_index=$vm_count; _update_scroll; _render_menu "$current_index" "$menu_top" "$scroll_offset"
+                current_index=$vm_count; _update_scroll; _rerender
             fi
         done
 
-        printf "\033[%d;1H" "$((menu_top + max_visible))"
+        # After Enter: _render_menu left cursor below viewport. Add blank line
+        # for visual separation between this menu and next action / pool menu.
+        echo ""
 
         if [ "$escaped" = true ]; then
             echo ""
@@ -954,6 +985,7 @@ _show_vm_menu_interactive() {
 
         log_success "Selected: $selected_sku"
         echo ""
+        printf "  %b────────────────────────────────────────────────────────────%b\n\n" "$C_MUTED" "$C_RESET"
         SELECTED_VM_SKU="$selected_sku"
         SELECTED_VM_CORES="$selected_cores"
         SELECTED_VM_FAMILY="$selected_family"

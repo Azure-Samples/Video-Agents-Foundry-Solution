@@ -11,6 +11,10 @@
         }
     },
     "postCreateCommand": "sudo az aks install-cli",
+    "containerEnv": {
+        "CREATE_IN_LOCAL": "false",
+        "SKIP_POST_PROVISION": "true"
+    },
     "customizations": {
         "vscode": {
             "extensions": [

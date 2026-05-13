@@ -8,6 +8,12 @@
 # ── ANSI Support Detection ──────────────────────────────────────────────────
 
 _test_ansi_support() {
+    # Explicit override
+    [ -n "${NO_COLOR:-}" ] && return 1
+    [ -n "${FORCE_COLOR:-}" ] && return 0
+    # If stdout not a TTY (azd captures hook output in some setups → escapes
+    # leak as literal text), disable ANSI to keep logs clean.
+    [ ! -t 1 ] && return 1
     # Most modern terminals support ANSI; check common indicators
     [ -n "${WT_SESSION:-}" ] && return 0       # Windows Terminal
     [ "${TERM_PROGRAM:-}" = "vscode" ] && return 0
@@ -16,8 +22,6 @@ _test_ansi_support() {
     case "${TERM:-}" in
         xterm*|screen*|tmux*|rxvt*|linux|alacritty) return 0 ;;
     esac
-    # If stdout is a terminal, assume ANSI support
-    [ -t 1 ] && return 0
     return 1
 }
 
