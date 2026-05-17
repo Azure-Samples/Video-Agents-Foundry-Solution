@@ -140,6 +140,11 @@ fi
 log_step 5 $TOTAL_STEPS "Selecting VM Sizes for AKS Node Pools"
 
 if [ "${SKIP_POST_PROVISION:-false}" = "true" ]; then
+    # SKIP_POST_PROVISION gates BOTH the post-provision/post-up hooks AND
+    # this pre-provision step's interactive VM SKU / quota menu. Name is
+    # historical (the flag was originally postup-only). When true, we still
+    # run provider registration in step 6 because `azd up --no-prompt` in CI
+    # performs a real Bicep deployment that needs providers registered.
     log_info "SKIP_POST_PROVISION=true — skipping VM SKU availability + quota checks."
     SYSTEM_SKU="${SYSTEM_VM_SIZE:-$DEFAULT_SYSTEM_VM_SIZE}"
     WORKLOAD_SKU="${WORKLOAD_VM_SIZE:-$DEFAULT_WORKLOAD_VM_SIZE}"
@@ -148,10 +153,16 @@ if [ "${SKIP_POST_PROVISION:-false}" = "true" ]; then
     # Only persist user-supplied values. Skip persisting compiled-in defaults
     # so a later SKIP_POST_PROVISION=false run will still trigger the menu /
     # validation path rather than silently accept defaults baked into the env.
-    [ -n "${SYSTEM_VM_SIZE:-}" ]         && azd env set SYSTEM_VM_SIZE         "$SYSTEM_VM_SIZE"         2>/dev/null || true
-    [ -n "${WORKLOAD_VM_SIZE:-}" ]       && azd env set WORKLOAD_VM_SIZE       "$WORKLOAD_VM_SIZE"       2>/dev/null || true
-    [ -n "${DEEPSTREAM_GPU_VM_SIZE:-}" ] && azd env set DEEPSTREAM_GPU_VM_SIZE "$DEEPSTREAM_GPU_VM_SIZE" 2>/dev/null || true
-    [ -n "${INFERENCE_GPU_VM_SIZE:-}" ]  && azd env set INFERENCE_GPU_VM_SIZE  "$INFERENCE_GPU_VM_SIZE"  2>/dev/null || true
+    _persist_if_set() {
+        local var="$1"
+        local val="${!var:-}"
+        [ -n "$val" ] && azd env set "$var" "$val" 2>/dev/null || true
+    }
+    _persist_if_set SYSTEM_VM_SIZE
+    _persist_if_set WORKLOAD_VM_SIZE
+    _persist_if_set DEEPSTREAM_GPU_VM_SIZE
+    _persist_if_set INFERENCE_GPU_VM_SIZE
+    unset -f _persist_if_set
 else
     # Determine current/default values
     CURRENT_SYSTEM_VM="${SYSTEM_VM_SIZE:-$DEFAULT_SYSTEM_VM_SIZE}"
@@ -333,11 +344,10 @@ fi
 # =====================================================
 log_step 6 $TOTAL_STEPS "Checking Azure Resource Provider Registrations"
 
-if [ "${SKIP_POST_PROVISION:-false}" = "true" ]; then
-    log_info "SKIP_POST_PROVISION=true — skipping provider registration."
-else
-    register_required_providers || true
-fi
+# Provider registration always runs — even under SKIP_POST_PROVISION=true,
+# `azd up --no-prompt` in CI still performs a real Bicep deployment that
+# requires registered providers. Only the interactive SKU/quota menu is gated.
+register_required_providers || true
 
 # =====================================================
 # Summary

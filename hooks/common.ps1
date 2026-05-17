@@ -17,12 +17,12 @@ function Invoke-AzJson {
         output or if parsing failed. Never throws — callers must null-check.
     #>
     param([Parameter(Mandatory)] [scriptblock]$Command)
-    $errFile = $null
+    $errFile = ''
     try {
         # Suppress az CLI warning chatter that would otherwise leak into stdout
         # (e.g. "WARNING: ..." lines from get-versions break ConvertFrom-Json).
-        $prevOnlyErrors = $env:AZURE_CORE_ONLY_SHOW_ERRORS
         $hadPrev = Test-Path Env:AZURE_CORE_ONLY_SHOW_ERRORS
+        $prevOnlyErrors = if ($hadPrev) { $env:AZURE_CORE_ONLY_SHOW_ERRORS } else { $null }
         $env:AZURE_CORE_ONLY_SHOW_ERRORS = 'true'
         try {
             # Capture stderr to a temp file so it cannot pollute stdout JSON.
@@ -40,7 +40,7 @@ function Invoke-AzJson {
             }
         }
         if ($LASTEXITCODE -ne 0) {
-            $errText = if (Test-Path $errFile) { (Get-Content $errFile -Raw) } else { '' }
+            $errText = if ($errFile -and (Test-Path $errFile)) { (Get-Content $errFile -Raw) } else { '' }
             $snippet = if ($errText) { $errText.Trim() } elseif ($raw) { ($raw | Out-String).Trim() } else { '(no output)' }
             if ($snippet.Length -gt 400) { $snippet = $snippet.Substring(0, 400) + '...' }
             Log-Warning "az command failed (exit $LASTEXITCODE): $snippet"

@@ -615,6 +615,9 @@ show_vm_selection_menu() {
         # we can still resolve cores/family for the GPU quota assertion below.
         # Nested fn name is unique-prefixed; we `unset -f` at end to avoid
         # leaking into the global namespace (bash defines fns globally).
+        # DYNAMIC SCOPE: relies on enclosing function's locals — `default_sku`,
+        # `SELECTED_VM_CORES`, `SELECTED_VM_FAMILY`. Do NOT hoist to file scope
+        # without making these explicit parameters / output vars.
         _vmsm_lookup_sku() {
             local arr_name="$1"
             local -n _lref=$arr_name

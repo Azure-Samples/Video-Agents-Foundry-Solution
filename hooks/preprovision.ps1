@@ -165,6 +165,9 @@ Log-Step -Number 5 -Total $totalSteps -Title "Selecting VM Sizes for AKS Node Po
 
 if ($env:SKIP_POST_PROVISION -eq 'true') {
     Log-Info "SKIP_POST_PROVISION=true — skipping VM SKU availability + quota checks."
+    # NOTE: Cores=0 / Family=$null in skip mode — we don't query az vm list-skus
+    # here to keep this branch fast and offline-friendly. Downstream summary
+    # prints only .Sku, so the zero values are not surfaced to the user.
     $selectedSystem     = @{ Sku = $(if ($env:SYSTEM_VM_SIZE)         { $env:SYSTEM_VM_SIZE }         else { $DEFAULT_SYSTEM_VM_SIZE });      Cores = 0; Family = $null }
     $selectedWorkload   = @{ Sku = $(if ($env:WORKLOAD_VM_SIZE)       { $env:WORKLOAD_VM_SIZE }       else { $DEFAULT_WORKLOAD_VM_SIZE });    Cores = 0; Family = $null }
     $selectedDeepstream = @{ Sku = $(if ($env:DEEPSTREAM_GPU_VM_SIZE) { $env:DEEPSTREAM_GPU_VM_SIZE } else { $DEFAULT_DEEPSTREAM_GPU_SIZE }); Cores = 0; Family = $null }
@@ -351,12 +354,10 @@ $INFERENCE_GPU_VM_SIZE  = $selectedInference.Sku
 # =====================================================
 Log-Step -Number 6 -Total $totalSteps -Title "Checking Azure Resource Provider Registrations"
 
-if ($env:SKIP_POST_PROVISION -eq 'true') {
-    Log-Info "SKIP_POST_PROVISION=true — skipping provider registration."
-}
-else {
-    $null = Register-RequiredProviders
-}
+# Provider registration always runs — even under SKIP_POST_PROVISION=true,
+# `azd up --no-prompt` in CI still performs a real Bicep deployment that
+# requires registered providers. Only the interactive SKU/quota menu is gated.
+$null = Register-RequiredProviders
 
 # =====================================================
 # Summary
