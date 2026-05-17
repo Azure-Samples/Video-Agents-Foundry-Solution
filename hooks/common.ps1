@@ -22,6 +22,7 @@ function Invoke-AzJson {
         # Suppress az CLI warning chatter that would otherwise leak into stdout
         # (e.g. "WARNING: ..." lines from get-versions break ConvertFrom-Json).
         $prevOnlyErrors = $env:AZURE_CORE_ONLY_SHOW_ERRORS
+        $hadPrev = Test-Path Env:AZURE_CORE_ONLY_SHOW_ERRORS
         $env:AZURE_CORE_ONLY_SHOW_ERRORS = 'true'
         try {
             # Capture stderr to a temp file so it cannot pollute stdout JSON.
@@ -29,7 +30,14 @@ function Invoke-AzJson {
             $raw = & $Command 2>$errFile
         }
         finally {
-            $env:AZURE_CORE_ONLY_SHOW_ERRORS = $prevOnlyErrors
+            # Restore precisely. Assigning $null on PS 5.1 leaves an empty
+            # string instead of unsetting the env var, so explicitly remove.
+            if ($hadPrev) {
+                $env:AZURE_CORE_ONLY_SHOW_ERRORS = $prevOnlyErrors
+            }
+            else {
+                Remove-Item Env:AZURE_CORE_ONLY_SHOW_ERRORS -ErrorAction SilentlyContinue
+            }
         }
         if ($LASTEXITCODE -ne 0) {
             $errText = if (Test-Path $errFile) { (Get-Content $errFile -Raw) } else { '' }
@@ -43,18 +51,7 @@ function Invoke-AzJson {
         }
         if ($raw -is [array]) { $raw = ($raw -join "`n") }
         if ([string]::IsNullOrWhiteSpace($raw)) { return $null }
-        # Defensive: strip any leading non-JSON noise (e.g. stray warning line)
-        # before the first '{' or '['.
-        $trimmed = $raw.TrimStart()
-        $braceIdx   = $trimmed.IndexOf('{')
-        $bracketIdx = $trimmed.IndexOf('[')
-        if ($braceIdx   -lt 0) { $braceIdx   = [int]::MaxValue }
-        if ($bracketIdx -lt 0) { $bracketIdx = [int]::MaxValue }
-        $jsonStart = [Math]::Min($braceIdx, $bracketIdx)
-        if ($jsonStart -gt 0 -and $jsonStart -lt [int]::MaxValue) {
-            $trimmed = $trimmed.Substring($jsonStart)
-        }
-        return $trimmed | ConvertFrom-Json -ErrorAction Stop
+        return $raw | ConvertFrom-Json -ErrorAction Stop
     }
     catch {
         Log-Warning "Invoke-AzJson exception: $($_.Exception.Message)"

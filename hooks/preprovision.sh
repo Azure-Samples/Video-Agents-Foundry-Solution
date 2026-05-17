@@ -145,11 +145,13 @@ if [ "${SKIP_POST_PROVISION:-false}" = "true" ]; then
     WORKLOAD_SKU="${WORKLOAD_VM_SIZE:-$DEFAULT_WORKLOAD_VM_SIZE}"
     DEEPSTREAM_GPU_VM_SIZE="${DEEPSTREAM_GPU_VM_SIZE:-$DEFAULT_DEEPSTREAM_GPU_SIZE}"
     INFERENCE_GPU_VM_SIZE="${INFERENCE_GPU_VM_SIZE:-$DEFAULT_INFERENCE_GPU_SIZE}"
-    # Persist to azd env for downstream Bicep + subsequent runs.
-    azd env set SYSTEM_VM_SIZE         "$SYSTEM_SKU"              2>/dev/null || true
-    azd env set WORKLOAD_VM_SIZE       "$WORKLOAD_SKU"            2>/dev/null || true
-    azd env set DEEPSTREAM_GPU_VM_SIZE "$DEEPSTREAM_GPU_VM_SIZE"  2>/dev/null || true
-    azd env set INFERENCE_GPU_VM_SIZE  "$INFERENCE_GPU_VM_SIZE"   2>/dev/null || true
+    # Only persist user-supplied values. Skip persisting compiled-in defaults
+    # so a later SKIP_POST_PROVISION=false run will still trigger the menu /
+    # validation path rather than silently accept defaults baked into the env.
+    [ -n "${SYSTEM_VM_SIZE:-}" ]         && azd env set SYSTEM_VM_SIZE         "$SYSTEM_VM_SIZE"         2>/dev/null || true
+    [ -n "${WORKLOAD_VM_SIZE:-}" ]       && azd env set WORKLOAD_VM_SIZE       "$WORKLOAD_VM_SIZE"       2>/dev/null || true
+    [ -n "${DEEPSTREAM_GPU_VM_SIZE:-}" ] && azd env set DEEPSTREAM_GPU_VM_SIZE "$DEEPSTREAM_GPU_VM_SIZE" 2>/dev/null || true
+    [ -n "${INFERENCE_GPU_VM_SIZE:-}" ]  && azd env set INFERENCE_GPU_VM_SIZE  "$INFERENCE_GPU_VM_SIZE"  2>/dev/null || true
 else
     # Determine current/default values
     CURRENT_SYSTEM_VM="${SYSTEM_VM_SIZE:-$DEFAULT_SYSTEM_VM_SIZE}"
@@ -331,7 +333,11 @@ fi
 # =====================================================
 log_step 6 $TOTAL_STEPS "Checking Azure Resource Provider Registrations"
 
-register_required_providers || true
+if [ "${SKIP_POST_PROVISION:-false}" = "true" ]; then
+    log_info "SKIP_POST_PROVISION=true — skipping provider registration."
+else
+    register_required_providers || true
+fi
 
 # =====================================================
 # Summary

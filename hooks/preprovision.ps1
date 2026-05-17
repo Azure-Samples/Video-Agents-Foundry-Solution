@@ -169,13 +169,16 @@ if ($env:SKIP_POST_PROVISION -eq 'true') {
     $selectedWorkload   = @{ Sku = $(if ($env:WORKLOAD_VM_SIZE)       { $env:WORKLOAD_VM_SIZE }       else { $DEFAULT_WORKLOAD_VM_SIZE });    Cores = 0; Family = $null }
     $selectedDeepstream = @{ Sku = $(if ($env:DEEPSTREAM_GPU_VM_SIZE) { $env:DEEPSTREAM_GPU_VM_SIZE } else { $DEFAULT_DEEPSTREAM_GPU_SIZE }); Cores = 0; Family = $null }
     $selectedInference  = @{ Sku = $(if ($env:INFERENCE_GPU_VM_SIZE)  { $env:INFERENCE_GPU_VM_SIZE }  else { $DEFAULT_INFERENCE_GPU_SIZE });  Cores = 0; Family = $null }
-    # Persist to azd env for downstream Bicep + subsequent runs.
+    # Only persist user-supplied values. Skip persisting compiled-in defaults
+    # so a later SKIP_POST_PROVISION=false run will still trigger validation.
     foreach ($pair in @(
-            @('SYSTEM_VM_SIZE',         $selectedSystem.Sku),
-            @('WORKLOAD_VM_SIZE',       $selectedWorkload.Sku),
-            @('DEEPSTREAM_GPU_VM_SIZE', $selectedDeepstream.Sku),
-            @('INFERENCE_GPU_VM_SIZE',  $selectedInference.Sku))) {
-        try { azd env set $pair[0] $pair[1] 2>$null } catch {}
+            @('SYSTEM_VM_SIZE',         $env:SYSTEM_VM_SIZE),
+            @('WORKLOAD_VM_SIZE',       $env:WORKLOAD_VM_SIZE),
+            @('DEEPSTREAM_GPU_VM_SIZE', $env:DEEPSTREAM_GPU_VM_SIZE),
+            @('INFERENCE_GPU_VM_SIZE',  $env:INFERENCE_GPU_VM_SIZE))) {
+        if ($pair[1]) {
+            try { azd env set $pair[0] $pair[1] 2>$null } catch {}
+        }
     }
 }
 else {
@@ -348,7 +351,12 @@ $INFERENCE_GPU_VM_SIZE  = $selectedInference.Sku
 # =====================================================
 Log-Step -Number 6 -Total $totalSteps -Title "Checking Azure Resource Provider Registrations"
 
-$null = Register-RequiredProviders
+if ($env:SKIP_POST_PROVISION -eq 'true') {
+    Log-Info "SKIP_POST_PROVISION=true — skipping provider registration."
+}
+else {
+    $null = Register-RequiredProviders
+}
 
 # =====================================================
 # Summary

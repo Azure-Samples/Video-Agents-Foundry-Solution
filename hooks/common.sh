@@ -613,7 +613,9 @@ show_vm_selection_menu() {
         # Try quota-filtered array first; if SKU not present there (restrictive
         # region trimmed it out), fall back to the unfiltered ALL_*_VMS list so
         # we can still resolve cores/family for the GPU quota assertion below.
-        _lookup_sku() {
+        # Nested fn name is unique-prefixed; we `unset -f` at end to avoid
+        # leaking into the global namespace (bash defines fns globally).
+        _vmsm_lookup_sku() {
             local arr_name="$1"
             local -n _lref=$arr_name
             for entry in "${_lref[@]}"; do
@@ -628,7 +630,7 @@ show_vm_selection_menu() {
             done
             return 1
         }
-        if ! _lookup_sku "$_vm_array_name"; then
+        if ! _vmsm_lookup_sku "$_vm_array_name"; then
             local _fallback_arr=""
             if [ "$is_gpu" = "gpu" ]; then
                 _fallback_arr="ALL_GPU_VMS"
@@ -636,12 +638,13 @@ show_vm_selection_menu() {
                 _fallback_arr="ALL_CPU_VMS"
             fi
             if declare -p "$_fallback_arr" >/dev/null 2>&1; then
-                _lookup_sku "$_fallback_arr" || \
+                _vmsm_lookup_sku "$_fallback_arr" || \
                     log_warning "Default SKU '${default_sku}' for ${pool_name} not found in region '${location}'. Proceeding unverified."
             else
                 log_warning "Default SKU '${default_sku}' for ${pool_name} not found in quota-filtered list and no fallback array '${_fallback_arr}' available. Proceeding unverified."
             fi
         fi
+        unset -f _vmsm_lookup_sku
         azd env set "$env_var_name" "$default_sku" 2>/dev/null || true
 
         # GPU pools: still validate + reserve quota so we don't proceed silently
