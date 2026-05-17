@@ -33,8 +33,6 @@ jobs:
 
       - uses: microsoft/template-validation-action@v0.4.3
         id: validation
-        with:
-          useDevContainer: false
         env:
           PYTHONUTF8: "1"
           TEMPLATE_VALIDATION_MODE: true
