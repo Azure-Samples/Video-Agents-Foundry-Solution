@@ -8,6 +8,9 @@
         },
         "ghcr.io/devcontainers/features/kubectl-helm-minikube:1": {
             "minikube": "none"
+        },
+        "ghcr.io/devcontainers/features/node:1": {
+            "version": "lts"
         }
     },
     "postCreateCommand": "sudo az aks install-cli",
