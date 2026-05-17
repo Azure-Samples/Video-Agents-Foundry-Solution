@@ -170,6 +170,8 @@ if [ "${SKIP_POST_PROVISION:-false}" = "true" ]; then
     unset -f _persist_if_set
     # Expose resolved values via the canonical env-var names for downstream
     # summary + Bicep — but do this AFTER persistence, so defaults don't leak.
+    SYSTEM_VM_SIZE="$SYSTEM_SKU"
+    WORKLOAD_VM_SIZE="$WORKLOAD_SKU"
     DEEPSTREAM_GPU_VM_SIZE="$DEEPSTREAM_SKU"
     INFERENCE_GPU_VM_SIZE="$INFERENCE_SKU"
 else
@@ -329,6 +331,7 @@ else
         _validate_vm "Workload CPU"   "$CURRENT_WORKLOAD_VM"   ALL_CPU_VMS "WORKLOAD_VM_SIZE"          "$WORKLOAD_MAX_NODE_COUNT"
         _validate_vm "Deepstream GPU" "$CURRENT_DEEPSTREAM_VM" ALL_GPU_VMS "DEEPSTREAM_GPU_VM_SIZE"    "$DEEPSTREAM_GPU_MAX_NODE_COUNT" "gpu"
         _validate_vm "Inference GPU"  "$CURRENT_INFERENCE_VM"  ALL_GPU_VMS "INFERENCE_GPU_VM_SIZE"     "$INFERENCE_GPU_MAX_NODE_COUNT"  "gpu"
+        unset -f _validate_vm
 
         if [ ${#_errors[@]} -gt 0 ]; then
             for err in "${_errors[@]}"; do log_error "$err"; done

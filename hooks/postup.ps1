@@ -7,7 +7,11 @@ $ErrorActionPreference = "Stop"
 . "$PSScriptRoot/common.ps1"
 
 if ($env:SKIP_POST_PROVISION -eq 'true') {
-    Log-Info "Skipping postup script (SKIP_POST_PROVISION=true) — no deployment performed."
+    # CI / devcontainer mode. Skip health dashboard because kubectl + cluster
+    # access not guaranteed. `azd up --no-prompt` may still have run a real
+    # Bicep deployment — verify cluster health out-of-band if needed.
+    Log-Info "Skipping postup health dashboard (SKIP_POST_PROVISION=true)."
+    Log-Info "If a real Bicep deployment occurred, verify cluster health via 'az aks show' or the Azure Portal."
     exit 0
 }
 

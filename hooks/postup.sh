@@ -8,7 +8,12 @@ set -eo pipefail
 source "$(dirname "$0")/common.sh"
 
 if [ "${SKIP_POST_PROVISION:-false}" = "true" ]; then
-    log_info "Skipping postup script (SKIP_POST_PROVISION=true) — no deployment performed."
+    # CI / devcontainer mode. Skip health dashboard because kubectl + cluster
+    # access not guaranteed. `azd up --no-prompt` may still have run a real
+    # Bicep deployment — verify cluster health out-of-band (e.g. portal,
+    # `az aks show`) if SKIP_POST_PROVISION is set in a real provision flow.
+    log_info "Skipping postup health dashboard (SKIP_POST_PROVISION=true)."
+    log_info "If a real Bicep deployment occurred, verify cluster health via 'az aks show' or the Azure Portal."
     exit 0
 fi
 
