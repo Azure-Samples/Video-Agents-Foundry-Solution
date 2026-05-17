@@ -17,10 +17,32 @@ function Invoke-AzJson {
         output or if parsing failed. Never throws — callers must null-check.
     #>
     param([Parameter(Mandatory)] [scriptblock]$Command)
+    # Co-locate temp file lifecycle with the outer `finally` cleanup so a
+    # future refactor moving the inner try block can't silently break it.
+    $errFile = [IO.Path]::GetTempFileName()
     try {
-        $raw = & $Command 2>&1
+        # Suppress az CLI warning chatter that would otherwise leak into stdout
+        # (e.g. "WARNING: ..." lines from get-versions break ConvertFrom-Json).
+        $hadPrev = Test-Path Env:AZURE_CORE_ONLY_SHOW_ERRORS
+        $prevOnlyErrors = if ($hadPrev) { $env:AZURE_CORE_ONLY_SHOW_ERRORS } else { $null }
+        $env:AZURE_CORE_ONLY_SHOW_ERRORS = 'true'
+        try {
+            # Capture stderr to the temp file so it cannot pollute stdout JSON.
+            $raw = & $Command 2>$errFile
+        }
+        finally {
+            # Restore precisely. Assigning $null on PS 5.1 leaves an empty
+            # string instead of unsetting the env var, so explicitly remove.
+            if ($hadPrev) {
+                $env:AZURE_CORE_ONLY_SHOW_ERRORS = $prevOnlyErrors
+            }
+            else {
+                Remove-Item Env:AZURE_CORE_ONLY_SHOW_ERRORS -ErrorAction SilentlyContinue
+            }
+        }
         if ($LASTEXITCODE -ne 0) {
-            $snippet = if ($raw) { ($raw | Out-String).Trim() } else { '(no output)' }
+            $errText = if ($errFile -and (Test-Path $errFile)) { (Get-Content $errFile -Raw) } else { '' }
+            $snippet = if ($errText) { $errText.Trim() } elseif ($raw) { ($raw | Out-String).Trim() } else { '(no output)' }
             if ($snippet.Length -gt 400) { $snippet = $snippet.Substring(0, 400) + '...' }
             Log-Warning "az command failed (exit $LASTEXITCODE): $snippet"
             return $null
@@ -35,6 +57,9 @@ function Invoke-AzJson {
     catch {
         Log-Warning "Invoke-AzJson exception: $($_.Exception.Message)"
         return $null
+    }
+    finally {
+        if ($errFile) { Remove-Item $errFile -ErrorAction SilentlyContinue }
     }
 }
 

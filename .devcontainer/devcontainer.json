@@ -8,9 +8,13 @@
         },
         "ghcr.io/devcontainers/features/kubectl-helm-minikube:1": {
             "minikube": "none"
+        },
+        "ghcr.io/devcontainers/features/node:1": {
+            "version": "lts",
+            "installYarnUsingApt": false
         }
     },
-    "postCreateCommand": "sudo az aks install-cli",
+    "postCreateCommand": "sudo rm -f /etc/apt/sources.list.d/yarn.list && sudo az aks install-cli",
     "containerEnv": {
         "CREATE_IN_LOCAL": "false",
         "SKIP_POST_PROVISION": "true"
