@@ -156,7 +156,9 @@ if [ "${SKIP_POST_PROVISION:-false}" = "true" ]; then
     _persist_if_set() {
         local var="$1"
         local val="${!var:-}"
-        [ -n "$val" ] && azd env set "$var" "$val" 2>/dev/null || true
+        if [ -n "$val" ]; then
+            azd env set "$var" "$val" 2>/dev/null || true
+        fi
     }
     _persist_if_set SYSTEM_VM_SIZE
     _persist_if_set WORKLOAD_VM_SIZE
