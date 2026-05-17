@@ -7,6 +7,11 @@
 set -eo pipefail
 source "$(dirname "$0")/common.sh"
 
+if [ "${SKIP_POST_PROVISION:-false}" = "true" ]; then
+    log_info "Skipping postup script (SKIP_POST_PROVISION=true) — no deployment performed."
+    exit 0
+fi
+
 TOTAL_STEPS=6
 HEALTH_PASSED=0
 HEALTH_FAILED=0

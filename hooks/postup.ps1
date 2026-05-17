@@ -6,6 +6,11 @@ $ErrorActionPreference = "Stop"
 
 . "$PSScriptRoot/common.ps1"
 
+if ($env:SKIP_POST_PROVISION -eq 'true') {
+    Log-Info "Skipping postup script (SKIP_POST_PROVISION=true) — no deployment performed."
+    exit 0
+}
+
 $totalSteps = 6
 $HealthResults = @()
 

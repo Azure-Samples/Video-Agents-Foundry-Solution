@@ -18,19 +18,43 @@ function Invoke-AzJson {
     #>
     param([Parameter(Mandatory)] [scriptblock]$Command)
     try {
-        $raw = & $Command 2>&1
+        # Suppress az CLI warning chatter that would otherwise leak into stdout
+        # (e.g. "WARNING: ..." lines from get-versions break ConvertFrom-Json).
+        $prevOnlyErrors = $env:AZURE_CORE_ONLY_SHOW_ERRORS
+        $env:AZURE_CORE_ONLY_SHOW_ERRORS = 'true'
+        try {
+            # Capture stderr to a temp file so it cannot pollute stdout JSON.
+            $errFile = [IO.Path]::GetTempFileName()
+            $raw = & $Command 2>$errFile
+        }
+        finally {
+            $env:AZURE_CORE_ONLY_SHOW_ERRORS = $prevOnlyErrors
+        }
         if ($LASTEXITCODE -ne 0) {
-            $snippet = if ($raw) { ($raw | Out-String).Trim() } else { '(no output)' }
+            $errText = if (Test-Path $errFile) { (Get-Content $errFile -Raw) } else { '' }
+            $snippet = if ($errText) { $errText.Trim() } elseif ($raw) { ($raw | Out-String).Trim() } else { '(no output)' }
             if ($snippet.Length -gt 400) { $snippet = $snippet.Substring(0, 400) + '...' }
             Log-Warning "az command failed (exit $LASTEXITCODE): $snippet"
+            Remove-Item $errFile -ErrorAction SilentlyContinue
             return $null
         }
+        Remove-Item $errFile -ErrorAction SilentlyContinue
         if ($null -eq $raw -or ($raw -is [string] -and [string]::IsNullOrWhiteSpace($raw))) {
             return $null
         }
         if ($raw -is [array]) { $raw = ($raw -join "`n") }
         if ([string]::IsNullOrWhiteSpace($raw)) { return $null }
-        return $raw | ConvertFrom-Json -ErrorAction Stop
+        # Defensive: strip any leading non-JSON noise (e.g. stray warning line)
+        # before the first '{' or '['.
+        $trimmed = $raw.TrimStart()
+        $jsonStart = [Math]::Min(
+            $(if (($i = $trimmed.IndexOf('{')) -ge 0) { $i } else { [int]::MaxValue }),
+            $(if (($i = $trimmed.IndexOf('[')) -ge 0) { $i } else { [int]::MaxValue })
+        )
+        if ($jsonStart -gt 0 -and $jsonStart -lt [int]::MaxValue) {
+            $trimmed = $trimmed.Substring($jsonStart)
+        }
+        return $trimmed | ConvertFrom-Json -ErrorAction Stop
     }
     catch {
         Log-Warning "Invoke-AzJson exception: $($_.Exception.Message)"
