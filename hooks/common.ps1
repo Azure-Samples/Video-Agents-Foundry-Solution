@@ -17,7 +17,9 @@ function Invoke-AzJson {
         output or if parsing failed. Never throws — callers must null-check.
     #>
     param([Parameter(Mandatory)] [scriptblock]$Command)
-    $errFile = ''
+    # Co-locate temp file lifecycle with the outer `finally` cleanup so a
+    # future refactor moving the inner try block can't silently break it.
+    $errFile = [IO.Path]::GetTempFileName()
     try {
         # Suppress az CLI warning chatter that would otherwise leak into stdout
         # (e.g. "WARNING: ..." lines from get-versions break ConvertFrom-Json).
@@ -25,8 +27,7 @@ function Invoke-AzJson {
         $prevOnlyErrors = if ($hadPrev) { $env:AZURE_CORE_ONLY_SHOW_ERRORS } else { $null }
         $env:AZURE_CORE_ONLY_SHOW_ERRORS = 'true'
         try {
-            # Capture stderr to a temp file so it cannot pollute stdout JSON.
-            $errFile = [IO.Path]::GetTempFileName()
+            # Capture stderr to the temp file so it cannot pollute stdout JSON.
             $raw = & $Command 2>$errFile
         }
         finally {

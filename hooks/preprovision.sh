@@ -169,7 +169,9 @@ if [ "${SKIP_POST_PROVISION:-false}" = "true" ]; then
     _persist_if_set INFERENCE_GPU_VM_SIZE
     unset -f _persist_if_set
     # Expose resolved values via the canonical env-var names for downstream
-    # summary + Bicep — but do this AFTER persistence, so defaults don't leak.
+    # summary + Bicep. (Ordering is shell-local only — `azd env set` already
+    # ran above against the unresolved values, so this assignment doesn't
+    # affect persistence.)
     SYSTEM_VM_SIZE="$SYSTEM_SKU"
     WORKLOAD_VM_SIZE="$WORKLOAD_SKU"
     DEEPSTREAM_GPU_VM_SIZE="$DEEPSTREAM_SKU"
