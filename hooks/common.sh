@@ -610,17 +610,38 @@ show_vm_selection_menu() {
         SELECTED_VM_SKU="$default_sku"
         SELECTED_VM_CORES=0
         SELECTED_VM_FAMILY=""
-        for entry in "${_vm_array_ref[@]}"; do
-            local n="${entry%%|*}"
-            if [ "$n" = "$default_sku" ]; then
-                local rest="${entry#*|}"
-                SELECTED_VM_CORES="${rest%%|*}"
-                rest="${rest#*|}"      # drop cores
-                rest="${rest#*|}"      # drop memGB
-                SELECTED_VM_FAMILY="${rest%%|*}"
-                break
+        # Try quota-filtered array first; if SKU not present there (restrictive
+        # region trimmed it out), fall back to the unfiltered ALL_*_VMS list so
+        # we can still resolve cores/family for the GPU quota assertion below.
+        _lookup_sku() {
+            local arr_name="$1"
+            local -n _lref=$arr_name
+            for entry in "${_lref[@]}"; do
+                local n="${entry%%|*}"
+                if [ "$n" = "$default_sku" ]; then
+                    local rest="${entry#*|}"
+                    SELECTED_VM_CORES="${rest%%|*}"
+                    rest="${rest#*|}"; rest="${rest#*|}"
+                    SELECTED_VM_FAMILY="${rest%%|*}"
+                    return 0
+                fi
+            done
+            return 1
+        }
+        if ! _lookup_sku "$_vm_array_name"; then
+            local _fallback_arr=""
+            if [ "$is_gpu" = "gpu" ]; then
+                _fallback_arr="ALL_GPU_VMS"
+            else
+                _fallback_arr="ALL_CPU_VMS"
             fi
-        done
+            if declare -p "$_fallback_arr" >/dev/null 2>&1; then
+                _lookup_sku "$_fallback_arr" || \
+                    log_warning "Default SKU '${default_sku}' for ${pool_name} not found in region '${location}'. Proceeding unverified."
+            else
+                log_warning "Default SKU '${default_sku}' for ${pool_name} not found in quota-filtered list and no fallback array '${_fallback_arr}' available. Proceeding unverified."
+            fi
+        fi
         azd env set "$env_var_name" "$default_sku" 2>/dev/null || true
 
         # GPU pools: still validate + reserve quota so we don't proceed silently
@@ -859,9 +880,8 @@ _show_vm_menu_interactive() {
     }
 
     _render_menu() {
-        local selected=$1 top=$2 offset=$3
+        local selected=$1 offset=$2
         # Use relative positioning: caller ensures cursor is at menu top row.
-        # `top` arg kept for compatibility but no longer used.
         printf "\r"
         for ((row=0; row<max_visible; row++)); do
             local idx=$((offset + row))
@@ -913,14 +933,13 @@ _show_vm_menu_interactive() {
         # query that breaks in devcontainer / azd pseudo-terminals.
         for ((r=0; r<max_visible; r++)); do echo ""; done
         printf "\033[%dA" "$max_visible"  # move cursor up to viewport top
-        local menu_top=0  # unused with relative positioning
 
         _update_scroll
-        _render_menu "$current_index" "$menu_top" "$scroll_offset"
+        _render_menu "$current_index" "$scroll_offset"
         # After render, cursor is on line after viewport. Move back up to top.
         _rerender() {
             printf "\033[%dA" "$max_visible"
-            _render_menu "$current_index" "$menu_top" "$scroll_offset"
+            _render_menu "$current_index" "$scroll_offset"
         }
 
         local confirmed=false escaped=false

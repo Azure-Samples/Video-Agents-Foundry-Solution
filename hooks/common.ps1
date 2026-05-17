@@ -17,6 +17,7 @@ function Invoke-AzJson {
         output or if parsing failed. Never throws — callers must null-check.
     #>
     param([Parameter(Mandatory)] [scriptblock]$Command)
+    $errFile = $null
     try {
         # Suppress az CLI warning chatter that would otherwise leak into stdout
         # (e.g. "WARNING: ..." lines from get-versions break ConvertFrom-Json).
@@ -35,10 +36,8 @@ function Invoke-AzJson {
             $snippet = if ($errText) { $errText.Trim() } elseif ($raw) { ($raw | Out-String).Trim() } else { '(no output)' }
             if ($snippet.Length -gt 400) { $snippet = $snippet.Substring(0, 400) + '...' }
             Log-Warning "az command failed (exit $LASTEXITCODE): $snippet"
-            Remove-Item $errFile -ErrorAction SilentlyContinue
             return $null
         }
-        Remove-Item $errFile -ErrorAction SilentlyContinue
         if ($null -eq $raw -or ($raw -is [string] -and [string]::IsNullOrWhiteSpace($raw))) {
             return $null
         }
@@ -47,10 +46,11 @@ function Invoke-AzJson {
         # Defensive: strip any leading non-JSON noise (e.g. stray warning line)
         # before the first '{' or '['.
         $trimmed = $raw.TrimStart()
-        $jsonStart = [Math]::Min(
-            $(if (($i = $trimmed.IndexOf('{')) -ge 0) { $i } else { [int]::MaxValue }),
-            $(if (($i = $trimmed.IndexOf('[')) -ge 0) { $i } else { [int]::MaxValue })
-        )
+        $braceIdx   = $trimmed.IndexOf('{')
+        $bracketIdx = $trimmed.IndexOf('[')
+        if ($braceIdx   -lt 0) { $braceIdx   = [int]::MaxValue }
+        if ($bracketIdx -lt 0) { $bracketIdx = [int]::MaxValue }
+        $jsonStart = [Math]::Min($braceIdx, $bracketIdx)
         if ($jsonStart -gt 0 -and $jsonStart -lt [int]::MaxValue) {
             $trimmed = $trimmed.Substring($jsonStart)
         }
@@ -59,6 +59,9 @@ function Invoke-AzJson {
     catch {
         Log-Warning "Invoke-AzJson exception: $($_.Exception.Message)"
         return $null
+    }
+    finally {
+        if ($errFile) { Remove-Item $errFile -ErrorAction SilentlyContinue }
     }
 }
 

@@ -145,6 +145,11 @@ if [ "${SKIP_POST_PROVISION:-false}" = "true" ]; then
     WORKLOAD_SKU="${WORKLOAD_VM_SIZE:-$DEFAULT_WORKLOAD_VM_SIZE}"
     DEEPSTREAM_GPU_VM_SIZE="${DEEPSTREAM_GPU_VM_SIZE:-$DEFAULT_DEEPSTREAM_GPU_SIZE}"
     INFERENCE_GPU_VM_SIZE="${INFERENCE_GPU_VM_SIZE:-$DEFAULT_INFERENCE_GPU_SIZE}"
+    # Persist to azd env for downstream Bicep + subsequent runs.
+    azd env set SYSTEM_VM_SIZE         "$SYSTEM_SKU"              2>/dev/null || true
+    azd env set WORKLOAD_VM_SIZE       "$WORKLOAD_SKU"            2>/dev/null || true
+    azd env set DEEPSTREAM_GPU_VM_SIZE "$DEEPSTREAM_GPU_VM_SIZE"  2>/dev/null || true
+    azd env set INFERENCE_GPU_VM_SIZE  "$INFERENCE_GPU_VM_SIZE"   2>/dev/null || true
 else
     # Determine current/default values
     CURRENT_SYSTEM_VM="${SYSTEM_VM_SIZE:-$DEFAULT_SYSTEM_VM_SIZE}"

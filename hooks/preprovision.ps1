@@ -169,6 +169,14 @@ if ($env:SKIP_POST_PROVISION -eq 'true') {
     $selectedWorkload   = @{ Sku = $(if ($env:WORKLOAD_VM_SIZE)       { $env:WORKLOAD_VM_SIZE }       else { $DEFAULT_WORKLOAD_VM_SIZE });    Cores = 0; Family = $null }
     $selectedDeepstream = @{ Sku = $(if ($env:DEEPSTREAM_GPU_VM_SIZE) { $env:DEEPSTREAM_GPU_VM_SIZE } else { $DEFAULT_DEEPSTREAM_GPU_SIZE }); Cores = 0; Family = $null }
     $selectedInference  = @{ Sku = $(if ($env:INFERENCE_GPU_VM_SIZE)  { $env:INFERENCE_GPU_VM_SIZE }  else { $DEFAULT_INFERENCE_GPU_SIZE });  Cores = 0; Family = $null }
+    # Persist to azd env for downstream Bicep + subsequent runs.
+    foreach ($pair in @(
+            @('SYSTEM_VM_SIZE',         $selectedSystem.Sku),
+            @('WORKLOAD_VM_SIZE',       $selectedWorkload.Sku),
+            @('DEEPSTREAM_GPU_VM_SIZE', $selectedDeepstream.Sku),
+            @('INFERENCE_GPU_VM_SIZE',  $selectedInference.Sku))) {
+        try { azd env set $pair[0] $pair[1] 2>$null } catch {}
+    }
 }
 else {
     Log-Info "Querying available VM SKUs in $($env:AZURE_LOCATION)..."
