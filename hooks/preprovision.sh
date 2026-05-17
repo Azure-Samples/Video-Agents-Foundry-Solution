@@ -146,10 +146,13 @@ if [ "${SKIP_POST_PROVISION:-false}" = "true" ]; then
     # run provider registration in step 6 because `azd up --no-prompt` in CI
     # performs a real Bicep deployment that needs providers registered.
     log_info "SKIP_POST_PROVISION=true — skipping VM SKU availability + quota checks."
+    # Resolve into differently-named locals so we don't overwrite the env-var
+    # names — `_persist_if_set` below must only see real user-supplied values,
+    # not compiled-in defaults.
     SYSTEM_SKU="${SYSTEM_VM_SIZE:-$DEFAULT_SYSTEM_VM_SIZE}"
     WORKLOAD_SKU="${WORKLOAD_VM_SIZE:-$DEFAULT_WORKLOAD_VM_SIZE}"
-    DEEPSTREAM_GPU_VM_SIZE="${DEEPSTREAM_GPU_VM_SIZE:-$DEFAULT_DEEPSTREAM_GPU_SIZE}"
-    INFERENCE_GPU_VM_SIZE="${INFERENCE_GPU_VM_SIZE:-$DEFAULT_INFERENCE_GPU_SIZE}"
+    DEEPSTREAM_SKU="${DEEPSTREAM_GPU_VM_SIZE:-$DEFAULT_DEEPSTREAM_GPU_SIZE}"
+    INFERENCE_SKU="${INFERENCE_GPU_VM_SIZE:-$DEFAULT_INFERENCE_GPU_SIZE}"
     # Only persist user-supplied values. Skip persisting compiled-in defaults
     # so a later SKIP_POST_PROVISION=false run will still trigger the menu /
     # validation path rather than silently accept defaults baked into the env.
@@ -165,6 +168,10 @@ if [ "${SKIP_POST_PROVISION:-false}" = "true" ]; then
     _persist_if_set DEEPSTREAM_GPU_VM_SIZE
     _persist_if_set INFERENCE_GPU_VM_SIZE
     unset -f _persist_if_set
+    # Expose resolved values via the canonical env-var names for downstream
+    # summary + Bicep — but do this AFTER persistence, so defaults don't leak.
+    DEEPSTREAM_GPU_VM_SIZE="$DEEPSTREAM_SKU"
+    INFERENCE_GPU_VM_SIZE="$INFERENCE_SKU"
 else
     # Determine current/default values
     CURRENT_SYSTEM_VM="${SYSTEM_VM_SIZE:-$DEFAULT_SYSTEM_VM_SIZE}"
