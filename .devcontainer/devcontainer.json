@@ -10,7 +10,8 @@
             "minikube": "none"
         },
         "ghcr.io/devcontainers/features/node:1": {
-            "version": "lts"
+            "version": "lts",
+            "installYarnUsingApt": false
         }
     },
     "postCreateCommand": "sudo az aks install-cli",
