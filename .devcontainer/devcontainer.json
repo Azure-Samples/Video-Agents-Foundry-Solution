@@ -14,7 +14,7 @@
             "installYarnUsingApt": false
         }
     },
-    "postCreateCommand": "sudo az aks install-cli",
+    "postCreateCommand": "sudo rm -f /etc/apt/sources.list.d/yarn.list && sudo az aks install-cli",
     "containerEnv": {
         "CREATE_IN_LOCAL": "false",
         "SKIP_POST_PROVISION": "true"
